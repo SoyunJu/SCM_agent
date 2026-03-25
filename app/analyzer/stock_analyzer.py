@@ -63,6 +63,7 @@ def detect_low_stock(
     df["현재재고"] = pd.to_numeric(df["현재재고"], errors="coerce").fillna(0)
     df["안전재고기준"] = pd.to_numeric(df["안전재고기준"], errors="coerce").fillna(10)
 
+    df = df[df["상품코드"].isin(df_stock["상품코드"])]
     low_stock = df[df["현재재고"] <= df["안전재고기준"]]
 
     for _, row in low_stock.iterrows():
