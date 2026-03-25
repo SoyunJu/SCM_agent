@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from loguru import logger
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -8,6 +9,10 @@ import pytz
 from app.db.connection import init_db, check_db_connection
 from app.config import settings
 from app.scheduler.jobs import run_daily_job
+
+from app.api.auth_router import router as auth_router
+from app.api.report_router import router as report_router
+from app.api.chat_router import router as chat_router
 
 
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
@@ -49,18 +54,34 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
-@app.get("/scm/health")
-async def health_check():
-    return {"status": "ok"}
-
-
+"""
 @app.post("/scm/report/run")
 async def trigger_report():
     import asyncio
     asyncio.create_task(asyncio.to_thread(run_daily_job))
     logger.info("보고서 수동 실행 트리거 실행")
     return {"status": "triggered", "message": "보고서 생성이 시작되었습니다."}
+"""
+
+
+# CORS (Next.js 관리자 화면 연동)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],   # Next.js 개발 서버
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 라우터 등록
+app.include_router(auth_router)
+app.include_router(report_router)
+app.include_router(chat_router)
+
+
+@app.get("/scm/health")
+async def health_check():
+    return {"status": "ok"}
 
 
 @app.get("/scm/scheduler/status")

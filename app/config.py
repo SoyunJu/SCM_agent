@@ -1,5 +1,6 @@
 
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from loguru import logger
 import sys
 
@@ -35,6 +36,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60
 
+    # Admin
+    admin_username: str = "admin"
+    admin_password: str = "admin1!"
+
     # Scheduler
     schedule_hour: int = 0
     schedule_minute: int = 0
@@ -44,10 +49,11 @@ class Settings(BaseSettings):
     app_env: str = "development"
     log_level: str = "INFO"
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 settings = Settings()
 
