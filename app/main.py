@@ -98,18 +98,3 @@ async def scheduler_status():
             for job in jobs
         ],
     }
-
-@app.get("/scm/dashboard/stats")
-async def get_dashboard_stats():
-    return {
-        "low_stock": 5,
-        "sales_surge": 2,
-        "reports_today": 1
-    }
-
-@app.get("/scm/inventory/anomalies")
-async def get_inventory_anomalies():
-    return [
-        {"id": 1, "name": "파이썬 마스터", "issue": "판매량 급등", "status": "재고 부족 위험"},
-        {"id": 2, "name": "머신러닝 가이드", "issue": "재고 정체", "status": "반품 검토 필요"}
-    ]

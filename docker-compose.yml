@@ -1,9 +1,10 @@
+
 version: "3.9"
 
 services:
   api:
     build: .
-    container_name: scm_agent_api
+    container_name: scm_agent
     ports:
       - "8000:8000"
     env_file:
@@ -11,14 +12,29 @@ services:
     volumes:
       - ./credentials:/app/credentials:ro
       - ./logs:/app/logs
+      - ./reports:/app/reports
+      - ./sample_data.xlsx:/app/sample_data.xlsx:ro
     depends_on:
       db:
         condition: service_healthy
     restart: unless-stopped
 
+  frontend:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    container_name: scm_admin
+    ports:
+      - "3001:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
   db:
     image: mariadb:11.3
-    container_name: scm_agent_db
+    container_name: scm_db
     ports:
       - "3307:3306"
     environment:

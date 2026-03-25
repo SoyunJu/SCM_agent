@@ -59,7 +59,8 @@ def detect_low_stock(
     # 마스터 + 재고 + 판매 병합
     df = df_master.merge(df_stock, on="상품코드", how="left")
     df = df.merge(avg_sales, on="상품코드", how="left")
-    df["일평균판매량"] = df["일평균판매량"].fillna(0)
+    # df["일평균판매량"] = df["일평균판매량"].fillna(0)
+    df["일평균판매량"] = df["일평균판매량"].fillna(0).astype(float)
     df["현재재고"] = pd.to_numeric(df["현재재고"], errors="coerce").fillna(0)
     df["안전재고기준"] = pd.to_numeric(df["안전재고기준"], errors="coerce").fillna(10)
 

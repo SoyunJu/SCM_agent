@@ -41,6 +41,7 @@ def _load_prompt() -> str:
 
 
 def _build_react_prompt() -> PromptTemplate:
+
     system_prompt = _load_prompt()
 
     template = system_prompt + """
@@ -50,15 +51,19 @@ def _build_react_prompt() -> PromptTemplate:
 
 Tool 이름 목록: {tool_names}
 
-## 응답 형식 (반드시 준수)
+## 반드시 지켜야 할 응답 형식
 Question: 사용자 질문
 Thought: 어떤 Tool을 써야 할지 생각
-Action: Tool 이름 (tool_names 중 하나)
-Action Input: Tool 입력값
+Action: Tool 이름 (반드시 tool_names 중 정확히 하나)
+Action Input: Tool에 전달할 입력값 (따옴표 없이 순수 텍스트)
 Observation: Tool 실행 결과
-... (Thought/Action/Observation 반복, 최대 5회)
-Thought: 최종 답변을 도출할 수 있다
-Final Answer: 최종 답변 (한국어)
+Thought: 결과를 보고 최종 답변을 도출할 수 있는지 판단
+Final Answer: 최종 답변 (한국어, Observation 결과를 그대로 활용)
+
+## 중요 규칙
+- Observation 결과가 나오면 즉시 Final Answer로 답변하세요.
+- 같은 Tool을 두 번 이상 호출하지 마세요.
+- 데이터가 부족해도 Observation 결과로 Final Answer를 작성하세요.
 
 이전 대화:
 {chat_history}
@@ -103,8 +108,10 @@ def run_agent(
             agent=agent,
             tools=TOOLS,
             memory=memory,
-            verbose=True,           # Tool 호출 과정 로그 출력
-            max_iterations=5,       # Tool 최대 5회 호출
+            verbose=True,                            # Tool 호출 과정 로그 출력
+            max_iterations=3,                        # Tool 최대 5회 호출
+            max_execution_time=30,                   # 30초 타임아웃
+            early_stopping_method="generate",        # limit 도달 시 강제 Final Answer 생성
             handle_parsing_errors=True,
         )
 
