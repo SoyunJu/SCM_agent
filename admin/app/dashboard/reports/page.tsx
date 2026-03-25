@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getReportHistory, triggerReport } from "@/lib/api";
-import { ReportExecution } from "@/lib/types";
+import { getReportHistory, triggerReport, getPdfList, getPdfUrl } from "@/lib/api";
+import { ReportExecution, PdfFile } from "@/lib/types";
 import { Play, CheckCircle, XCircle, Clock } from "lucide-react";
 
 const STATUS_INFO: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
@@ -15,11 +15,16 @@ export default function ReportsPage() {
     const [history, setHistory]       = useState<ReportExecution[]>([]);
     const [triggering, setTriggering] = useState(false);
     const [message, setMessage]       = useState("");
+    const [pdfs, setPdfs]             = useState<PdfFile[]>([]);
+    const [previewUrl, setPreview]    = useState<string | null>(null);
 
     const fetchHistory = () =>
         getReportHistory(20).then((res) => setHistory(res.data.items));
 
-    useEffect(() => { fetchHistory(); }, []);
+    useEffect(() => {
+        fetchHistory();
+        getPdfList().then((res) => setPdfs(res.data.items ?? []));
+    }, []);
 
     const handleTrigger = async () => {
         setTriggering(true);
@@ -37,6 +42,7 @@ export default function ReportsPage() {
 
     return (
         <div className="space-y-6">
+            {/* 헤더 */}
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-2xl font-bold text-gray-800">보고서 이력</h2>
@@ -56,6 +62,7 @@ export default function ReportsPage() {
                 <p className="text-sm text-gray-600 bg-gray-100 px-4 py-2 rounded-lg">{message}</p>
             )}
 
+            {/* 보고서 이력 테이블 */}
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-x-auto">
                 <table className="w-full text-sm">
                     <thead>
@@ -84,10 +91,10 @@ export default function ReportsPage() {
                                     <td className="px-6 py-3 text-gray-700">{r.executed_at.slice(0, 16)}</td>
                                     <td className="px-6 py-3 text-gray-600">{r.report_type}</td>
                                     <td className="px-6 py-3">
-                      <span className={`flex items-center gap-1 text-xs font-medium ${statusInfo?.color}`}>
-                        {statusInfo?.icon}
-                          {statusInfo?.label}
-                      </span>
+                                            <span className={`flex items-center gap-1 text-xs font-medium ${statusInfo?.color}`}>
+                                                {statusInfo?.icon}
+                                                {statusInfo?.label}
+                                            </span>
                                     </td>
                                     <td className="px-6 py-3 text-xs">
                                         {r.slack_sent ? "✅ 전송됨" : "—"}
@@ -102,6 +109,60 @@ export default function ReportsPage() {
                     </tbody>
                 </table>
             </div>
+
+            {/* PDF 목록 */}
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
+                <div className="px-6 py-4 border-b border-gray-100">
+                    <h3 className="font-semibold text-gray-700">생성된 PDF 보고서</h3>
+                </div>
+                <div className="divide-y divide-gray-50">
+                    {pdfs.length === 0 ? (
+                        <p className="px-6 py-8 text-center text-gray-400 text-sm">생성된 PDF 없음</p>
+                    ) : (
+                        pdfs.map((pdf) => (
+                            <div key={pdf.filename} className="flex items-center justify-between px-6 py-3">
+                                <div>
+                                    <p className="text-sm text-gray-700 font-medium">{pdf.filename}</p>
+                                    <p className="text-xs text-gray-400">{pdf.size_kb} KB</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() =>
+                                            setPreview(
+                                                previewUrl === getPdfUrl(pdf.filename)
+                                                    ? null
+                                                    : getPdfUrl(pdf.filename)
+                                            )
+                                        }
+                                        className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-medium transition"
+                                    >
+                                        {previewUrl === getPdfUrl(pdf.filename) ? "닫기" : "미리보기"}
+                                    </button>
+
+                                    <a
+                                        href={getPdfUrl(pdf.filename)}
+                                        download={pdf.filename}
+                                        className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-medium transition"
+                                    >
+                                    다운로드
+                                </a>
+                            </div>
+                        </div>
+                        ))
+                        )}
+                </div>
+            </div>
+
+            {/* PDF 미리보기 */}
+            {previewUrl && (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                <iframe
+                    src={previewUrl}
+                    className="w-full rounded-lg border border-gray-200"
+                    style={{ height: "800px" }}
+                />
+            </div>
+            )}
         </div>
     );
 }

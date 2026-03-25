@@ -65,3 +65,48 @@ export const chatQuery = (message: string, sessionId: string) =>
 // --- Health ---
 export const healthCheck = () =>
     apiClient.get("/scm/health");
+
+// --- Anomaly ---------------------------------------------------------------─
+export const resolveAnomaly = (id: number) =>
+    apiClient.patch(`/scm/report/anomalies/${id}/resolve`);
+
+// --- Scheduler ------------------------------------------------------------─
+export const getSchedulerConfig = () =>
+    apiClient.get("/scm/scheduler/config");
+
+export const updateSchedulerConfig = (data: {
+    schedule_hour: number;
+    schedule_minute: number;
+    timezone: string;
+    is_active: boolean;
+}) => apiClient.put("/scm/scheduler/config", data);
+
+export const getSchedulerStatus = () =>
+    apiClient.get("/scm/scheduler/status");
+
+// --- Sheets ---
+export const getSheetsMaster = () =>
+    apiClient.get("/scm/sheets/master");
+
+export const getSheetsSales = (days = 30) =>
+    apiClient.get(`/scm/sheets/sales?days=${days}`);
+
+export const getSheetsStock = () =>
+    apiClient.get("/scm/sheets/stock");
+
+export const getSalesStats = (period: "daily" | "weekly" | "monthly") =>
+    apiClient.get(`/scm/sheets/stats/sales?period=${period}`);
+
+export const getStockStats = () =>
+    apiClient.get("/scm/sheets/stats/stock");
+
+// --- PDF ------─
+export const getPdfList = () =>
+    apiClient.get("/scm/report/pdf-list");
+
+export const getPdfUrl = (filename: string) =>
+    `${process.env.NEXT_PUBLIC_API_URL}/scm/report/pdf/${filename}`;
+
+// --- Alerts ---
+export const getUnreadCount = () =>
+    apiClient.get("/scm/alerts/unread-count");

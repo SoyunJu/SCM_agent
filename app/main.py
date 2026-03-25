@@ -13,6 +13,9 @@ from app.scheduler.jobs import run_daily_job
 from app.api.auth_router import router as auth_router
 from app.api.report_router import router as report_router
 from app.api.chat_router import router as chat_router
+from app.api.scheduler_router import router as scheduler_router
+from app.api.sheets_router import router as sheets_router
+from app.api.alert_router import router as alert_router
 
 
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
@@ -77,6 +80,9 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(report_router)
 app.include_router(chat_router)
+app.include_router(scheduler_router)
+app.include_router(sheets_router)
+app.include_router(alert_router)
 
 
 @app.get("/scm/health")

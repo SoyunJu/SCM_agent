@@ -111,6 +111,42 @@ def run_daily_job() -> None:
                 severity=Severity(item["severity"]),
             )
 
+         # 9. 긴급 이상 징후 알림 (CRITICAL/HIGH)
+        critical_items = [
+            i for i in stock_anomalies + sales_anomalies
+            if i.get("severity") in ("critical", "high", Severity.CRITICAL, Severity.HIGH)
+        ]
+        if critical_items:
+            import asyncio
+            from app.api.alert_router import broadcast_alert
+            from app.notifier.slack_notifier import send_message
+
+            for item in critical_items:
+                alert = {
+                    "type": "critical_anomaly",
+                    "severity": str(item.get("severity", "")),
+                    "product_code": item.get("product_code", ""),
+                    "product_name": item.get("product_name", ""),
+                    "anomaly_type": str(item.get("anomaly_type", "")),
+                    "message": f"[긴급] {item.get('product_name')} - {item.get('anomaly_type')}",
+                }
+                # SSE 브로드캐스트
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(broadcast_alert(alert))
+                except Exception as e:
+                    logger.warning(f"SSE 알림 전송 실패: {e}")
+
+            # Slack 긴급 메시지
+            send_message(
+                f"🔴 긴급 이상 징후 {len(critical_items)}건 감지!\n"
+                + "\n".join(
+                    f"• {i.get('product_name')} ({i.get('product_code')}) - {i.get('anomaly_type')}"
+                    for i in critical_items[:5]
+                )
+            )
+
         # 실행 이력 성공 업데이트
         update_report_execution(
             db=db,
@@ -118,6 +154,7 @@ def run_daily_job() -> None:
             status=ExecutionStatus.SUCCESS,
             slack_sent=slack_ok,
         )
+
         update_last_run(db, "daily_report")
         logger.info("========== 일일 스케줄 작업 완료 ==========")
 

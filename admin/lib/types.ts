@@ -27,3 +27,39 @@ export interface ChatMessage {
     content: string;
     timestamp: Date;
 }
+
+export interface ScheduleConfig {
+    job_name: string;
+    schedule_hour: number;
+    schedule_minute: number;
+    timezone: string;
+    is_active: boolean;
+    last_run_at: string | null;
+}
+
+export interface SalesStatItem {
+    날짜: string;
+    판매수량: number;
+    매출액: number;
+}
+
+export interface StockItem {
+    상품코드: string;
+    상품명: string;
+    현재재고: number;
+}
+
+export interface PdfFile {
+    filename: string;
+    size_kb: number;
+    created_at: string;
+}
+
+export interface AlertMessage {
+    type: string;
+    severity: string;
+    product_code: string;
+    product_name: string;
+    anomaly_type: string;
+    message: string;
+}
