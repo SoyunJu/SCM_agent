@@ -1,0 +1,36 @@
+
+.env
+
+# 자격증명 (Google API)
+credentials/
+
+# 로그
+logs/
+
+# 가상환경
+venv/
+
+# Python 캐시
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# pytest
+.pytest_cache/
+htmlcov/
+.coverage
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 빌드
+dist/
+build/
+*.egg-info/
