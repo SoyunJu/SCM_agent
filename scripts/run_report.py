@@ -44,6 +44,22 @@ def run():
         insight=insight,
     )
 
+    # 6. Slack 알림 + PDF 전송
+    today_str = date.today().strftime("%Y-%m-%d")
+    slack_ok = send_daily_report_notification(
+        report_date=today_str,
+        total_products=len(df_master),
+        stock_anomaly_count=len(stock_anomalies),
+        sales_anomaly_count=len(sales_anomalies),
+        risk_level=insight.get("risk_level", "medium"),
+        pdf_path=pdf_path,
+    )
+
+    if slack_ok:
+        logger.info("Slack 전송 완료")
+    else:
+        logger.warning("Slack 전송 실패 (로컬 저장)")
+
     logger.info(f"===== 보고서 생성 완료: {pdf_path} =====")
 
 
