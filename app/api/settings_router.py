@@ -6,6 +6,9 @@ from loguru import logger
 from app.api.auth_router import get_current_user, TokenData
 from app.db.connection import get_db
 from app.db.repository import get_setting, upsert_setting
+from app.api.order_router import router as order_router
+
+
 
 router = APIRouter(prefix="/scm/settings", tags=["settings"])
 

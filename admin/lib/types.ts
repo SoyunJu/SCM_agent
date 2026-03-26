@@ -81,3 +81,17 @@ export interface OrderItem {
     예정납기일: string;
     상태: "발주완료" | "입고중" | "입고완료" | "반품";
 }
+
+export interface OrderProposal {
+    id: number;
+    product_code: string;
+    product_name: string | null;
+    category: string | null;
+    proposed_qty: number;
+    unit_price: number;
+    reason: string | null;
+    status: "pending" | "approved" | "rejected";
+    created_at: string;
+    approved_at: string | null;
+    approved_by: string | null;
+}

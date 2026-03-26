@@ -102,3 +102,27 @@ class SystemSettings(Base):
     setting_value = Column(String(500), nullable=False)
     description   = Column(String(200), nullable=True)
     updated_at    = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+
+
+
+class ProposalStatus(str, enum.Enum):
+    PENDING  = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class OrderProposal(Base):
+
+    __tablename__ = "order_proposals"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    product_code  = Column(String(100), nullable=False)
+    product_name  = Column(String(200), nullable=True)
+    category      = Column(String(100), nullable=True)
+    proposed_qty  = Column(Integer, nullable=False)
+    unit_price    = Column(Float, nullable=False, default=0.0)
+    reason        = Column(Text, nullable=True)
+    status        = Column(Enum(ProposalStatus), nullable=False, default=ProposalStatus.PENDING)
+    created_at    = Column(DateTime, nullable=False, default=func.now())
+    approved_at   = Column(DateTime, nullable=True)
+    approved_by   = Column(String(100), nullable=True)

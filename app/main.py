@@ -17,6 +17,7 @@ from app.api.scheduler_router import router as scheduler_router
 from app.api.sheets_router    import router as sheets_router
 from app.api.alert_router     import router as alert_router
 from app.api.settings_router  import router as settings_router
+from app.api.order_router import router as order_router
 
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
 
@@ -99,6 +100,7 @@ app.include_router(scheduler_router)
 app.include_router(sheets_router)
 app.include_router(alert_router)
 app.include_router(settings_router)
+app.include_router(order_router)
 
 
 @app.get("/scm/health")

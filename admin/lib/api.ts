@@ -63,6 +63,28 @@ export const chatQuery = (message: string, sessionId: string) =>
 export const getChatHistory = (sessionId: string, days = 7) =>
     apiClient.get(`/scm/chat/history?session_id=${encodeURIComponent(sessionId)}&days=${days}`);
 
+// --- Order Proposals ---
+export const getProposals = (status?: string, limit = 50, offset = 0) => {
+    const p = new URLSearchParams();
+    if (status) p.append("status", status);
+    p.append("limit", String(limit));
+    p.append("offset", String(offset));
+    return apiClient.get(`/scm/orders/proposals?${p}`);
+};
+
+export const generateProposals = () =>
+    apiClient.post("/scm/orders/proposals/generate");
+
+export const approveProposal = (id: number) =>
+    apiClient.patch(`/scm/orders/proposals/${id}/approve`);
+
+export const rejectProposal = (id: number) =>
+    apiClient.patch(`/scm/orders/proposals/${id}/reject`);
+
+export const updateProposal = (id: number, data: { proposed_qty?: number; unit_price?: number }) =>
+    apiClient.put(`/scm/orders/proposals/${id}`, data);
+
+
 // --- Health ---
 export const healthCheck = () =>
     apiClient.get("/scm/health");
