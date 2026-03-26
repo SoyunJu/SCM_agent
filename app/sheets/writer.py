@@ -113,11 +113,12 @@ def write_sales(df_sales: pd.DataFrame) -> None:
     try:
         ws       = get_spreadsheet().worksheet("일별판매")
         existing = ws.get_all_records()
-        today_str = date.today().strftime("%Y-%m-%d")
         if existing:
             existing_df = pd.DataFrame(existing)
-            if "날짜" in existing_df.columns:
-                existing_df = existing_df[existing_df["날짜"].astype(str) != today_str]
+            if "날짜" in existing_df.columns and "날짜" in df_sales.columns:
+                # 중복 insert 방지
+                incoming_dates = set(df_sales["날짜"].astype(str).unique())
+                existing_df = existing_df[~existing_df["날짜"].astype(str).isin(incoming_dates)]
             combined = pd.concat([existing_df, df_sales], ignore_index=True)
             _clear_and_write(ws, combined)
         else:
@@ -127,6 +128,7 @@ def write_sales(df_sales: pd.DataFrame) -> None:
     except Exception as e:
         logger.error(f"일별판매 갱신 실패: {e}")
         raise
+
 
 
 def write_stock(df_stock: pd.DataFrame) -> None:

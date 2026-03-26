@@ -168,3 +168,39 @@ export const getOrders = (params?: { status?: string; days?: number; page?: numb
     return apiClient.get(`/scm/sheets/orders?${p}`);
 };
 
+// --- Admin Users ---
+export const getAdminUsers = () =>
+    apiClient.get("/scm/admin/users");
+
+export const createAdminUser = (data: {
+    username:       string;
+    password:       string;
+    role:           string;
+    slack_user_id?: string;
+    email?:         string;
+}) => apiClient.post("/scm/admin/users", data);
+
+export const updateAdminUser = (id: number, data: {
+    role?:          string;
+    slack_user_id?: string;
+    email?:         string;
+    is_active?:     boolean;
+}) => apiClient.put(`/scm/admin/users/${id}`, data);
+
+export const deleteAdminUser = (id: number) =>
+    apiClient.delete(`/scm/admin/users/${id}`);
+
+export const changeMyPassword = (data: {
+    current_password: string;
+    new_password:     string;
+}) => apiClient.put("/scm/admin/me/password", data);
+
+// --- 분석 통계 ---
+export const getAbcStats = (days = 90) =>
+    apiClient.get(`/scm/sheets/stats/abc?days=${days}`);
+
+export const getDemandForecast = (forecastDays = 14) =>
+    apiClient.get(`/scm/sheets/stats/demand?forecast_days=${forecastDays}`);
+
+export const getTurnoverStats = (days = 30) =>
+    apiClient.get(`/scm/sheets/stats/turnover?days=${days}`);

@@ -3,6 +3,7 @@ from sqlalchemy import desc
 from loguru import logger
 from typing import Optional, Any
 from datetime import datetime, timedelta
+from app.db.models import AdminUser, AdminRole
 
 from app.db.models import (
     ReportExecution, AnomalyLog, ScheduleConfig, ChatHistory, SystemSettings,
@@ -184,3 +185,77 @@ def upsert_setting(
 
 def get_all_settings(db: Session) -> list[SystemSettings]:
     return db.query(SystemSettings).all()
+
+
+# --- User ---
+
+def get_admin_user_by_username(db: Session, username: str) -> AdminUser | None:
+    return (
+        db.query(AdminUser)
+        .filter(AdminUser.username == username, AdminUser.is_active == True)
+        .first()
+    )
+
+
+def list_admin_users(db: Session) -> list[AdminUser]:
+    return db.query(AdminUser).order_by(AdminUser.created_at).all()
+
+
+def create_admin_user(
+        db: Session,
+        username: str,
+        hashed_password: str,
+        role: AdminRole = AdminRole.ADMIN,
+        slack_user_id: str | None = None,
+        email: str | None = None,
+) -> AdminUser:
+    record = AdminUser(
+        username=username,
+        hashed_password=hashed_password,
+        role=role,
+        slack_user_id=slack_user_id,
+        email=email,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def update_admin_user(
+        db: Session,
+        user_id: int,
+        role: AdminRole | None = None,
+        slack_user_id: str | None = None,
+        email: str | None = None,
+        is_active: bool | None = None,
+        hashed_password: str | None = None,
+) -> AdminUser | None:
+    record = db.query(AdminUser).filter(AdminUser.id == user_id).first()
+    if not record:
+        return None
+    if role            is not None: record.role            = role
+    if slack_user_id   is not None: record.slack_user_id   = slack_user_id
+    if email           is not None: record.email           = email
+    if is_active       is not None: record.is_active       = is_active
+    if hashed_password is not None: record.hashed_password = hashed_password
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def delete_admin_user(db: Session, user_id: int) -> bool:
+    record = db.query(AdminUser).filter(AdminUser.id == user_id).first()
+    if not record:
+        return False
+    db.delete(record)
+    db.commit()
+    return True
+
+
+def update_last_login(db: Session, user_id: int) -> None:
+    from datetime import datetime
+    record = db.query(AdminUser).filter(AdminUser.id == user_id).first()
+    if record:
+        record.last_login_at = datetime.now()
+        db.commit()

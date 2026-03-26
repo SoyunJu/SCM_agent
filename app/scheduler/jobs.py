@@ -17,7 +17,8 @@ from app.analyzer.sales_analyzer import run_sales_analysis
 from app.ai.sentiment_analyzer import batch_analyze_sales_anomalies
 from app.ai.insight_generator import generate_daily_insight
 from app.report.pdf_generator import generate_daily_pdf
-from app.notifier.slack_notifier import send_daily_report_notification
+from app.notifier.notifier import notify_daily_report, notify_anomaly_alert
+
 from app.db.connection import SessionLocal
 from app.db.repository import (
     create_report_execution, update_report_execution,
@@ -169,25 +170,19 @@ def run_daily_job(
         except Exception as pdf_err:
             logger.error(f"PDF 생성 실패 (Slack/DB는 계속 진행): {pdf_err}")
 
-        # --- 7. Slack ---
-        logger.info("[7/7] Slack 전송")
-        if pdf_path:
-            slack_ok = send_daily_report_notification(
+            # --- 7. 알림 발송 (Slack / Email / Both) ---
+            logger.info("[7/7] 알림 발송")
+            notify_daily_report(
                 report_date=date.today().strftime("%Y-%m-%d"),
                 total_products=len(df_master),
                 stock_anomaly_count=len(stock_anomalies),
                 sales_anomaly_count=len(sales_anomalies),
                 risk_level=insight.get("risk_level", "medium"),
                 pdf_path=pdf_path,
-            )
-        else:
-            from app.notifier.slack_notifier import send_message
-            send_message(
-                f" 일일 보고서 완료 (PDF 생성 실패)\n"
-                f"총 {len(df_master)}개 상품 | 재고이상 {len(stock_anomalies)}건 | 판매이상 {len(sales_anomalies)}건\n"
-                f"위험도: {insight.get('risk_level', 'medium').upper()}"
+                db=db,
             )
             slack_ok = True
+
 
         # --- 분석결과 시트 기록 ---
         try:
@@ -220,14 +215,13 @@ def run_daily_job(
                 severity=Severity(item["severity"]),
             )
 
-        # --- SSE 알림 ---
+            # --- SSE + 알림 ---
         critical_items = [
             i for i in list(stock_anomalies) + list(sales_anomalies)
             if str(i.get("severity", "")) in ("critical", "high")
         ]
         if critical_items:
             from app.api.alert_router import sync_broadcast_alert
-            from app.notifier.slack_notifier import send_message
 
             for item in critical_items:
                 sync_broadcast_alert({
@@ -239,13 +233,13 @@ def run_daily_job(
                     "message":      f"[긴급] {item.get('product_name')} - {item.get('anomaly_type')}",
                 })
 
-            send_message(
-                f"🔴 긴급 이상 징후 {len(critical_items)}건!\n"
-                + "\n".join(
-                    f"• {i.get('product_name')} ({i.get('product_code')})"
-                    for i in critical_items[:5]
+                notify_anomaly_alert(
+                    product_name=item.get("product_name", ""),
+                    anomaly_type=str(item.get("anomaly_type", "")),
+                    severity=str(item.get("severity", "")),
+                    message=f"{item.get('product_name')} ({item.get('product_code')}) 이상 감지",
+                    db=db,
                 )
-            )
 
         update_report_execution(db=db, record_id=execution_id, status=ExecutionStatus.SUCCESS, slack_sent=slack_ok)
         update_last_run(db, "daily_report")

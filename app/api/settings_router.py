@@ -23,6 +23,8 @@ DEFAULT_SETTINGS: dict[str, tuple[str, str]] = {
     "SALES_SURGE_THRESHOLD":  ("50",  "판매 급등 기준 (%)"),
     "SALES_DROP_THRESHOLD":   ("50",  "판매 급락 기준 (%)"),
     "SHEETS_CACHE_TTL":       ("300", "Google Sheets 캐시 유효 시간 (초)"),
+    "ALERT_CHANNEL":      ("slack", "알림 채널 (slack | email | both)"),
+    "ALERT_MIN_SEVERITY": ("high",  "알림 최소 심각도 (low | medium | high | critical)"),
 }
 
 

@@ -127,3 +127,24 @@ class OrderProposal(Base):
     approved_by   = Column(String(100), nullable=True)
     slack_ts      = Column(String(50), nullable=True)
     slack_channel = Column(String(50), nullable=True)
+
+
+
+class AdminRole(str, enum.Enum):
+    SUPERADMIN = "superadmin"
+    ADMIN      = "admin"
+    READONLY   = "readonly"
+
+
+class AdminUser(Base):
+    __tablename__ = "admin_users"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    username        = Column(String(50), nullable=False, unique=True)
+    hashed_password = Column(String(255), nullable=False)
+    role            = Column(Enum(AdminRole), nullable=False, default=AdminRole.ADMIN)
+    slack_user_id   = Column(String(50), nullable=True)    # Slack Member ID (예: U012ABCDE)
+    email           = Column(String(200), nullable=True)
+    is_active       = Column(Boolean, nullable=False, default=True)
+    created_at      = Column(DateTime, nullable=False, default=func.now())
+    last_login_at   = Column(DateTime, nullable=True)

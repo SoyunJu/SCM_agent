@@ -95,3 +95,15 @@ export interface OrderProposal {
     approved_at: string | null;
     approved_by: string | null;
 }
+
+
+export interface AdminUser {
+    id:            number;
+    username:      string;
+    role:          "superadmin" | "admin" | "readonly";
+    slack_user_id: string | null;
+    email:         string | null;
+    is_active:     boolean;
+    created_at:    string;
+    last_login_at: string | null;
+}

@@ -7,18 +7,22 @@ import {
     LayoutDashboard, AlertTriangle, FileText,
     MessageSquare, LogOut, Bell, Database,
     Calendar, BarChart2, X,
+    ShoppingCart, Settings, Users,
 } from "lucide-react";
 import { useAlerts } from "@/lib/useAlerts";
 import { AlertMessage } from "@/lib/types";
 
 const NAV_ITEMS = [
-    { href: "/dashboard",             icon: LayoutDashboard, label: "대시보드"    },
-    { href: "/dashboard/anomalies",   icon: AlertTriangle,   label: "이상 징후"   },
-    { href: "/dashboard/reports",     icon: FileText,        label: "보고서"      },
-    { href: "/dashboard/stats",       icon: BarChart2,       label: "통계"        },
-    { href: "/dashboard/sheets",      icon: Database,        label: "데이터 시트" },
-    { href: "/dashboard/scheduler",   icon: Calendar,        label: "스케줄 관리" },
-    { href: "/dashboard/chat",        icon: MessageSquare,   label: "AI 챗봇"     },
+    { href: "/dashboard",             icon: LayoutDashboard, label: "대시보드",    superadminOnly: false },
+    { href: "/dashboard/anomalies",   icon: AlertTriangle,   label: "이상 징후",   superadminOnly: false },
+    { href: "/dashboard/reports",     icon: FileText,        label: "보고서",      superadminOnly: false },
+    { href: "/dashboard/stats",       icon: BarChart2,       label: "통계",        superadminOnly: false },
+    { href: "/dashboard/sheets",      icon: Database,        label: "데이터 시트", superadminOnly: false },
+    { href: "/dashboard/scheduler",   icon: Calendar,        label: "스케줄 관리", superadminOnly: false },
+    { href: "/dashboard/orders",      icon: ShoppingCart,    label: "발주 관리",   superadminOnly: false },
+    { href: "/dashboard/chat",        icon: MessageSquare,   label: "AI 챗봇",     superadminOnly: false },
+    { href: "/dashboard/settings",    icon: Settings,        label: "설정",        superadminOnly: false },
+    { href: "/dashboard/admin-users", icon: Users,           label: "관리자 관리", superadminOnly: true  },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -26,9 +30,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const pathname            = usePathname();
     const { alerts, unreadCount, clearUnread } = useAlerts();
     const [showAlerts, setShowAlerts] = useState(false);
+    const [userRole, setUserRole]     = useState<string>("");   // ← 추가
 
     useEffect(() => {
         if (!localStorage.getItem("access_token")) router.push("/login");
+        // role 조회 (관리자 관리 탭 조건부 표시용)
+        const token = localStorage.getItem("access_token");
+        if (!token) return;
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/scm/auth/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+        })
+            .then((r) => r.json())
+            .then((d) => setUserRole(d.role ?? ""))
+            .catch(() => {});
     }, [router]);
 
     const handleLogout = () => {
@@ -41,6 +55,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (!showAlerts) clearUnread();
     };
 
+    // superadminOnly 항목은 role이 superadmin일 때만 렌더링
+    const visibleNavItems = NAV_ITEMS.filter(
+        (item) => !item.superadminOnly || userRole === "superadmin"
+    );
+
     return (
         <div className="flex min-h-screen bg-gray-50">
             {/* 사이드바 */}
@@ -51,7 +70,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </div>
 
                 <nav className="flex-1 p-4 space-y-1">
-                    {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
+                    {visibleNavItems.map(({ href, icon: Icon, label }) => {
                         const active = pathname === href;
                         return (
                             <Link key={href} href={href}

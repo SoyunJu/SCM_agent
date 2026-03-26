@@ -152,14 +152,11 @@ async def get_stock_stats(
         from app.db.connection import SessionLocal
         from app.db.repository import get_anomaly_logs
 
-        df_stock = read_stock()
-        df_master = read_product_master()
-        df = df_master.merge(df_stock, on="상품코드", how="inner")
+        df_stock  = read_stock()
+        df = df_master.merge(df_stock, on="상품코드", how="left")
 
-        # 현재재고를 숫자로 강제 변환 (빈 문자열/None 방어)
         df["현재재고"] = pd.to_numeric(df["현재재고"], errors="coerce").fillna(0).astype(int)
 
-        # 재고 > 0 인 상품만 TOP 20
         stock_items = (
             df[df["현재재고"] > 0]
             .nlargest(20, "현재재고")[["상품코드", "상품명", "현재재고"]]
@@ -242,3 +239,58 @@ async def get_orders(
     except Exception as e:
         logger.error(f"주문 조회 실패: {e}")
         return {"total": 0, "page": 1, "page_size": page_size, "total_pages": 0, "items": [], "error": str(e)}
+
+
+
+@router.get("/stats/abc")
+async def get_abc_stats(
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+        days: int = 90,
+):
+    try:
+        import pandas as pd
+        from app.analyzer.abc_analyzer import run_abc_analysis
+
+        df_master = read_product_master()
+        df_sales  = read_sales()
+        items     = run_abc_analysis(df_master, df_sales, days=days)
+        return {"days": days, "items": items}
+    except Exception as e:
+        logger.error(f"ABC 분석 조회 실패: {e}")
+        return {"days": days, "items": [], "error": str(e)}
+
+
+@router.get("/stats/demand")
+async def get_demand_forecast(
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+        forecast_days: int = 14,
+):
+    try:
+        from app.analyzer.demand_forecaster import run_demand_forecast_all
+
+        df_master = read_product_master()
+        df_sales  = read_sales()
+        df_stock  = read_stock()
+        items     = run_demand_forecast_all(df_master, df_sales, df_stock, forecast_days=forecast_days)
+        return {"forecast_days": forecast_days, "items": items}
+    except Exception as e:
+        logger.error(f"수요 예측 조회 실패: {e}")
+        return {"forecast_days": forecast_days, "items": [], "error": str(e)}
+
+
+@router.get("/stats/turnover")
+async def get_turnover_stats(
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+        days: int = 30,
+):
+    try:
+        from app.analyzer.turnover_analyzer import calc_inventory_turnover
+
+        df_master = read_product_master()
+        df_sales  = read_sales()
+        df_stock  = read_stock()
+        items     = calc_inventory_turnover(df_master, df_sales, df_stock, days=days)
+        return {"days": days, "items": items}
+    except Exception as e:
+        logger.error(f"재고 회전율 조회 실패: {e}")
+        return {"days": days, "items": [], "error": str(e)}

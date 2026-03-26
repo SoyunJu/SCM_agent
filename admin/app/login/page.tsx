@@ -8,26 +8,15 @@ export default function LoginPage() {
     const router = useRouter();
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
-    const [error, setError] = useState("");
-    const [loading, setLoading] = useState(false);
-
-    // SHA-256 해싱 유틸
-    const hashSHA256 = async (text: string): Promise<string> => {
-        const encoder = new TextEncoder();
-        const data    = encoder.encode(text);
-        const hashBuf = await crypto.subtle.digest("SHA-256", data);
-        return Array.from(new Uint8Array(hashBuf))
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join("");
-    };
+    const [error, setError]       = useState("");
+    const [loading, setLoading]   = useState(false);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError("");
         try {
-            const hashedPassword = await hashSHA256(password);
-            const data = await login(username, hashedPassword);
+            const data = await login(username, password);
             localStorage.setItem("access_token", data.access_token);
             router.push("/dashboard");
         } catch {
@@ -41,7 +30,7 @@ export default function LoginPage() {
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
             <div className="bg-white rounded-2xl shadow-lg p-10 w-full max-w-md">
                 <h1 className="text-2xl font-bold text-gray-800 mb-2">SCM Agent</h1>
-                <p className="text-gray-500 text-sm mb-8">재고·판매 자동 분석 시스템</p>
+                <p className="text-gray-500 text-sm mb-8">재고·발주 자동 분석 시스템</p>
 
                 <form onSubmit={handleLogin} className="space-y-5">
                     <div>

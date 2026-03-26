@@ -40,6 +40,16 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str = "admin1!"
 
+    # Email (SMTP)
+    smtp_host:     str  = ""
+    smtp_port:     int  = 587
+    smtp_user:     str  = ""
+    smtp_password: str  = ""
+    smtp_from:     str  = "SCM Agent <scmagent@test.com>"      # 발신자 표시명+주소 예: "SCM Agent <noreply@example.com>"
+    alert_email_to: str = ""      # 수신자 (쉼표 구분 다중 지원)
+    smtp_tls:      bool = True
+
+
     # Scheduler (메인 보고서)
     schedule_hour: int = 0
     schedule_minute: int = 0

@@ -21,6 +21,8 @@ const LABELS: Record<string, string> = {
     SALES_SURGE_THRESHOLD:   "판매 급등 기준 (%)",
     SALES_DROP_THRESHOLD:    "판매 급락 기준 (%)",
     SHEETS_CACHE_TTL:        "Google Sheets 캐시 시간 (초)",
+    ALERT_CHANNEL:      "알림 채널",
+    ALERT_MIN_SEVERITY: "알림 최소 심각도",
 };
 
 const GROUPS = [
@@ -36,6 +38,10 @@ const GROUPS = [
     {
         title: "시스템 설정",
         keys: ["CHAT_HISTORY_DAYS", "SHEETS_CACHE_TTL"],
+    },
+    {
+        title: "알림 설정",
+        keys: ["ALERT_CHANNEL", "ALERT_MIN_SEVERITY"],
     },
 ];
 
@@ -120,12 +126,35 @@ export default function SettingsPage() {
                                         <p className="text-xs text-gray-400 mt-0.5">{item.description}</p>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <input
-                                            type="number"
-                                            value={values[key] ?? item.value}
-                                            onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))}
-                                            className="w-24 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                        />
+                                        {key === "ALERT_CHANNEL" ? (
+                                            <select
+                                                value={values[key] ?? item.value}
+                                                onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))}
+                                                className="w-40 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                            >
+                                                <option value="slack">Slack만</option>
+                                                <option value="email">이메일만</option>
+                                                <option value="both">Slack + 이메일</option>
+                                            </select>
+                                        ) : key === "ALERT_MIN_SEVERITY" ? (
+                                            <select
+                                                value={values[key] ?? item.value}
+                                                onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))}
+                                                className="w-40 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                            >
+                                                <option value="low">낮음 이상</option>
+                                                <option value="medium">보통 이상</option>
+                                                <option value="high">높음 이상</option>
+                                                <option value="critical">긴급만</option>
+                                            </select>
+                                        ) : (
+                                            <input
+                                                type="number"
+                                                value={values[key] ?? item.value}
+                                                onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))}
+                                                className="w-24 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                            />
+                                        )}
                                         {values[key] !== item.default && (
                                             <button
                                                 onClick={() => handleReset(key)}
