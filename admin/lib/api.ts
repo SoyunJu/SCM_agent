@@ -39,11 +39,11 @@ export const login = async (username: string, password: string) => {
 };
 
 // --- Report ---
-export const triggerReport = () =>
-    apiClient.post("/scm/report/run");
+export const triggerReport = (filters?: { severity_filter?: string[] | null; category_filter?: string[] | null }) =>
+    apiClient.post("/scm/report/run", filters ?? {});
 
-export const getReportHistory = (limit = 20) =>
-    apiClient.get(`/scm/report/history?limit=${limit}`);
+export const getReportHistory = (limit = 5, offset = 0) =>
+    apiClient.get(`/scm/report/history?limit=${limit}&offset=${offset}`);
 
 export const getAnomalies = (isResolved?: boolean, limit = 50) => {
     const params = new URLSearchParams();

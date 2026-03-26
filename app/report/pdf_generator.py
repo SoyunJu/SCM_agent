@@ -1,6 +1,6 @@
 
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
 from weasyprint import HTML
 from loguru import logger
 from app.report.template import build_daily_report_html
@@ -23,7 +23,7 @@ def generate_daily_pdf(
 
     _ensure_reports_dir()
 
-    filename = f"daily_report_{report_date.strftime('%Y%m%d')}.pdf"
+    filename = f"daily_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
     output_path = REPORTS_DIR / filename
 
     try:

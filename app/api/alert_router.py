@@ -83,3 +83,18 @@ async def get_unread_count(
         return {"critical": critical, "high": high, "total": critical + high}
     except Exception as e:
         return {"critical": 0, "high": 0, "total": 0, "error": str(e)}
+
+
+_main_loop: asyncio.AbstractEventLoop | None = None
+
+
+def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
+    global _main_loop
+    _main_loop = loop
+
+
+def sync_broadcast_alert(alert: dict) -> None:
+    if _main_loop and _main_loop.is_running():
+        asyncio.run_coroutine_threadsafe(broadcast_alert(alert), _main_loop)
+    else:
+        logger.warning("메인 루프 미등록 또는 미실행 — SSE 알림 스킵")

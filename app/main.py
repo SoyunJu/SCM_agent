@@ -45,9 +45,36 @@ async def lifespan(app: FastAPI):
     init_db()
     _setup_scheduler()
     scheduler.start()
+
+    # 메인 이벤트 루프 등록 (스레드 → SSE 알림 브릿지)
+    from app.api.alert_router import set_main_loop
+    set_main_loop(asyncio.get_event_loop())
+
+    # 시트 캐시 워밍업 (백그라운드)
+    async def _warmup():
+        try:
+            await asyncio.to_thread(_warmup_sheets)
+        except Exception:
+            pass
+
+    asyncio.create_task(_warmup())
+
     yield
-    scheduler.shutdown()
+
+    scheduler.shutdown(wait=False)
     logger.info("################## SCM Agent 서버 종료 ##################")
+
+
+def _warmup_sheets() -> None:
+    try:
+        from app.sheets.reader import read_product_master, read_sales, read_stock
+        read_product_master()
+        read_sales()
+        read_stock()
+        logger.info("시트 캐시 워밍업 완료")
+    except Exception as e:
+        logger.warning(f"캐시 워밍업 실패(무시): {e}")
+
 
 
 app = FastAPI(

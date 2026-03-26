@@ -10,6 +10,7 @@ from app.crawler.order_scraper import generate_orders
 from app.sheets.writer import (
     write_product_master, write_stock_upsert, write_sales, write_stock,
     upsert_master_from_excel, upsert_stock_from_excel, write_orders,
+    write_analysis_result,
 )
 from app.analyzer.stock_analyzer import run_stock_analysis
 from app.analyzer.sales_analyzer import run_sales_analysis
@@ -54,18 +55,20 @@ def sync_sheets_only() -> dict:
     if not df_crawled.empty:
         write_product_master(df_crawled)
         write_stock_upsert(df_crawled)
-
     if os.path.exists(EXCEL_PATH):
         _sync_excel_to_sheets(EXCEL_PATH)
     logger.info("===== Sheets 동기화 완료 =====")
     return {"crawled": len(df_crawled) if not df_crawled.empty else 0}
 
 
-def run_daily_job(execution_id: int | None = None) -> None:
+def run_daily_job(
+        execution_id: int | None = None,
+        severity_filter: list[str] | None = None,
+        category_filter: list[str] | None = None,
+) -> None:
     logger.info("========== 일일 스케줄 작업 시작 ==========")
     db = SessionLocal()
 
-    # execution_id가 외부에서 전달되면 재사용, 없으면 새로 생성
     if execution_id is None:
         execution = create_report_execution(db, ReportType.DAILY)
         execution_id = execution.id
@@ -77,7 +80,7 @@ def run_daily_job(execution_id: int | None = None) -> None:
             execution_id = execution.id
 
     try:
-        # --- 런타임 설정 읽기 ---
+        # --- 런타임 설정 ---
         safety_stock_days    = int(get_setting(db, "SAFETY_STOCK_DAYS", "7"))
         safety_stock_default = int(get_setting(db, "SAFETY_STOCK_DEFAULT", "10"))
         critical_days        = int(get_setting(db, "LOW_STOCK_CRITICAL_DAYS", "1"))
@@ -104,12 +107,16 @@ def run_daily_job(execution_id: int | None = None) -> None:
         logger.info("[2/7] 재고/판매 분석")
         stock_anomalies = run_stock_analysis(
             df_master, df_stock, df_sales,
-            safety_stock_days=safety_stock_days, safety_stock_default=safety_stock_default,
-            critical_days=critical_days, high_days=high_days, medium_days=medium_days,
+            safety_stock_days=safety_stock_days,
+            safety_stock_default=safety_stock_default,
+            critical_days=critical_days,
+            high_days=high_days,
+            medium_days=medium_days,
         )
         sales_anomalies = run_sales_analysis(
             df_master, df_sales,
-            surge_threshold=surge_threshold, drop_threshold=drop_threshold,
+            surge_threshold=surge_threshold,
+            drop_threshold=drop_threshold,
         )
 
         # --- 4. 주문 동기화 ---
@@ -118,30 +125,44 @@ def run_daily_job(execution_id: int | None = None) -> None:
             product_codes = df_master["상품코드"].tolist()
             orders = generate_orders(product_codes)
             if orders:
-                # 상품명 채우기
                 name_map = dict(zip(df_master["상품코드"], df_master["상품명"]))
                 for o in orders:
                     o["상품명"] = name_map.get(o["상품코드"], "")
-                df_orders = pd.DataFrame(orders)
-                write_orders(df_orders)
+                write_orders(pd.DataFrame(orders))
         except Exception as e:
-            logger.warning(f"주문 동기화 실패 (스킵): {e}")
+            logger.warning(f"주문 동기화 실패(스킵): {e}")
 
         # --- 5. 감성 분석 ---
         logger.info("[4/7] 감성 분석")
         sales_anomalies = batch_analyze_sales_anomalies(sales_anomalies)
 
         # --- 6. AI 인사이트 + PDF ---
-        logger.info("[5/7] AI 인사이트 생성")
+        logger.info("[5/7] AI 인사이트")
         insight = generate_daily_insight(
-            stock_anomalies=stock_anomalies, sales_anomalies=sales_anomalies,
+            stock_anomalies=stock_anomalies,
+            sales_anomalies=sales_anomalies,
             total_products=len(df_master),
         )
+
+        # 심각도/카테고리 필터 적용 (선택적)
+        filtered_stock = [
+            a for a in stock_anomalies
+            if (not severity_filter or a["severity"] in severity_filter)
+               and (not category_filter or a.get("category") in category_filter)
+        ]
+        filtered_sales = [
+            a for a in sales_anomalies
+            if (not severity_filter or a["severity"] in severity_filter)
+               and (not category_filter or a.get("category") in category_filter)
+        ]
+
         logger.info("[6/7] PDF 보고서 생성")
         pdf_path = generate_daily_pdf(
-            report_date=date.today(), total_products=len(df_master),
-            stock_anomalies=[dict(a) for a in stock_anomalies],
-            sales_anomalies=sales_anomalies, insight=insight,
+            report_date=date.today(),
+            total_products=len(df_master),
+            stock_anomalies=[dict(a) for a in filtered_stock],
+            sales_anomalies=filtered_sales,
+            insight=insight,
         )
 
         # --- 7. Slack ---
@@ -155,47 +176,62 @@ def run_daily_job(execution_id: int | None = None) -> None:
             pdf_path=pdf_path,
         )
 
+        # --- 분석결과 시트 기록 ---
+        try:
+            df_analysis = pd.DataFrame(list(stock_anomalies) + list(sales_anomalies))
+            if not df_analysis.empty:
+                write_analysis_result(df_analysis)
+        except Exception as e:
+            logger.warning(f"분석결과 시트 기록 실패(스킵): {e}")
+
         # --- DB 저장 ---
         for item in stock_anomalies:
             create_anomaly_log(
-                db=db, product_code=item["product_code"], product_name=item["product_name"],
+                db=db,
+                product_code=item["product_code"],
+                product_name=item["product_name"],
                 category=item.get("category"),
-                anomaly_type=AnomalyType(item["anomaly_type"]), severity=Severity(item["severity"]),
-                current_stock=item.get("current_stock"), daily_avg_sales=item.get("daily_avg_sales"),
+                anomaly_type=AnomalyType(item["anomaly_type"]),
+                severity=Severity(item["severity"]),
+                current_stock=item.get("current_stock"),
+                daily_avg_sales=item.get("daily_avg_sales"),
                 days_until_stockout=item.get("days_until_stockout"),
             )
         for item in sales_anomalies:
             create_anomaly_log(
-                db=db, product_code=item["product_code"], product_name=item["product_name"],
+                db=db,
+                product_code=item["product_code"],
+                product_name=item["product_name"],
                 category=item.get("category"),
-                anomaly_type=AnomalyType(item["anomaly_type"]), severity=Severity(item["severity"]),
+                anomaly_type=AnomalyType(item["anomaly_type"]),
+                severity=Severity(item["severity"]),
             )
 
-        # SSE 알림
+        # --- SSE 알림 ---
         critical_items = [
-            i for i in list(stock_anomalies) + sales_anomalies
+            i for i in list(stock_anomalies) + list(sales_anomalies)
             if str(i.get("severity", "")) in ("critical", "high")
         ]
         if critical_items:
-            import asyncio
-            from app.api.alert_router import broadcast_alert
+            from app.api.alert_router import sync_broadcast_alert
             from app.notifier.slack_notifier import send_message
+
             for item in critical_items:
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        asyncio.create_task(broadcast_alert({
-                            "type": "critical_anomaly", "severity": str(item.get("severity", "")),
-                            "product_code": item.get("product_code", ""),
-                            "product_name": item.get("product_name", ""),
-                            "anomaly_type": str(item.get("anomaly_type", "")),
-                            "message": f"[긴급] {item.get('product_name')} - {item.get('anomaly_type')}",
-                        }))
-                except Exception as e:
-                    logger.warning(f"SSE 알림 실패: {e}")
+                sync_broadcast_alert({
+                    "type":         "critical_anomaly",
+                    "severity":     str(item.get("severity", "")),
+                    "product_code": item.get("product_code", ""),
+                    "product_name": item.get("product_name", ""),
+                    "anomaly_type": str(item.get("anomaly_type", "")),
+                    "message":      f"[긴급] {item.get('product_name')} - {item.get('anomaly_type')}",
+                })
+
             send_message(
                 f"🔴 긴급 이상 징후 {len(critical_items)}건!\n"
-                + "\n".join(f"• {i.get('product_name')} ({i.get('product_code')})" for i in critical_items[:5])
+                + "\n".join(
+                    f"• {i.get('product_name')} ({i.get('product_code')})"
+                    for i in critical_items[:5]
+                )
             )
 
         update_report_execution(db=db, record_id=execution_id, status=ExecutionStatus.SUCCESS, slack_sent=slack_ok)

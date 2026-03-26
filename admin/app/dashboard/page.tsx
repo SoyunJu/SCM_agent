@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
     getAnomalies, getReportHistory, triggerReport,
-    getSalesStats, getStockStats,
+    getSalesStats, getStockStats, getReportStatus,
 } from "@/lib/api";
 import { AnomalyLog, ReportExecution, SalesStatItem } from "@/lib/types";
 import { AlertTriangle, Package, TrendingUp, FileText, Play, RefreshCw, Loader2 } from "lucide-react";
 import {
-    LineChart, Line, BarChart, Bar,
+    LineChart, Line, BarChart, Bar, Cell,
     XAxis, YAxis, CartesianGrid, Tooltip,
-    ResponsiveContainer, Legend, Cell,
+    ResponsiveContainer, Legend,
 } from "recharts";
 
 const SEVERITY_COLOR: Record<string, string> = {
@@ -27,18 +28,22 @@ const ANOMALY_KOR: Record<string, string> = {
     sales_surge: "판매 급등", sales_drop: "판매 급락",
     long_term_stock: "장기 재고",
 };
-
 const BAR_COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e"];
+const MAX_POLL = 30;
 
 export default function DashboardPage() {
-    const [anomalies, setAnomalies]     = useState<AnomalyLog[]>([]);
-    const [history, setHistory]         = useState<ReportExecution[]>([]);
-    const [salesStats, setSalesStats]   = useState<SalesStatItem[]>([]);
-    const [stockStats, setStockStats]   = useState<any>(null);
-    const [period, setPeriod]           = useState<"daily"|"weekly"|"monthly">("daily");
-    const [triggering, setTriggering]   = useState(false);
-    const [message, setMessage]         = useState("");
-    const [loading, setLoading]         = useState(true);
+    const router = useRouter();
+    const [anomalies, setAnomalies]   = useState<AnomalyLog[]>([]);
+    const [history, setHistory]       = useState<ReportExecution[]>([]);
+    const [salesStats, setSalesStats] = useState<SalesStatItem[]>([]);
+    const [stockStats, setStockStats] = useState<any>(null);
+    const [period, setPeriod]         = useState<"daily" | "weekly" | "monthly">("daily");
+    const [triggering, setTriggering] = useState(false);
+    const [polling, setPolling]       = useState(false);
+    const [message, setMessage]       = useState("");
+    const [loading, setLoading]       = useState(true);
+    const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
+    const pollCountRef = useRef(0);
 
     const fetchAll = async () => {
         setLoading(true);
@@ -49,43 +54,70 @@ export default function DashboardPage() {
                 getSalesStats(period),
                 getStockStats(),
             ]);
-            setAnomalies(anomRes.data.items);
-            setHistory(histRes.data.items);
-            setSalesStats(statsRes.data.items);
+            setAnomalies(anomRes.data.items ?? []);
+            setHistory(histRes.data.items ?? []);
+            setSalesStats(statsRes.data.items ?? []);
             setStockStats(stockRes.data);
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => { fetchAll(); }, []);
+    useEffect(() => {
+        fetchAll();
+        return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    }, []);
 
     useEffect(() => {
-        getSalesStats(period).then((res) => setSalesStats(res.data.items));
+        getSalesStats(period).then((res) => setSalesStats(res.data.items ?? []));
     }, [period]);
+
+    const startPolling = (executionId: number) => {
+        pollCountRef.current = 0;
+        setPolling(true);
+        pollRef.current = setInterval(async () => {
+            pollCountRef.current += 1;
+            try {
+                const res = await getReportStatus(executionId);
+                const { status, error_message } = res.data;
+                if (status !== "in_progress") {
+                    clearInterval(pollRef.current!);
+                    setPolling(false);
+                    if (status === "success") {
+                        setMessage("✅ 보고서 생성이 완료되었습니다.");
+                        fetchAll();
+                    } else {
+                        setMessage(`❌ 보고서 생성 실패: ${error_message ?? "알 수 없는 오류"}`);
+                    }
+                } else if (pollCountRef.current >= MAX_POLL) {
+                    clearInterval(pollRef.current!);
+                    setPolling(false);
+                    setMessage("⏱ 시간 초과. 새로 고침해주세요.");
+                }
+            } catch {
+                clearInterval(pollRef.current!);
+                setPolling(false);
+                setMessage("❌ 상태 확인 중 오류가 발생했습니다.");
+            }
+        }, 2000);
+    };
 
     const handleTrigger = async () => {
         setTriggering(true);
         setMessage("");
         try {
-            await triggerReport();
-            setMessage("✅ 보고서 생성이 시작되었습니다.");
-            // 3초 후 메시지 제거 및 데이터 리로드
-            setTimeout(() => {
-                setMessage("");
-                fetchAll();
-            }, 3000);
+            const res = await triggerReport();
+            const { execution_id } = res.data;
+            setMessage("⏳ 보고서 생성 중...");
+            startPolling(execution_id);
         } catch {
             setMessage("❌ 보고서 생성에 실패했습니다.");
-            setTimeout(() => setMessage(""), 3000);
         } finally {
             setTriggering(false);
         }
     };
 
     const lastRun = history[0];
-
-    // 카드에 표시할 수치는 stockStats의 집계값 사용 (정확도 향상)
     const severityCards = [
         { label: "미해결 이상 징후", value: stockStats?.total_anomalies ?? anomalies.length, icon: AlertTriangle, color: "text-orange-500" },
         { label: "긴급",            value: stockStats?.severity_counts?.critical ?? 0,       icon: Package,       color: "text-red-500"    },
@@ -94,7 +126,6 @@ export default function DashboardPage() {
             value: lastRun?.status === "success" ? "성공" : lastRun?.status ?? "-",
             icon: FileText, color: "text-blue-500" },
     ];
-
     const severityBarData = [
         { name: "긴급", count: stockStats?.severity_counts?.critical ?? 0 },
         { name: "높음", count: stockStats?.severity_counts?.high ?? 0 },
@@ -104,7 +135,6 @@ export default function DashboardPage() {
 
     return (
         <div className="space-y-6">
-            {/* 헤더 */}
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-2xl font-bold text-gray-800">대시보드</h2>
@@ -116,11 +146,11 @@ export default function DashboardPage() {
                     </button>
                     <button
                         onClick={handleTrigger}
-                        disabled={triggering}
+                        disabled={triggering || polling}
                         className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50"
                     >
-                        <Play size={14} />
-                        {triggering ? "생성 중..." : "보고서 즉시 생성"}
+                        {polling ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                        {polling ? "생성 중..." : triggering ? "요청 중..." : "보고서 즉시 생성"}
                     </button>
                 </div>
             </div>
@@ -129,7 +159,6 @@ export default function DashboardPage() {
                 <p className="text-sm text-gray-600 bg-gray-100 px-4 py-2 rounded-lg">{message}</p>
             )}
 
-            {/* 로딩 */}
             {loading ? (
                 <div className="flex items-center justify-center py-20">
                     <Loader2 size={32} className="animate-spin text-blue-500" />
@@ -149,20 +178,16 @@ export default function DashboardPage() {
                         ))}
                     </div>
 
-                    {/* 판매 통계 그래프 */}
+                    {/* 판매 추이 */}
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="font-semibold text-gray-700">판매 추이</h3>
                             <div className="flex gap-1">
-                                {(["daily","weekly","monthly"] as const).map((p) => (
-                                    <button
-                                        key={p}
-                                        onClick={() => setPeriod(p)}
-                                        className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
-                                            period === p
-                                                ? "bg-blue-600 text-white"
-                                                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                        }`}
+                                {(["daily", "weekly", "monthly"] as const).map((p) => (
+                                    <button key={p} onClick={() => setPeriod(p)}
+                                            className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
+                                                period === p ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                            }`}
                                     >
                                         {{ daily: "일별", weekly: "주별", monthly: "월별" }[p]}
                                     </button>
@@ -187,14 +212,17 @@ export default function DashboardPage() {
                         )}
                     </div>
 
-                    {/* 재고 현황 그래프 */}
+                    {/* 재고 차트 */}
                     {stockStats && (
                         <div className="grid grid-cols-2 gap-4">
-                            {/* 심각도별 이상 징후 */}
                             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
                                 <h3 className="font-semibold text-gray-700 mb-4">심각도별 이상 징후</h3>
                                 <ResponsiveContainer width="100%" height={180}>
-                                    <BarChart data={severityBarData}>
+                                    <BarChart
+                                        data={severityBarData}
+                                        onClick={() => router.push("/dashboard/anomalies")}
+                                        style={{ cursor: "pointer" }}
+                                    >
                                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                                         <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                                         <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
@@ -208,7 +236,6 @@ export default function DashboardPage() {
                                 </ResponsiveContainer>
                             </div>
 
-                            {/* 상품별 재고 TOP 10 */}
                             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
                                 <h3 className="font-semibold text-gray-700 mb-4">상품별 재고 TOP 10</h3>
                                 {(stockStats.stock_items?.length ?? 0) === 0 ? (
@@ -218,6 +245,8 @@ export default function DashboardPage() {
                                         <BarChart
                                             data={stockStats.stock_items?.slice(0, 10) ?? []}
                                             layout="vertical"
+                                            onClick={() => router.push("/dashboard/sheets")}
+                                            style={{ cursor: "pointer" }}
                                         >
                                             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                                             <XAxis type="number" tick={{ fontSize: 10 }} />
@@ -231,9 +260,12 @@ export default function DashboardPage() {
                         </div>
                     )}
 
+                    {/* 이상 징후 테이블 */}
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
-                        <div className="px-6 py-4 border-b border-gray-100">
+                        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                             <h3 className="font-semibold text-gray-700">미해결 이상 징후 (최근 10건)</h3>
+                            <button onClick={() => router.push("/dashboard/anomalies")}
+                                    className="text-xs text-blue-500 hover:underline">전체 보기</button>
                         </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
@@ -255,7 +287,10 @@ export default function DashboardPage() {
                                     </tr>
                                 ) : (
                                     anomalies.map((a) => (
-                                        <tr key={a.id} className="hover:bg-gray-50 transition">
+                                        <tr key={a.id}
+                                            onClick={() => router.push("/dashboard/anomalies")}
+                                            className="hover:bg-gray-50 transition cursor-pointer"
+                                        >
                                             <td className="px-6 py-3 font-mono text-gray-600">{a.product_code}</td>
                                             <td className="px-6 py-3 text-gray-700">{a.product_name}</td>
                                             <td className="px-6 py-3 text-gray-500">{a.category || "-"}</td>

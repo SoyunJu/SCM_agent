@@ -147,7 +147,6 @@ async def get_sales_stats(
 async def get_stock_stats(
         current_user: Annotated[TokenData, Depends(get_current_user)],
 ):
-    """재고 현황 통계 (심각도별 카운트 + 상품별 재고)"""
     try:
         import pandas as pd
         from app.db.connection import SessionLocal
@@ -157,10 +156,16 @@ async def get_stock_stats(
         df_master = read_product_master()
         df = df_master.merge(df_stock, on="상품코드", how="inner")
 
-        # 상품별 재고 (상위 20개)
-        stock_items = df.nlargest(20, "현재재고")[["상품코드", "상품명", "현재재고"]].to_dict(orient="records")
+        # 현재재고를 숫자로 강제 변환 (빈 문자열/None 방어)
+        df["현재재고"] = pd.to_numeric(df["현재재고"], errors="coerce").fillna(0).astype(int)
 
-        # 심각도별 미해결 이상 징후 카운트
+        # 재고 > 0 인 상품만 TOP 20
+        stock_items = (
+            df[df["현재재고"] > 0]
+            .nlargest(20, "현재재고")[["상품코드", "상품명", "현재재고"]]
+            .to_dict(orient="records")
+        )
+
         db = SessionLocal()
         try:
             records = get_anomaly_logs(db, is_resolved=False, limit=200)
@@ -181,6 +186,7 @@ async def get_stock_stats(
     except Exception as e:
         logger.error(f"재고 통계 조회 실패: {e}")
         return {"stock_items": [], "severity_counts": {}, "error": str(e)}
+
 
 
 

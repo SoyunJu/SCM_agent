@@ -30,28 +30,36 @@ def write_product_master(df_crawled: pd.DataFrame) -> None:
 
 
 def upsert_master_from_excel(df_sales: pd.DataFrame) -> None:
-    if "상품명" not in df_sales.columns:
-        return
-    try:
-        ws       = get_spreadsheet().worksheet("상품마스터")
-        existing = ws.get_all_records()
-        products = df_sales[["상품코드", "상품명"]].drop_duplicates(subset=["상품코드"])
 
-        existing_codes = {str(r["상품코드"]) for r in existing} if existing else set()
-        new_products   = products[~products["상품코드"].isin(existing_codes)]
+    try:
+        spreadsheet = get_spreadsheet()
+        ws = spreadsheet.worksheet("상품마스터")
+        existing = ws.get_all_records()
+        existing_codes = {r["상품코드"] for r in existing} if existing else set()
+
+        # 상품명 컬럼 없을 경우 방어
+        if "상품명" not in df_sales.columns:
+            df_sales = df_sales.copy()
+            df_sales["상품명"] = ""
+
+        new_products = (
+            df_sales[~df_sales["상품코드"].isin(existing_codes)]
+            [["상품코드", "상품명"]]
+            .drop_duplicates("상품코드")
+        )
         if new_products.empty:
             return
 
-        new_rows = [[str(r["상품코드"]), str(r["상품명"]), "", 10] for _, r in new_products.iterrows()]
-        if not existing:
-            _clear_and_write(ws, pd.DataFrame(new_rows, columns=["상품코드", "상품명", "카테고리", "안전재고기준"]))
-        else:
-            ws.append_rows(new_rows, value_input_option="USER_ENTERED")
+        new_products = new_products.copy()
+        new_products["카테고리"] = ""
+        new_products["안전재고기준"] = 10
+        rows = new_products[["상품코드", "상품명", "카테고리", "안전재고기준"]].values.tolist()
+        ws.append_rows(rows, value_input_option="USER_ENTERED")
         _invalidate("상품마스터")
-        logger.info(f"상품마스터: 엑셀 신규 {len(new_rows)}개 추가")
+        logger.info(f"상품마스터 신규 추가: {len(rows)}건")
     except Exception as e:
         logger.error(f"상품마스터 upsert 실패: {e}")
-        raise
+
 
 
 def write_stock_upsert(df_crawled: pd.DataFrame) -> None:

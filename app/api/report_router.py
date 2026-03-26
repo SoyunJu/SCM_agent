@@ -1,6 +1,7 @@
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 import asyncio
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -12,7 +13,9 @@ from app.db.models import ReportExecution
 from app.db.repository import (
     get_report_executions, get_report_execution_by_id,
     get_anomaly_logs, resolve_anomaly,
+    create_report_execution, update_report_execution,
 )
+from app.db.models import ExecutionStatus, ReportType
 from app.scheduler.jobs import run_daily_job
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -20,30 +23,41 @@ from sqlalchemy.orm import Session
 router = APIRouter(prefix="/scm/report", tags=["report"])
 
 
+class ReportRequest(BaseModel):
+    severity_filter: list[str] | None = None   # ["critical", "high"]
+    category_filter: list[str] | None = None   # ["Fiction", "Music"]
+
+
 @router.post("/run")
 async def trigger_report(
-        current_user: Annotated[TokenData, Depends(get_current_user)],
+        req: ReportRequest = Body(default_factory=ReportRequest),
+        current_user: Annotated[TokenData, Depends(get_current_user)] = None,
         db: Session = Depends(get_db),
 ):
-    from app.db.repository import create_report_execution
-    from app.db.models import ReportType
-    execution = create_report_execution(db, ReportType.MANUAL)
+    record = create_report_execution(db, report_type=ReportType.MANUAL)
 
     async def _run():
         from app.db.connection import SessionLocal
-        from app.db.repository import update_report_execution
-        from app.db.models import ExecutionStatus
         job_db = SessionLocal()
         try:
-            await asyncio.to_thread(run_daily_job, execution_id=execution.id)
+            await asyncio.to_thread(
+                run_daily_job,
+                record.id,
+                req.severity_filter,
+                req.category_filter,
+            )
         except Exception as e:
-            update_report_execution(job_db, execution.id, ExecutionStatus.FAILURE, error_message=str(e))
+            update_report_execution(job_db, record.id, ExecutionStatus.FAILURE, error_message=str(e))
         finally:
             job_db.close()
 
     asyncio.create_task(_run())
-    logger.info(f"보고서 수동 트리거: user={current_user.username}, execution_id={execution.id}")
-    return {"status": "triggered", "execution_id": execution.id, "message": "보고서 생성이 시작되었습니다."}
+    logger.info(f"보고서 수동 트리거: user={current_user.username}, id={record.id}, filters={req}")
+    return {
+        "status": "triggered",
+        "execution_id": record.id,
+        "message": "보고서 생성이 시작되었습니다.",
+    }
 
 
 @router.get("/status/{execution_id}")
@@ -52,7 +66,6 @@ async def get_report_status(
         current_user: Annotated[TokenData, Depends(get_current_user)],
         db: Session = Depends(get_db),
 ):
-
     record = get_report_execution_by_id(db, execution_id)
     if not record:
         raise HTTPException(status_code=404, detail="실행 이력을 찾을 수 없습니다.")
@@ -67,12 +80,13 @@ async def get_report_status(
 @router.get("/history")
 async def get_history(
         current_user: Annotated[TokenData, Depends(get_current_user)],
-        limit: int = 20,
+        limit: int = 5,
+        offset: int = 0,
         period: str | None = None,
         status: str | None = None,
         db: Session = Depends(get_db),
 ):
-    records = get_report_executions(db, limit=100)
+    records = get_report_executions(db, limit=500)
 
     if period:
         now = datetime.now()
@@ -83,9 +97,13 @@ async def get_history(
     if status and status != "all":
         records = [r for r in records if r.status.value == status]
 
-    records = records[:limit]
+    total = len(records)
+    records = records[offset: offset + limit]
+
     return {
-        "total": len(records),
+        "total":  total,
+        "offset": offset,
+        "limit":  limit,
         "items": [
             {
                 "id": r.id, "executed_at": str(r.executed_at),
@@ -140,7 +158,6 @@ async def get_anomalies(
         records = [r for r in records if r.anomaly_type.value == anomaly_type]
     if severity:
         records = [r for r in records if r.severity.value == severity]
-
     return {
         "total": len(records),
         "items": [
