@@ -8,13 +8,17 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel
 from loguru import logger
+from sqlalchemy.orm import Session
 
 from app.api.auth_router import get_current_user, TokenData
 from app.config import settings
 from app.notifier.slack_notifier import get_slack_client
 from app.ai.agent import run_agent
+from app.db.connection import get_db
+from app.db.repository import get_chat_history_recent
 
 router = APIRouter(prefix="/scm/chat", tags=["chat"])
+
 
 class ChatRequest(BaseModel):
     message: str
@@ -27,17 +31,10 @@ class ChatResponse(BaseModel):
     session_id: str
 
 
-# Slack 검증
-def _verify_slack_signature(
-        body: bytes,
-        timestamp: str,
-        signature: str,
-) -> bool:
-    # 5분 이상 지난 요청 거부
+def _verify_slack_signature(body: bytes, timestamp: str, signature: str) -> bool:
     if abs(time.time() - int(timestamp)) > 300:
         logger.warning("Slack 서명 검증 실패: 타임스탬프 만료")
         return False
-
     base = f"v0:{timestamp}:{body.decode('utf-8')}"
     expected = "v0=" + hmac.new(
         settings.slack_signing_secret.encode(),
@@ -47,14 +44,12 @@ def _verify_slack_signature(
     return hmac.compare_digest(expected, signature)
 
 
-
 def _run_agent_and_reply(
         user_message: str,
         user_id: str,
         channel_id: str,
         thread_ts: str,
 ) -> None:
-
     try:
         reply = run_agent(
             message=user_message,
@@ -71,18 +66,37 @@ def _run_agent_and_reply(
         logger.error(f"Slack Agent 실행 오류: {e}")
 
 
+@router.get("/history")
+async def get_history(
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+        session_id: str,
+        days: int = 7,
+        db: Session = Depends(get_db),
+):
+
+    records = get_chat_history_recent(db, session_id, days)
+    return {
+        "session_id": session_id,
+        "items": [
+            {
+                "role": r.role.value,
+                "message": r.message,
+                "created_at": str(r.created_at),
+            }
+            for r in records
+        ],
+    }
+
 
 @router.post("/slack/webhook")
 async def slack_webhook(request: Request, background_tasks: BackgroundTasks):
 
     body = await request.body()
-
-    # Slack URL 검증
     payload = await request.json()
+
     if payload.get("type") == "url_verification":
         return {"challenge": payload.get("challenge")}
 
-    # 서명 검증
     timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
     signature = request.headers.get("X-Slack-Signature", "")
 
@@ -90,7 +104,6 @@ async def slack_webhook(request: Request, background_tasks: BackgroundTasks):
         logger.warning("Slack 서명 검증 실패")
         raise HTTPException(status_code=403, detail="서명 검증 실패")
 
-    # Bot Self 메시지 무시 (무한루프 방지)
     event = payload.get("event", {})
     if event.get("bot_id") or event.get("subtype") == "bot_message":
         return {"status": "ignored"}
@@ -103,7 +116,6 @@ async def slack_webhook(request: Request, background_tasks: BackgroundTasks):
     if not user_message:
         return {"status": "empty_message"}
 
-    # 멘션 태그 제거
     user_message = re.sub(r"<@[A-Z0-9]+>", "", user_message).strip()
     if not user_message:
         return {"status": "empty_after_mention_strip"}
@@ -119,7 +131,6 @@ async def slack_webhook(request: Request, background_tasks: BackgroundTasks):
     except Exception as e:
         logger.warning(f"처리 중 메시지 전송 실패: {e}")
 
-    # Agent 백그라운드 실행
     background_tasks.add_task(
         _run_agent_and_reply,
         user_message=user_message,
@@ -136,14 +147,10 @@ async def chat_query(
         req: ChatRequest,
         current_user: Annotated[TokenData, Depends(get_current_user)],
 ):
-
     logger.info(f"챗봇 질의: user={current_user.username}, msg={req.message[:50]}")
-
-    # LangChain Agent 실행
     reply = run_agent(
-    message=req.message,
-    session_id=req.session_id,
-    user_id=current_user.username,
+        message=req.message,
+        session_id=req.session_id,
+        user_id=current_user.username,
     )
-
     return ChatResponse(reply=reply, session_id=req.session_id)

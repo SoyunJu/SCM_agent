@@ -8,6 +8,7 @@ from app.db.models import AnomalyType, Severity
 class StockAnomaly(TypedDict):
     product_code: str
     product_name: str
+    category: str
     anomaly_type: str
     current_stock: int
     safety_stock: int
@@ -18,12 +19,6 @@ class StockAnomaly(TypedDict):
 
 
 def _calc_severity_low_stock(days_until_stockout: float) -> Severity:
-    """
-    - 1일 이하  : CRITICAL
-    - 3일 이하  : HIGH
-    - 7일 이하  : MEDIUM
-    - 그 이상   : LOW
-    """
     if days_until_stockout <= 1:
         return Severity.CRITICAL
     elif days_until_stockout <= 3:
@@ -32,6 +27,12 @@ def _calc_severity_low_stock(days_until_stockout: float) -> Severity:
         return Severity.MEDIUM
     else:
         return Severity.LOW
+
+
+def _calc_safety_stock(daily_avg: float) -> int:
+    if daily_avg > 0:
+        return max(round(daily_avg * 7), 10)
+    return 10
 
 
 def detect_low_stock(
@@ -43,11 +44,9 @@ def detect_low_stock(
 
     results = []
 
-
     df_sales["날짜"] = pd.to_datetime(df_sales["날짜"])
     cutoff = df_sales["날짜"].max() - pd.Timedelta(days=days)
     recent_sales = df_sales[df_sales["날짜"] >= cutoff]
-    # 최근 N일 일평균 판매량 계산
     avg_sales = (
         recent_sales.groupby("상품코드")["판매수량"]
         .sum()
@@ -56,13 +55,13 @@ def detect_low_stock(
         .rename(columns={"판매수량": "일평균판매량"})
     )
 
-    # 마스터 + 재고 + 판매 병합
     df = df_master.merge(df_stock, on="상품코드", how="left")
     df = df.merge(avg_sales, on="상품코드", how="left")
-    # df["일평균판매량"] = df["일평균판매량"].fillna(0)
     df["일평균판매량"] = df["일평균판매량"].fillna(0).astype(float)
     df["현재재고"] = pd.to_numeric(df["현재재고"], errors="coerce").fillna(0)
-    df["안전재고기준"] = pd.to_numeric(df["안전재고기준"], errors="coerce").fillna(10)
+
+    # 동적 안전재고 계산 (평균 판매량 * 7일, 없으면 10)
+    df["안전재고기준"] = df["일평균판매량"].apply(_calc_safety_stock)
 
     df = df[df["상품코드"].isin(df_stock["상품코드"])]
     low_stock = df[df["현재재고"] <= df["안전재고기준"]]
@@ -70,15 +69,13 @@ def detect_low_stock(
     for _, row in low_stock.iterrows():
         avg = row["일평균판매량"]
         stock = row["현재재고"]
-
-        # 소진 예상일 계산 (판매 없으면 999일)
         days_until_stockout = round(stock / avg, 1) if avg > 0 else 999.0
-
         severity = _calc_severity_low_stock(days_until_stockout)
 
         results.append(StockAnomaly(
             product_code=str(row["상품코드"]),
             product_name=str(row["상품명"]),
+            category=str(row.get("카테고리", "")),
             anomaly_type=AnomalyType.LOW_STOCK,
             current_stock=int(stock),
             safety_stock=int(row["안전재고기준"]),
@@ -117,7 +114,8 @@ def detect_over_stock(
     df = df.merge(avg_sales, on="상품코드", how="left")
     df["일평균판매량"] = df["일평균판매량"].fillna(0)
     df["현재재고"] = pd.to_numeric(df["현재재고"], errors="coerce").fillna(0)
-    df["안전재고기준"] = pd.to_numeric(df["안전재고기준"], errors="coerce").fillna(10)
+
+    df["안전재고기준"] = df["일평균판매량"].apply(_calc_safety_stock)
 
     over_stock = df[df["현재재고"] >= df["안전재고기준"] * over_ratio]
 
@@ -129,6 +127,7 @@ def detect_over_stock(
         results.append(StockAnomaly(
             product_code=str(row["상품코드"]),
             product_name=str(row["상품명"]),
+            category=str(row.get("카테고리", "")),    # ← 추가
             anomaly_type=AnomalyType.OVER_STOCK,
             current_stock=int(stock),
             safety_stock=int(row["안전재고기준"]),
@@ -169,9 +168,10 @@ def detect_long_term_stock(
         results.append(StockAnomaly(
             product_code=str(row["상품코드"]),
             product_name=str(row["상품명"]),
+            category=str(row.get("카테고리", "")),
             anomaly_type=AnomalyType.LONG_TERM_STOCK,
             current_stock=int(row["현재재고"]),
-            safety_stock=int(row.get("안전재고기준", 10)),
+            safety_stock=10,
             daily_avg_sales=0.0,
             days_until_stockout=999.0,
             restock_date=str(row.get("입고예정일", "")),

@@ -14,6 +14,7 @@ export interface AnomalyLog {
     detected_at: string;
     product_code: string;
     product_name: string;
+    category?: string;
     anomaly_type: "low_stock" | "over_stock" | "sales_surge" | "sales_drop" | "long_term_stock";
     current_stock: number | null;
     daily_avg_sales: number | null;

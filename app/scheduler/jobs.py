@@ -7,6 +7,7 @@ from app.crawler.excel_parser import parse_stock_sheet, parse_sales_sheet
 from app.sheets.writer import (
     write_product_master, write_stock_upsert,
     write_sales, write_stock,
+    upsert_master_from_excel, upsert_stock_from_excel,
 )
 from app.analyzer.stock_analyzer import run_stock_analysis
 from app.analyzer.sales_analyzer import run_sales_analysis
@@ -26,10 +27,23 @@ import os
 EXCEL_PATH = os.getenv("EXCEL_PATH", "./sample_data.xlsx")
 
 
+def _sync_excel_to_sheets(excel_path: str) -> None:
+
+    df_sales_excel = parse_sales_sheet(excel_path)
+    write_sales(df_sales_excel)
+
+    upsert_master_from_excel(df_sales_excel)
+
+    try:
+        df_stock_excel = parse_stock_sheet(excel_path)
+        upsert_stock_from_excel(df_stock_excel)
+    except Exception as e:
+        logger.warning(f"엑셀 재고현황 시트 파싱 스킵 (없거나 오류): {e}")
+
+
 def sync_sheets_only() -> dict:
     logger.info("===== Sheets 동기화 시작 (단독 실행) =====")
 
-    # 1. 전체 사이트 크롤링
     df_crawled = crawl_all_sites(
         books_pages=3,
         webscraper_pages=2,
@@ -38,23 +52,18 @@ def sync_sheets_only() -> dict:
 
     if df_crawled.empty:
         logger.warning("크롤링 결과 없음")
-        return {"crawled": 0, "new_stock_added": 0}
+    else:
+        write_product_master(df_crawled)
+        write_stock_upsert(df_crawled)
 
-    # 2. 상품마스터 전체 갱신
-    write_product_master(df_crawled)
-
-    # 3. 재고현황 upsert (신규만 추가, 기존 유지)
-    write_stock_upsert(df_crawled)
-
-    # 4. 엑셀 판매 데이터 append (있을 경우)
     if os.path.exists(EXCEL_PATH):
-        df_sales_excel = parse_sales_sheet(EXCEL_PATH)
-        write_sales(df_sales_excel)
+        _sync_excel_to_sheets(EXCEL_PATH)
+        logger.info("엑셀 데이터 동기화 완료 (판매 + 상품마스터 + 재고현황 upsert)")
+    else:
+        logger.warning(f"엑셀 파일 없음 ({EXCEL_PATH})")
 
     logger.info("===== Sheets 동기화 완료 =====")
-    return {"crawled": len(df_crawled)}
-
-
+    return {"crawled": len(df_crawled) if not df_crawled.empty else 0}
 
 
 def run_daily_job() -> None:
@@ -74,30 +83,29 @@ def run_daily_job() -> None:
 
         if not df_crawled.empty:
             write_product_master(df_crawled)
-            write_stock_upsert(df_crawled)   # 신규만 추가
+            write_stock_upsert(df_crawled)
 
         if os.path.exists(EXCEL_PATH):
-            df_sales_excel = parse_sales_sheet(EXCEL_PATH)
-            write_sales(df_sales_excel)
-            logger.info("엑셀 판매 데이터 동기화 완료 (재고현황은 크롤링 데이터 유지)")
+            _sync_excel_to_sheets(EXCEL_PATH)
+            logger.info("엑셀 데이터 동기화 완료")
         else:
             logger.warning(f"엑셀 파일 없음 ({EXCEL_PATH}), Sheets 기존 데이터 사용")
 
-        # --- 2. 데이터 읽기 ------
+        # --- 2. 데이터 읽기 ---
         df_master = read_product_master()
         df_sales  = read_sales()
         df_stock  = read_stock()
 
-        # --- 3. 분석 ---------------─
+        # --- 3. 분석 ---
         logger.info("[2/6] 재고/판매 분석")
         stock_anomalies = run_stock_analysis(df_master, df_stock, df_sales)
         sales_anomalies = run_sales_analysis(df_master, df_sales)
 
-        # --- 4. 감성 분석 ---------
+        # --- 4. 감성 분석 ---
         logger.info("[3/6] 감성 분석")
         sales_anomalies = batch_analyze_sales_anomalies(sales_anomalies)
 
-        # --- 5. AI 인사이트 ------
+        # --- 5. AI 인사이트 ---
         logger.info("[4/6] AI 인사이트 생성")
         insight = generate_daily_insight(
             stock_anomalies=stock_anomalies,
@@ -105,7 +113,7 @@ def run_daily_job() -> None:
             total_products=len(df_master),
         )
 
-        # --- 6. PDF 생성 ---------─
+        # --- 6. PDF 생성 ---
         logger.info("[5/6] PDF 보고서 생성")
         pdf_path = generate_daily_pdf(
             report_date=date.today(),
@@ -115,7 +123,7 @@ def run_daily_job() -> None:
             insight=insight,
         )
 
-        # --- 7. Slack 전송 ------─
+        # --- 7. Slack 전송 ---
         logger.info("[6/6] Slack 전송")
         slack_ok = send_daily_report_notification(
             report_date=date.today().strftime("%Y-%m-%d"),
@@ -126,12 +134,13 @@ def run_daily_job() -> None:
             pdf_path=pdf_path,
         )
 
-        # --- 8. DB 이력 저장 ---─
+        # --- 8. DB 이력 저장 ---
         for item in stock_anomalies:
             create_anomaly_log(
                 db=db,
                 product_code=item["product_code"],
                 product_name=item["product_name"],
+                category=item.get("category"),       # ← 추가
                 anomaly_type=AnomalyType(item["anomaly_type"]),
                 severity=Severity(item["severity"]),
                 current_stock=item.get("current_stock"),
@@ -143,11 +152,12 @@ def run_daily_job() -> None:
                 db=db,
                 product_code=item["product_code"],
                 product_name=item["product_name"],
+                category=item.get("category"),       # ← 추가
                 anomaly_type=AnomalyType(item["anomaly_type"]),
                 severity=Severity(item["severity"]),
             )
 
-        # --- 9. 긴급 이상 징후 알림 ------------------------------------
+        # --- 9. 긴급 이상 징후 알림 ---
         critical_items = [
             i for i in list(stock_anomalies) + sales_anomalies
             if str(i.get("severity", "")) in ("critical", "high",

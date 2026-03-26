@@ -138,6 +138,7 @@ async def get_anomalies(
                 "detected_at": str(r.detected_at),
                 "product_code": r.product_code,
                 "product_name": r.product_name,
+                "category": r.category,
                 "anomaly_type": r.anomaly_type,
                 "current_stock": r.current_stock,
                 "daily_avg_sales": r.daily_avg_sales,

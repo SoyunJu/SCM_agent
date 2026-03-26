@@ -8,15 +8,15 @@ from app.db.models import AnomalyType, Severity
 class SalesAnomaly(TypedDict):
     product_code: str
     product_name: str
+    category: str
     anomaly_type: str
     this_week_sales: float
     last_week_sales: float
-    change_rate: float        # 변화율 (%)
+    change_rate: float
     severity: str
 
 
 def _calc_severity_by_rate(change_rate: float, anomaly_type: AnomalyType) -> Severity:
-
     if anomaly_type == AnomalyType.SALES_SURGE:
         if change_rate >= 100:
             return Severity.CRITICAL
@@ -24,7 +24,7 @@ def _calc_severity_by_rate(change_rate: float, anomaly_type: AnomalyType) -> Sev
             return Severity.HIGH
         else:
             return Severity.MEDIUM
-    else:  # SALES_DROP
+    else:
         if change_rate <= -80:
             return Severity.CRITICAL
         elif change_rate <= -60:
@@ -47,7 +47,7 @@ def detect_sales_anomaly(
 
     this_week_start = latest_date - pd.Timedelta(days=6)
     last_week_start = latest_date - pd.Timedelta(days=13)
-    last_week_end = latest_date - pd.Timedelta(days=7)
+    last_week_end   = latest_date - pd.Timedelta(days=7)
 
     this_week = df_sales[df_sales["날짜"] >= this_week_start]
     last_week = df_sales[
@@ -57,14 +57,12 @@ def detect_sales_anomaly(
 
     this_week_agg = (
         this_week.groupby("상품코드")["판매수량"]
-        .sum()
-        .reset_index()
+        .sum().reset_index()
         .rename(columns={"판매수량": "이번주판매량"})
     )
     last_week_agg = (
         last_week.groupby("상품코드")["판매수량"]
-        .sum()
-        .reset_index()
+        .sum().reset_index()
         .rename(columns={"판매수량": "지난주판매량"})
     )
 
@@ -76,13 +74,13 @@ def detect_sales_anomaly(
     df = df[df["지난주판매량"] > 0].copy()
     df["변화율"] = ((df["이번주판매량"] - df["지난주판매량"]) / df["지난주판매량"] * 100).round(1)
 
-    # 급등
     surge = df[df["변화율"] >= surge_threshold]
     for _, row in surge.iterrows():
         severity = _calc_severity_by_rate(row["변화율"], AnomalyType.SALES_SURGE)
         results.append(SalesAnomaly(
             product_code=str(row["상품코드"]),
             product_name=str(row["상품명"]),
+            category=str(row.get("카테고리", "")),
             anomaly_type=AnomalyType.SALES_SURGE,
             this_week_sales=float(row["이번주판매량"]),
             last_week_sales=float(row["지난주판매량"]),
@@ -90,13 +88,13 @@ def detect_sales_anomaly(
             severity=severity,
         ))
 
-    # 급락
     drop = df[df["변화율"] <= drop_threshold]
     for _, row in drop.iterrows():
         severity = _calc_severity_by_rate(row["변화율"], AnomalyType.SALES_DROP)
         results.append(SalesAnomaly(
             product_code=str(row["상품코드"]),
             product_name=str(row["상품명"]),
+            category=str(row.get("카테고리", "")),
             anomaly_type=AnomalyType.SALES_DROP,
             this_week_sales=float(row["이번주판매량"]),
             last_week_sales=float(row["지난주판매량"]),

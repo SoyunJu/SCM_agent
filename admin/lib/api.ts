@@ -8,7 +8,6 @@ export const apiClient = axios.create({
     headers: { "Content-Type": "application/json" },
 });
 
-// req 인터셉터 - add JWT Token
 apiClient.interceptors.request.use((config) => {
     const token = localStorage.getItem("access_token");
     if (token) {
@@ -17,7 +16,6 @@ apiClient.interceptors.request.use((config) => {
     return config;
 });
 
-// res 인터셉터 - 401 시 로그인 페이지 이동
 apiClient.interceptors.response.use(
     (res) => res,
     (err) => {
@@ -62,15 +60,18 @@ export const chatQuery = (message: string, sessionId: string) =>
         user_id: "admin",
     });
 
+export const getChatHistory = (sessionId: string, days = 7) =>
+    apiClient.get(`/scm/chat/history?session_id=${encodeURIComponent(sessionId)}&days=${days}`);
+
 // --- Health ---
 export const healthCheck = () =>
     apiClient.get("/scm/health");
 
-// --- Anomaly ---------------------------------------------------------------─
+// --- Anomaly ---
 export const resolveAnomaly = (id: number) =>
     apiClient.patch(`/scm/report/anomalies/${id}/resolve`);
 
-// --- Scheduler ------------------------------------------------------------─
+// --- Scheduler ---
 export const getSchedulerConfig = () =>
     apiClient.get("/scm/scheduler/config");
 
@@ -85,8 +86,11 @@ export const getSchedulerStatus = () =>
     apiClient.get("/scm/scheduler/status");
 
 // --- Sheets ---
-export const getSheetsMaster = () =>
-    apiClient.get("/scm/sheets/master");
+export const getSheetsMaster = (page = 1, pageSize = 50, search?: string) => {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    if (search) params.append("search", search);
+    return apiClient.get(`/scm/sheets/master?${params}`);
+};
 
 export const getSheetsSales = (days = 30) =>
     apiClient.get(`/scm/sheets/sales?days=${days}`);
@@ -100,21 +104,23 @@ export const getSalesStats = (period: "daily" | "weekly" | "monthly") =>
 export const getStockStats = () =>
     apiClient.get("/scm/sheets/stats/stock");
 
-// --- PDF ------─
+// --- PDF ---
 export const getPdfList = () =>
     apiClient.get("/scm/report/pdf-list");
 
 export const getPdfUrl = (filename: string) =>
     `${process.env.NEXT_PUBLIC_API_URL}/scm/report/pdf/${filename}`;
 
-// --- Alerts ---
-export const getUnreadCount = () =>
-    apiClient.get("/scm/alerts/unread-count");
-
-// --- PDF (인증 포함) ---
 export const downloadPdf = async (filename: string): Promise<Blob> => {
     const res = await apiClient.get(`/scm/report/pdf/${filename}`, {
         responseType: "blob",
     });
     return res.data;
 };
+
+export const deletePdf = (filename: string) =>
+    apiClient.delete(`/scm/report/pdf/${filename}`);
+
+// --- Alerts ---
+export const getUnreadCount = () =>
+    apiClient.get("/scm/alerts/unread-count");

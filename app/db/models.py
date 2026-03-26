@@ -66,6 +66,7 @@ class AnomalyLog(Base):
     detected_at = Column(DateTime, nullable=False, default=func.now())
     product_code = Column(String(20), nullable=False)
     product_name = Column(String(200), nullable=False)
+    category = Column(String(100), nullable=True)
     anomaly_type = Column(Enum(AnomalyType), nullable=False)
     current_stock = Column(Integer, nullable=True)
     daily_avg_sales = Column(Float, nullable=True)        # 일평균 판매량

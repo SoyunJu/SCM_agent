@@ -3,15 +3,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from loguru import logger
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.db.models import (
     ReportExecution, AnomalyLog, ScheduleConfig, ChatHistory,
     ReportType, ExecutionStatus, AnomalyType, Severity, ChatRole
 )
 
-
-# ### Report ##############################
 
 def create_report_execution(
         db: Session,
@@ -53,14 +51,13 @@ def get_report_executions(db: Session, limit: int = 20) -> list[ReportExecution]
     return db.query(ReportExecution).order_by(desc(ReportExecution.created_at)).limit(limit).all()
 
 
-# ##### Anomaly ###############
-
 def create_anomaly_log(
         db: Session,
         product_code: str,
         product_name: str,
         anomaly_type: AnomalyType,
         severity: Severity,
+        category: Optional[str] = None,
         current_stock: Optional[int] = None,
         daily_avg_sales: Optional[float] = None,
         days_until_stockout: Optional[float] = None,
@@ -69,6 +66,7 @@ def create_anomaly_log(
     record = AnomalyLog(
         product_code=product_code,
         product_name=product_name,
+        category=category,
         anomaly_type=anomaly_type,
         severity=severity,
         current_stock=current_stock,
@@ -106,8 +104,6 @@ def resolve_anomaly(db: Session, anomaly_id: int) -> Optional[AnomalyLog]:
     logger.info(f"이상 징후 해결 처리: id={anomaly_id}")
     return record
 
-
-# ##### Schedule #####################
 
 def get_schedule_config(db: Session, job_name: str) -> Optional[ScheduleConfig]:
     return db.query(ScheduleConfig).filter(ScheduleConfig.job_name == job_name).first()
@@ -151,8 +147,6 @@ def update_last_run(db: Session, job_name: str) -> None:
         db.commit()
 
 
-# ###### ChatHistory ############################
-
 def save_chat_message(
         db: Session,
         session_id: str,
@@ -176,10 +170,25 @@ def save_chat_message(
 
 
 def get_chat_history(db: Session, session_id: str) -> list[ChatHistory]:
-
     return (
         db.query(ChatHistory)
         .filter(ChatHistory.session_id == session_id)
+        .order_by(ChatHistory.created_at)
+        .all()
+    )
+
+
+def get_chat_history_recent(
+        db: Session,
+        session_id: str,
+        days: int = 7,      # 최대 7일
+) -> list[ChatHistory]:
+
+    cutoff = datetime.now() - timedelta(days=days)
+    return (
+        db.query(ChatHistory)
+        .filter(ChatHistory.session_id == session_id)
+        .filter(ChatHistory.created_at >= cutoff)
         .order_by(ChatHistory.created_at)
         .all()
     )
