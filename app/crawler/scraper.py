@@ -5,97 +5,232 @@ import pandas as pd
 from loguru import logger
 import time
 
-    # 크롤링 페이지
-BASE_URL = "https://books.toscrape.com/catalogue/"
-START_URL = "https://books.toscrape.com/catalogue/page-1.html"
+# 크롤링 사이트
+SITES = {
+    "books":    "https://books.toscrape.com",
+    "webscraper": "https://webscraper.io/test-sites/e-commerce/allinone",
+    "scrapingcourse": "https://www.scrapingcourse.com/ecommerce",
+}
 
-# 상품코드 prefix (크롤링 식별용)
-CRAWL_CODE_PREFIX = "CR"
+CRAWL_DELAY = 1   # 사이트 부하 방지 딜레이(초)
 
-def crawl_books(max_pages: int = 5) -> pd.DataFrame:
+
+#  books.toscrape.com
+
+def _crawl_books(max_pages: int = 5) -> pd.DataFrame:
 
     records = []
-    url = START_URL
+    url = "https://books.toscrape.com/catalogue/page-1.html"
+    base = "https://books.toscrape.com/catalogue/"
 
     for page in range(1, max_pages + 1):
-        logger.info(f"크롤링 중: {page}/{max_pages} 페이지")
+        logger.info(f"[books] 크롤링 중: {page}/{max_pages} 페이지")
         try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
+            res = requests.get(url, timeout=10)
+            res.raise_for_status()
         except requests.RequestException as e:
-            logger.error(f"페이지 요청 실패 ({url}): {e}")
+            logger.error(f"[books] 페이지 요청 실패: {e}")
             break
 
-        soup = BeautifulSoup(response.text, "html.parser")
-        articles = soup.select("article.product_pod")
+        soup = BeautifulSoup(res.text, "html.parser")
 
-        for idx, article in enumerate(articles):
+        for idx, article in enumerate(soup.select("article.product_pod")):
             try:
-                # 상품명
-                title = article.select_one("h3 a")["title"]
+                title       = article.select_one("h3 a")["title"]
+                detail_path = article.select_one("h3 a")["href"].replace("../", "")
+                detail_url  = base + detail_path
+                price       = float(
+                    article.select_one("p.price_color").text.strip()
+                    .replace("Â£", "").replace("£", "")
+                )
+                in_stock    = 1 if "In stock" in article.select_one("p.availability").text else 0
+                product_code = f"BK{str((page-1)*20+idx+1).zfill(3)}"
 
-                # 상품 상세 URL
-                detail_path = article.select_one("h3 a")["href"]
-                detail_url = BASE_URL + detail_path.replace("../", "")
-
-                # 가격
-                price_text = article.select_one("p.price_color").text.strip()
-                price = float(price_text.replace("Â£", "").replace("£", ""))
-
-                # 재고 여부
-                availability = article.select_one("p.availability").text.strip()
-                in_stock = 1 if availability == "In stock" else 0
-
-                # 상품코드 생성 (페이지번호 + 인덱스)
-                product_code = f"{CRAWL_CODE_PREFIX}{str((page - 1) * 20 + idx + 1).zfill(3)}"
-
-                # 카테고리 (Default)
-                category = "Books"
+                # 상세 페이지에서 카테고리 파싱
+                category = _get_books_category(detail_url)
+                time.sleep(0.3)
 
                 records.append({
                     "상품코드": product_code,
-                    "상품명": title,
+                    "상품명":   title,
                     "카테고리": category,
-                    "가격": price,
+                    "가격":     price,
                     "재고여부": in_stock,
+                    "출처":     "books.toscrape.com",
                 })
-
             except Exception as e:
-                logger.warning(f"상품 파싱 실패 (page={page}, idx={idx}): {e}")
-                continue
+                logger.warning(f"[books] 상품 파싱 실패 (p={page}, i={idx}): {e}")
 
-        # 다음 페이지 URL
         next_btn = soup.select_one("li.next a")
         if next_btn:
-            next_path = next_btn["href"]
-            url = BASE_URL + next_path
+            url = base + next_btn["href"]
         else:
-            logger.info("마지막 페이지 도달")
             break
-
-        # API 호출 간격 (과부하 방지)
-        time.sleep(1)
+        time.sleep(CRAWL_DELAY)
 
     df = pd.DataFrame(records)
-    logger.info(f"크롤링 완료: 총 {len(df)}개 상품")
+    logger.info(f"[books] 크롤링 완료: {len(df)}개")
     return df
 
-    # 상세 페이지 크롤러 / TODO
-def crawl_book_categories(max_pages: int = 5) -> pd.DataFrame:
 
-    base_df = crawl_books(max_pages)
-    logger.info("카테고리 상세 크롤링 시작 (느릴 수 있음)")
+def _get_books_category(detail_url: str) -> str:
 
-    categories = []
-    for _, row in base_df.iterrows():
+    try:
+        res  = requests.get(detail_url, timeout=8)
+        soup = BeautifulSoup(res.text, "html.parser")
+        # breadcrumb: Home > 카테고리 > 상품명
+        breadcrumbs = soup.select("ul.breadcrumb li")
+        if len(breadcrumbs) >= 3:
+            return breadcrumbs[2].get_text(strip=True)
+        return "Books"
+    except Exception:
+        return "Books"
+
+
+#  webscraper.io 이커머스
+
+def _crawl_webscraper(max_pages: int = 3) -> pd.DataFrame:
+
+    records = []
+    base_url = "https://webscraper.io/test-sites/e-commerce/allinone"
+
+    # 카테고리 목록 수집
+    try:
+        res  = requests.get(base_url, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
+        categories = [
+            (a.get_text(strip=True), base_url + a["href"].replace("/test-sites/e-commerce/allinone", ""))
+            for a in soup.select("a.category-link")
+        ]
+        if not categories:
+            # 사이드바 방식
+            categories = [
+                (a.get_text(strip=True), "https://webscraper.io" + a["href"])
+                for a in soup.select(".sidebar-nav a")
+                if a.get("href", "").startswith("/test-sites")
+            ]
+    except Exception as e:
+        logger.error(f"[webscraper] 카테고리 수집 실패: {e}")
+        return pd.DataFrame()
+
+    for cat_name, cat_url in categories[:5]:   # 최대 5개 카테고리
+        for page in range(1, max_pages + 1):
+            page_url = f"{cat_url}?page={page}" if page > 1 else cat_url
+            try:
+                res  = requests.get(page_url, timeout=10)
+                soup = BeautifulSoup(res.text, "html.parser")
+                items = soup.select(".thumbnail")
+                if not items:
+                    break
+
+                for idx, item in enumerate(items):
+                    try:
+                        name  = item.select_one(".title")
+                        price = item.select_one(".price")
+                        if not name or not price:
+                            continue
+                        product_code = f"WS{str(len(records)+1).zfill(4)}"
+                        records.append({
+                            "상품코드": product_code,
+                            "상품명":   name.get_text(strip=True),
+                            "카테고리": cat_name,
+                            "가격":     float(price.get_text(strip=True).replace("$", "")),
+                            "재고여부": 1,
+                            "출처":     "webscraper.io",
+                        })
+                    except Exception as e:
+                        logger.warning(f"[webscraper] 상품 파싱 실패: {e}")
+                time.sleep(CRAWL_DELAY)
+            except Exception as e:
+                logger.error(f"[webscraper] 페이지 요청 실패: {e}")
+                break
+
+    df = pd.DataFrame(records)
+    logger.info(f"[webscraper] 크롤링 완료: {len(df)}개")
+    return df
+
+
+#  scrapingcourse.com
+
+def _crawl_scrapingcourse(max_pages: int = 3) -> pd.DataFrame:
+
+    records = []
+    base_url = "https://www.scrapingcourse.com/ecommerce"
+
+    for page in range(1, max_pages + 1):
+        page_url = f"{base_url}/page/{page}/" if page > 1 else base_url + "/"
+        logger.info(f"[scrapingcourse] 크롤링 중: {page}/{max_pages} 페이지")
         try:
-            code = row["상품코드"]
-            # 상세 페이지 URL 재구성 생략, 기본 카테고리 유지
-            categories.append("Books")
-            time.sleep(0.3)
-        except Exception as e:
-            logger.warning(f"카테고리 조회 실패 ({code}): {e}")
-            categories.append("Books")
+            res  = requests.get(page_url, timeout=10)
+            res.raise_for_status()
+            soup = BeautifulSoup(res.text, "html.parser")
 
-    base_df["카테고리"] = categories
-    return base_df
+            items = soup.select("li.product")
+            if not items:
+                break
+
+            for idx, item in enumerate(items):
+                try:
+                    name  = item.select_one("h2.woocommerce-loop-product__title")
+                    price = item.select_one("span.woocommerce-Price-amount")
+                    cat_el = item.select_one(".product-category")
+                    if not name or not price:
+                        continue
+
+                    price_text = price.get_text(strip=True).replace("$", "").replace(",", "")
+                    product_code = f"SC{str(len(records)+1).zfill(4)}"
+                    records.append({
+                        "상품코드": product_code,
+                        "상품명":   name.get_text(strip=True),
+                        "카테고리": cat_el.get_text(strip=True) if cat_el else "General",
+                        "가격":     float(price_text),
+                        "재고여부": 1,
+                        "출처":     "scrapingcourse.com",
+                    })
+                except Exception as e:
+                    logger.warning(f"[scrapingcourse] 상품 파싱 실패: {e}")
+
+            time.sleep(CRAWL_DELAY)
+        except requests.RequestException as e:
+            logger.error(f"[scrapingcourse] 페이지 요청 실패: {e}")
+            break
+
+    df = pd.DataFrame(records)
+    logger.info(f"[scrapingcourse] 크롤링 완료: {len(df)}개")
+    return df
+
+
+#  통합 크롤링
+
+def crawl_books(max_pages: int = 5) -> pd.DataFrame:
+    return _crawl_books(max_pages)
+
+
+def crawl_all_sites(
+        books_pages: int = 3,
+        webscraper_pages: int = 2,
+        scrapingcourse_pages: int = 2,
+) -> pd.DataFrame:
+
+    logger.info("===== 전체 사이트 크롤링 시작 =====")
+    dfs = []
+
+    df_books = _crawl_books(books_pages)
+    if not df_books.empty:
+        dfs.append(df_books)
+
+    df_ws = _crawl_webscraper(webscraper_pages)
+    if not df_ws.empty:
+        dfs.append(df_ws)
+
+    df_sc = _crawl_scrapingcourse(scrapingcourse_pages)
+    if not df_sc.empty:
+        dfs.append(df_sc)
+
+    if not dfs:
+        logger.warning("크롤링 결과 없음")
+        return pd.DataFrame()
+
+    combined = pd.concat(dfs, ignore_index=True)
+    logger.info(f"===== 전체 크롤링 완료: 총 {len(combined)}개 상품 =====")
+    return combined

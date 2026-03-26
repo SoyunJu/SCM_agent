@@ -15,14 +15,42 @@ router = APIRouter(prefix="/scm/sheets", tags=["sheets"])
 @router.get("/master")
 async def get_master(
         current_user: Annotated[TokenData, Depends(get_current_user)],
+        page: int = 1,
+        page_size: int = 50,
+        search: str | None = None,
 ):
 
     try:
+        page_size = min(page_size, 200)   # 최대 200건 제한
         df = read_product_master()
-        return {"total": len(df), "items": df.to_dict(orient="records")}
+
+        # 검색 필터
+        if search:
+            mask = (
+                    df["상품명"].str.contains(search, case=False, na=False) |
+                    df["상품코드"].str.contains(search, case=False, na=False)
+            )
+            df = df[mask]
+
+        total = len(df)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+
+        # 페이징
+        start = (page - 1) * page_size
+        end   = start + page_size
+        page_df = df.iloc[start:end]
+
+        return {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "items": page_df.to_dict(orient="records"),
+        }
     except Exception as e:
         logger.error(f"상품마스터 조회 실패: {e}")
-        return {"total": 0, "items": [], "error": str(e)}
+        return {"total": 0, "page": 1, "page_size": page_size,
+                "total_pages": 0, "items": [], "error": str(e)}
 
 
 @router.get("/sales")
@@ -153,3 +181,17 @@ async def get_stock_stats(
     except Exception as e:
         logger.error(f"재고 통계 조회 실패: {e}")
         return {"stock_items": [], "severity_counts": {}, "error": str(e)}
+
+
+
+@router.post("/sync")
+async def sync_sheets(
+    current_user: Annotated[TokenData, Depends(get_current_user)],
+):
+
+    import asyncio
+    from app.scheduler.jobs import sync_sheets_only
+
+    asyncio.create_task(asyncio.to_thread(sync_sheets_only))
+    logger.info(f"Sheets 동기화 트리거: {current_user.username}")
+    return {"status": "triggered", "message": "데이터 동기화가 시작되었습니다."}

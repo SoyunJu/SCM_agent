@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getSchedulerConfig, updateSchedulerConfig, getSchedulerStatus, triggerReport } from "@/lib/api";
 import { ScheduleConfig } from "@/lib/types";
-import { Clock, Play, Save } from "lucide-react";
+import {Clock, Play, RefreshCw, Save} from "lucide-react";
+import { getSchedulerConfig, updateSchedulerConfig, getSchedulerStatus, triggerReport } from "@/lib/api";
+import { apiClient } from "@/lib/api"
+
+
 
 export default function SchedulerPage() {
     const [config, setConfig]         = useState<ScheduleConfig | null>(null);
@@ -154,7 +157,23 @@ export default function SchedulerPage() {
                             className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50"
                         >
                             <Play size={14} />
-                            {triggering ? "실행 중..." : "즉시 실행"}
+                            {triggering ? "실행 중..." : "보고서 즉시 생성"}
+                        </button>
+                        {/* 데이터 동기화만 */}
+                        <button
+                            onClick={async () => {
+                                setMessage("");
+                                try {
+                                    await apiClient.post("/scm/sheets/sync");
+                                    setMessage("✅ 데이터 동기화가 시작되었습니다.");
+                                } catch {
+                                    setMessage("❌ 동기화 실패");
+                                }
+                            }}
+                            className="flex items-center gap-2 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+                        >
+                            <RefreshCw size={14} />
+                            데이터만 동기화
                         </button>
                     </div>
                 </div>

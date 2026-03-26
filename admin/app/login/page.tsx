@@ -11,12 +11,23 @@ export default function LoginPage() {
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
 
+    // SHA-256 해싱 유틸
+    const hashSHA256 = async (text: string): Promise<string> => {
+        const encoder = new TextEncoder();
+        const data    = encoder.encode(text);
+        const hashBuf = await crypto.subtle.digest("SHA-256", data);
+        return Array.from(new Uint8Array(hashBuf))
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("");
+    };
+
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError("");
         try {
-            const data = await login(username, password);
+            const hashedPassword = await hashSHA256(password);
+            const data = await login(username, hashedPassword);
             localStorage.setItem("access_token", data.access_token);
             router.push("/dashboard");
         } catch {

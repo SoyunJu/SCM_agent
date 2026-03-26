@@ -4,9 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 import asyncio
 from pathlib import Path
+from datetime import datetime, timedelta
+import os
 
 from app.api.auth_router import get_current_user, TokenData
 from app.db.connection import get_db
+from app.db.models import ReportExecution
 from app.db.repository import (
     get_report_executions,
     get_anomaly_logs,
@@ -33,10 +36,33 @@ async def trigger_report(
 async def get_history(
         current_user: Annotated[TokenData, Depends(get_current_user)],
         limit: int = 20,
+        period: str | None = None,   # daily | weekly | monthly
+        status: str | None = None,   # success | failure | in_progress
         db: Session = Depends(get_db),
 ):
 
-    records = get_report_executions(db, limit=limit)
+    records = get_report_executions(db, limit=100)
+
+    # 기간 필터
+    if period:
+        now = datetime.now()
+        if period == "daily":
+            cutoff = now - timedelta(days=1)
+        elif period == "weekly":
+            cutoff = now - timedelta(weeks=1)
+        elif period == "monthly":
+            cutoff = now - timedelta(days=30)
+        else:
+            cutoff = None
+        if cutoff:
+            records = [r for r in records if r.created_at and r.created_at >= cutoff]
+
+    # 상태 필터
+    if status and status != "all":
+        records = [r for r in records if r.status.value == status]
+
+    records = records[:limit]
+
     return {
         "total": len(records),
         "items": [
@@ -52,6 +78,39 @@ async def get_history(
             for r in records
         ],
     }
+
+
+@router.delete("/history/{record_id}")
+async def delete_report_history(
+        record_id: int,
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),
+):
+
+    record = db.query(ReportExecution).filter(ReportExecution.id == record_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="이력을 찾을 수 없습니다.")
+    db.delete(record)
+    db.commit()
+    logger.info(f"보고서 이력 삭제: id={record_id}, user={current_user.username}")
+    return {"deleted": True, "id": record_id}
+
+
+@router.delete("/pdf/{filename}")
+async def delete_pdf(
+        filename: str,
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+):
+
+    # 경로 순회 공격 방지
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="잘못된 파일명입니다.")
+    pdf_path = Path("reports") / filename
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
+    os.remove(pdf_path)
+    logger.info(f"PDF 삭제: {filename}, user={current_user.username}")
+    return {"deleted": True, "filename": filename}
 
 
 @router.get("/anomalies")

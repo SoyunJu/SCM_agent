@@ -6,10 +6,10 @@ from unittest.mock import patch, MagicMock
 def test_get_low_stock_tool_no_data():
     import pandas as pd
     with patch("app.ai.tools.read_product_master", return_value=pd.DataFrame({
-        "상품코드": ["CR001"], "상품명": ["상품A"], "카테고리": ["Books"], "안전재고기준": [10]
+        "상품코드": ["BK001"], "상품명": ["상품A"], "카테고리": ["Books"], "안전재고기준": [10]
     })), \
             patch("app.ai.tools.read_stock", return_value=pd.DataFrame({
-                "상품코드": ["CR001"], "현재재고": [50],
+                "상품코드": ["BK001"], "현재재고": [50],
                 "입고예정일": ["2026-04-01"], "입고예정수량": [100]
             })), \
             patch("app.ai.tools.read_sales", return_value=pd.DataFrame(
@@ -23,24 +23,24 @@ def test_get_low_stock_tool_no_data():
 def test_get_top_sales_tool():
     import pandas as pd
     with patch("app.ai.tools.read_product_master", return_value=pd.DataFrame({
-        "상품코드": ["CR001"], "상품명": ["상품A"], "카테고리": ["Books"], "안전재고기준": [10]
+        "상품코드": ["BK001"], "상품명": ["상품A"], "카테고리": ["Books"], "안전재고기준": [10]
     })), \
             patch("app.ai.tools.read_sales", return_value=pd.DataFrame({
-                "날짜": ["2026-03-25"], "상품코드": ["CR001"],
+                "날짜": ["2026-03-25"], "상품코드": ["BK001"],
                 "판매수량": [10], "매출액": [150000]
             })):
         from app.ai.tools import get_top_sales_tool
         result = get_top_sales_tool.invoke("7")
-        assert "CR001" in result
+        assert "BK001" in result
 
 
 def test_get_stock_by_product_not_found():
     import pandas as pd
     with patch("app.ai.tools.read_product_master", return_value=pd.DataFrame({
-        "상품코드": ["CR001"], "상품명": ["상품A"], "카테고리": ["Books"], "안전재고기준": [10]
+        "상품코드": ["BK001"], "상품명": ["상품A"], "카테고리": ["Books"], "안전재고기준": [10]
     })), \
             patch("app.ai.tools.read_stock", return_value=pd.DataFrame({
-                "상품코드": ["CR001"], "현재재고": [50],
+                "상품코드": ["BK001"], "현재재고": [50],
                 "입고예정일": ["2026-04-01"], "입고예정수량": [100]
             })):
         from app.ai.tools import get_stock_by_product

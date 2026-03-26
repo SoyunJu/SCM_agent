@@ -10,6 +10,8 @@ from pydantic import BaseModel
 from loguru import logger
 
 from app.config import settings
+import hashlib
+
 
 router = APIRouter(prefix="/scm/auth", tags=["auth"])
 
@@ -37,6 +39,11 @@ def _verify_password(plain: str, hashed: str) -> bool:
 def _hash_password(plain: str) -> str:
     return pwd_context.hash(plain)
 
+def _hash_sha256(plain: str) -> str:
+    """SHA-256 해싱"""
+    return hashlib.sha256(plain.encode()).hexdigest()
+
+
     # JWT token
 def _create_access_token(data: dict) -> str:
     to_encode = data.copy()
@@ -48,7 +55,18 @@ def _create_access_token(data: dict) -> str:
 def _authenticate_user(username: str, password: str) -> bool:
     if username != settings.admin_username:
         return False
-    return password == settings.admin_password      # TODO : 단순 비교 말고 해시 비교
+
+    hashed_stored = _hash_sha256(settings.admin_password)
+
+    # 해시값으로 전송된 경우 (SHA-256)
+    if password == hashed_stored:
+        return True
+
+    # fallback: 평문 비교 (개발/테스트 용)
+    if settings.app_env == "dev" and password == settings.admin_password:
+        return True
+
+    return False
 
 
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]) -> TokenData:

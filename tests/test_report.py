@@ -10,8 +10,8 @@ from app.report.pdf_generator import generate_daily_pdf
 def sample_insight():
     return {
         "overall_summary": "재고 부족 2건, 판매 급등 1건이 감지되었습니다.",
-        "key_issues": ["CR001 재고 소진 임박", "CR002 판매 급등"],
-        "recommendations": ["CR001 긴급 발주 필요", "CR002 재고 확보 검토"],
+        "key_issues": ["BK001 재고 소진 임박", "BK002 판매 급등"],
+        "recommendations": ["BK001 긴급 발주 필요", "BK002 재고 확보 검토"],
         "risk_level": "high",
     }
 
@@ -20,14 +20,14 @@ def sample_insight():
 def sample_stock_anomalies():
     return [
         {
-            "product_code": "CR001",
+            "product_code": "BK001",
             "product_name": "테스트 상품A",
             "anomaly_type": "low_stock",
             "current_stock": 3,
             "safety_stock": 10,
             "daily_avg_sales": 2.5,
             "days_until_stockout": 1.2,
-            "severity": "critical",
+            "severity": "BKitical",
         }
     ]
 
@@ -36,7 +36,7 @@ def sample_stock_anomalies():
 def sample_sales_anomalies():
     return [
         {
-            "product_code": "CR002",
+            "product_code": "BK002",
             "product_name": "테스트 상품B",
             "anomaly_type": "sales_surge",
             "change_rate": 80.0,
@@ -60,10 +60,10 @@ def test_build_html_contains_key_sections(
     assert "일일 재고 현황 보고서" in html
     assert "테스트 상품A" in html
     assert "테스트 상품B" in html
-    assert "CR001 긴급 발주 필요" in html
+    assert "BK001 긴급 발주 필요" in html
 
 
-def test_generate_pdf_creates_file(
+def test_generate_pdf_BKeates_file(
         sample_insight, sample_stock_anomalies, sample_sales_anomalies
 ):
 
