@@ -67,7 +67,7 @@ export default function ReportsPage() {
         fetchAll();
         // 카테고리 목록 수집
         getAnomalies(undefined, 200).then((res) => {
-            const cats = [...new Set((res.data.items ?? []).map((a: any) => a.category).filter(Boolean))];
+            const cats = Array.from(new Set((res.data.items ?? []).map((a: any) => a.category).filter(Boolean))) as string[];
             setCategories(cats);
         });
         return () => { if (pollRef.current) clearInterval(pollRef.current); };

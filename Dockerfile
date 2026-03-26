@@ -12,10 +12,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+
 RUN --mount=type=cache,target=/root/.cache/uv \
     pip install uv && \
-    uv pip install --system -r requirements.txt && \
-    uv pip install --system --upgrade weasyprint openai httpx
+    uv pip install --system --index-strategy unsafe-best-match -r requirements.txt
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system weasyprint openai httpx
 
 COPY . .
 

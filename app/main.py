@@ -5,6 +5,7 @@ from loguru import logger
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
+import asyncio
 
 from app.db.connection import init_db, check_db_connection
 from app.config import settings
@@ -50,17 +51,19 @@ async def lifespan(app: FastAPI):
     scheduler.start()
 
     # 메인 이벤트 루프 등록 (스레드 → SSE 알림 브릿지)
+    loop = asyncio.get_running_loop()
+
     from app.api.alert_router import set_main_loop
-    set_main_loop(asyncio.get_event_loop())
+    set_main_loop(loop)
 
     # 시트 캐시 워밍업 (백그라운드)
     async def _warmup():
         try:
-            await asyncio.to_thread(_warmup_sheets)
+            await loop.run_in_executor(None, _warmup_sheets)
         except Exception:
             pass
 
-    asyncio.create_task(_warmup())
+    loop.create_task(_warmup())
 
     yield
 
