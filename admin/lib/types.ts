@@ -64,3 +64,20 @@ export interface AlertMessage {
     anomaly_type: string;
     message: string;
 }
+
+export interface SystemSetting {
+    key: string;
+    value: string;
+    default: string;
+    description: string;
+}
+
+export interface OrderItem {
+    주문코드: string;
+    상품코드: string;
+    상품명: string;
+    발주수량: number;
+    발주일: string;
+    예정납기일: string;
+    상태: "발주완료" | "입고중" | "입고완료" | "반품";
+}

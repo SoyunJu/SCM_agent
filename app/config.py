@@ -40,10 +40,14 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str = "admin1!"
 
-    # Scheduler
+    # Scheduler (메인 보고서)
     schedule_hour: int = 0
     schedule_minute: int = 0
     timezone: str = "Asia/Seoul"
+
+    # Crawler 컨테이너 스케줄
+    crawler_schedule_hour: int = 23
+    crawler_schedule_minute: int = 0
 
     # App
     app_env: str = "development"
