@@ -1,57 +1,82 @@
-# app/analyzer/abc_analyzer.py
-
+import math
 import pandas as pd
 from loguru import logger
 
 
-def run_abc_analysis(
-        df_master: pd.DataFrame,
-        df_sales: pd.DataFrame,
-        days: int = 90,
-) -> list[dict]:
+def run_abc_analysis(df_master: pd.DataFrame, df_sales: pd.DataFrame, days: int = 90) -> list[dict]:
     """
-    매출 기여도 기준 ABC 분석
-    A: 누적 매출 상위 70%
-    B: 누적 매출 70~90%
-    C: 누적 매출 90~100%
+    매출 기여도 기준 ABC 분류
+    A: 누적 매출 0~70%  (핵심 상품)
+    B: 누적 매출 70~90% (중요 상품)
+    C: 누적 매출 90~100%(저기여 상품)
     """
     logger.info(f"ABC 분석 시작 (기간: {days}일)")
 
-    df_sales = df_sales.copy()
-    df_sales["날짜"] = pd.to_datetime(df_sales["날짜"])
-    cutoff = df_sales["날짜"].max() - pd.Timedelta(days=days)
-    df_filtered = df_sales[df_sales["날짜"] >= cutoff]
+    try:
+        df_sales = df_sales.copy()
+        df_sales["날짜"] = pd.to_datetime(df_sales["날짜"], errors="coerce")
+        df_sales = df_sales.dropna(subset=["날짜"])
 
-    # 상품별 매출 합계
-    agg = (
-        df_filtered.groupby("상품코드")
-        .agg(매출합계=("매출액", "sum"), 판매수량합계=("판매수량", "sum"))
-        .reset_index()
-        .sort_values("매출합계", ascending=False)
-    )
+        cutoff = df_sales["날짜"].max() - pd.Timedelta(days=days)
+        df_period = df_sales[df_sales["날짜"] >= cutoff].copy()
 
-    if agg.empty:
-        logger.warning("ABC 분석: 판매 데이터 없음")
+        if df_period.empty:
+            logger.warning("ABC 분석: 기간 내 판매 데이터 없음")
+            return []
+
+        df_period["매출액"] = pd.to_numeric(df_period["매출액"], errors="coerce").fillna(0)
+
+        agg = (
+            df_period.groupby("상품코드")["매출액"]
+            .sum()
+            .reset_index()
+            .rename(columns={"매출액": "매출합계"})
+            .sort_values("매출합계", ascending=False)
+        )
+
+        total_sales = agg["매출합계"].sum()
+        if total_sales <= 0:
+            logger.warning("ABC 분석: 총 매출액이 0")
+            return []
+
+        agg["누적매출"] = agg["매출합계"].cumsum()
+        agg["누적비율"] = (agg["누적매출"] / total_sales * 100).round(2)
+
+        def _grade(cum_pct: float) -> str:
+            if cum_pct <= 70:
+                return "A"
+            elif cum_pct <= 90:
+                return "B"
+            return "C"
+
+        agg["등급"] = agg["누적비율"].apply(_grade)
+
+        # 상품명/카테고리 병합
+        cols = ["상품코드", "상품명"]
+        if "카테고리" in df_master.columns:
+            cols.append("카테고리")
+        df = agg.merge(df_master[cols], on="상품코드", how="left")
+
+        a_cnt = int((df["등급"] == "A").sum())
+        b_cnt = int((df["등급"] == "B").sum())
+        c_cnt = int((df["등급"] == "C").sum())
+        logger.info(f"ABC 분석 완료: A={a_cnt} B={b_cnt} C={c_cnt}")
+
+        result = df.to_dict(orient="records")
+
+        #  NaN / Inf sanitize (JSON 직렬화 오류 방지)
+        clean = []
+        for row in result:
+            clean_row = {}
+            for k, v in row.items():
+                if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                    clean_row[k] = None
+                else:
+                    clean_row[k] = v
+            clean.append(clean_row)
+
+        return clean
+
+    except Exception as e:
+        logger.error(f"ABC 분석 오류: {e}")
         return []
-
-    total = agg["매출합계"].sum()
-    agg["매출비율"] = (agg["매출합계"] / total * 100).round(2)
-    agg["누적비율"] = agg["매출비율"].cumsum().round(2)
-
-    def _grade(cumul: float) -> str:
-        if cumul <= 70:
-            return "A"
-        elif cumul <= 90:
-            return "B"
-        return "C"
-
-    agg["등급"] = agg["누적비율"].apply(_grade)
-
-    # 상품명/카테고리 병합
-    df = agg.merge(
-        df_master[["상품코드", "상품명", "카테고리"]],
-        on="상품코드", how="left",
-    )
-
-    logger.info(f"ABC 분석 완료: A={len(df[df['등급']=='A'])} B={len(df[df['등급']=='B'])} C={len(df[df['등급']=='C'])}")
-    return df[["상품코드", "상품명", "카테고리", "매출합계", "판매수량합계", "매출비율", "누적비율", "등급"]].to_dict(orient="records")

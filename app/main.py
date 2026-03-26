@@ -118,7 +118,7 @@ def _warmup_sheets() -> None:
 app = FastAPI(
     title="SCM Agent API",
     description="쇼핑몰 재고·판매 데이터 자동 분석 에이전트",
-    version="0.1.2",
+    version="0.2.0",
     lifespan=lifespan,
 )
 

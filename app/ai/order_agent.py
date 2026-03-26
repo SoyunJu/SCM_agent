@@ -1,8 +1,24 @@
 import math
 from loguru import logger
 
-LEAD_TIME_DAYS = 14          # 리드타임(일)
-SAFETY_STOCK_DAYS = 7        # 안전재고 일수
+LEAD_TIME_DAYS   = 14
+SAFETY_STOCK_DAYS = 7
+
+# 심각도 우선순위 맵
+_SEV_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+
+
+def _get_min_severity() -> str:
+    try:
+        from app.db.connection import SessionLocal
+        from app.db.repository import get_setting
+        db = SessionLocal()
+        try:
+            return get_setting(db, "AUTO_ORDER_MIN_SEVERITY", "high")
+        finally:
+            db.close()
+    except Exception:
+        return "high"
 
 
 def generate_order_proposals(
@@ -13,6 +29,8 @@ def generate_order_proposals(
 ) -> list[dict]:
 
     proposals: list[dict] = []
+    min_sev   = _get_min_severity()
+    min_level = _SEV_ORDER.get(min_sev, 2)            # 기본 high=2
 
     # 상품코드 -> 현재 재고
     stock_map: dict[str, int] = {}
@@ -39,16 +57,16 @@ def generate_order_proposals(
             category_map = dict(zip(df_master["상품코드"].astype(str), df_master[cat_col].fillna("")))
 
     for anomaly in stock_anomalies:
-        severity = str(anomaly.get("severity", "")).lower()
-        if severity not in ("high", "critical"):
+        severity     = str(anomaly.get("severity", "")).lower()
+        sev_level    = _SEV_ORDER.get(severity, 0)
+        if sev_level < min_level:
             continue
 
         code = str(anomaly.get("product_code", anomaly.get("상품코드", "")))
         name = str(anomaly.get("product_name", anomaly.get("상품명", "")))
         current_stock = int(stock_map.get(code, anomaly.get("current_stock", 0) or 0))
-        avg_sales = float(avg_sales_map.get(code, anomaly.get("daily_avg_sales", 1) or 1))
+        avg_sales     = float(avg_sales_map.get(code, anomaly.get("daily_avg_sales", 1) or 1))
 
-        # 발주 수량 = ceil(안전재고 + 리드타임 소비량 - 현재재고)
         safety_stock = math.ceil(avg_sales * SAFETY_STOCK_DAYS)
         lead_demand  = math.ceil(avg_sales * LEAD_TIME_DAYS)
         proposed_qty = max(1, math.ceil(safety_stock + lead_demand - current_stock))

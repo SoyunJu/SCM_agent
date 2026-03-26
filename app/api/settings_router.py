@@ -25,6 +25,7 @@ DEFAULT_SETTINGS: dict[str, tuple[str, str]] = {
     "SHEETS_CACHE_TTL":       ("300", "Google Sheets 캐시 유효 시간 (초)"),
     "ALERT_CHANNEL":      ("slack", "알림 채널 (slack | email | both)"),
     "ALERT_MIN_SEVERITY": ("high",  "알림 최소 심각도 (low | medium | high | critical)"),
+    "AUTO_ORDER_MIN_SEVERITY":    ("high",     "자동발주 에이전트 실행 최소 심각도 (low | medium | high | critical)"),
 }
 
 

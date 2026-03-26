@@ -143,6 +143,8 @@ async def get_sales_stats(
         return {"period": period, "items": [], "error": str(e)}
 
 
+
+
 @router.get("/stats/stock")
 async def get_stock_stats(
         current_user: Annotated[TokenData, Depends(get_current_user)],
@@ -153,10 +155,13 @@ async def get_stock_stats(
         from app.db.repository import get_anomaly_logs
 
         df_stock  = read_stock()
+        df_master = read_product_master()
+
         df = df_master.merge(df_stock, on="상품코드", how="left")
 
         df["현재재고"] = pd.to_numeric(df["현재재고"], errors="coerce").fillna(0).astype(int)
 
+        # 재고 > 0 인 상품만 TOP 20
         stock_items = (
             df[df["현재재고"] > 0]
             .nlargest(20, "현재재고")[["상품코드", "상품명", "현재재고"]]
@@ -183,6 +188,7 @@ async def get_stock_stats(
     except Exception as e:
         logger.error(f"재고 통계 조회 실패: {e}")
         return {"stock_items": [], "severity_counts": {}, "error": str(e)}
+
 
 
 
