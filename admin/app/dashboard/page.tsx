@@ -29,7 +29,7 @@ const ANOMALY_KOR: Record<string, string> = {
     long_term_stock: "장기 재고",
 };
 const BAR_COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e"];
-const MAX_POLL = 30;
+const MAX_POLL = 150;
 
 export default function DashboardPage() {
     const router = useRouter();

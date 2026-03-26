@@ -1,7 +1,5 @@
-
 from pathlib import Path
 from datetime import date, datetime
-from weasyprint import HTML
 from loguru import logger
 from app.report.template import build_daily_report_html
 
@@ -27,6 +25,8 @@ def generate_daily_pdf(
     output_path = REPORTS_DIR / filename
 
     try:
+        from xhtml2pdf import pisa
+
         html_content = build_daily_report_html(
             report_date=report_date,
             total_products=total_products,
@@ -34,7 +34,13 @@ def generate_daily_pdf(
             sales_anomalies=sales_anomalies,
             insight=insight,
         )
-        HTML(string=html_content).write_pdf(str(output_path))
+
+        with open(output_path, "wb") as f:
+            status = pisa.CreatePDF(html_content, dest=f, encoding="utf-8")
+
+        if status.err:
+            raise RuntimeError(f"xhtml2pdf 오류 코드: {status.err}")
+
         logger.info(f"################## PDF 보고서 생성 완료: {output_path} ##################")
         return output_path
 

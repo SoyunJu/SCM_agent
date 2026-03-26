@@ -66,16 +66,30 @@ async def get_report_status(
         current_user: Annotated[TokenData, Depends(get_current_user)],
         db: Session = Depends(get_db),
 ):
-    record = get_report_execution_by_id(db, execution_id)
+    record = db.query(ReportExecution).filter(ReportExecution.id == execution_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="실행 이력을 찾을 수 없습니다.")
-    return {
-        "id":            record.id,
-        "status":        record.status,
-        "error_message": record.error_message,
-        "executed_at":   str(record.executed_at),
-    }
 
+    # in_progress 상태가 10분 이상 지속되면 자동 실패 처리
+    effective_status = record.status
+    if record.status == ExecutionStatus.IN_PROGRESS and record.created_at:
+        elapsed = (datetime.now() - record.created_at).total_seconds()
+        if elapsed > 600:
+            update_report_execution(
+                db=db,
+                record_id=record.id,
+                status=ExecutionStatus.FAILURE,
+                error_message="실행 시간 초과 (10분)",
+            )
+            effective_status = ExecutionStatus.FAILURE
+            logger.warning(f"execution_id={execution_id} 시간 초과로 FAILURE 처리")
+
+    return {
+        "id": record.id,
+        "status": effective_status,
+        "error_message": record.error_message,
+        "docs_url": record.docs_url,
+    }
 
 @router.get("/history")
 async def get_history(

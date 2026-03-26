@@ -155,10 +155,21 @@ def write_orders(df_orders: pd.DataFrame) -> None:
 
 
 def write_analysis_result(df_result: pd.DataFrame) -> None:
+    import json
+
     try:
-        _clear_and_write(get_spreadsheet().worksheet("분석결과"), df_result)
+        df_clean = df_result.copy()
+        for col in df_clean.columns:
+            df_clean[col] = df_clean[col].apply(
+                lambda x: json.dumps(x, ensure_ascii=False)
+                if isinstance(x, (dict, list)) else x
+            )
+
+        spreadsheet = get_spreadsheet()
+        ws = spreadsheet.worksheet("분석결과")
+        _clear_and_write(ws, df_clean)
         _invalidate("분석결과")
-        logger.info(f"분석결과 갱신: {len(df_result)}행")
+        logger.info(f"분석결과 갱신 완료: {len(df_result)}행")
     except Exception as e:
         logger.error(f"분석결과 갱신 실패: {e}")
         raise

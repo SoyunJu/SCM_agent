@@ -6,6 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 import asyncio
+import logging
 
 from app.db.connection import init_db, check_db_connection
 from app.config import settings
@@ -24,6 +25,8 @@ from app.api.slack_interactions_router import router as slack_interactions_route
 
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
 
+# 노이즈 쿼리 제거
+logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
 
 def _setup_scheduler() -> None:
     scheduler.add_job(

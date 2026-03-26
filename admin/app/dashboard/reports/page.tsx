@@ -22,7 +22,7 @@ const SEVERITY_KOR: Record<string, string> = {
     critical: "긴급", high: "높음", medium: "보통", low: "낮음",
 };
 const PAGE_SIZE = 5;
-const MAX_POLL = 30;
+const MAX_POLL = 150;
 
 export default function ReportsPage() {
     const [history, setHistory]       = useState<ReportExecution[]>([]);

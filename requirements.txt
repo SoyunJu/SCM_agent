@@ -43,7 +43,8 @@ apscheduler==3.10.4
 slack-sdk==3.27.2
 
 # Report
-weasyprint==62.3
+reportlab==3.6.13
+xhtml2pdf==0.2.11
 
 # Auth
 python-jose[cryptography]==3.3.0

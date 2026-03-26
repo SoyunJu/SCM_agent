@@ -16,7 +16,7 @@ engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,       # 연결 자동 확인
     pool_recycle=3600,        # 1시간마다 커넥션 재생성
-    echo=(settings.app_env == "development"),  # dev 환경에서 SQL 로그 출력
+    # echo=(settings.app_env == "development"),  # dev 환경에서 SQL 로그 출력
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

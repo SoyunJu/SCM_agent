@@ -157,24 +157,37 @@ def run_daily_job(
         ]
 
         logger.info("[6/7] PDF 보고서 생성")
-        pdf_path = generate_daily_pdf(
-            report_date=date.today(),
-            total_products=len(df_master),
-            stock_anomalies=[dict(a) for a in filtered_stock],
-            sales_anomalies=filtered_sales,
-            insight=insight,
-        )
+        pdf_path = None
+        try:
+            pdf_path = generate_daily_pdf(
+                report_date=date.today(),
+                total_products=len(df_master),
+                stock_anomalies=[dict(a) for a in filtered_stock],
+                sales_anomalies=filtered_sales,
+                insight=insight,
+            )
+        except Exception as pdf_err:
+            logger.error(f"PDF 생성 실패 (Slack/DB는 계속 진행): {pdf_err}")
 
         # --- 7. Slack ---
         logger.info("[7/7] Slack 전송")
-        slack_ok = send_daily_report_notification(
-            report_date=date.today().strftime("%Y-%m-%d"),
-            total_products=len(df_master),
-            stock_anomaly_count=len(stock_anomalies),
-            sales_anomaly_count=len(sales_anomalies),
-            risk_level=insight.get("risk_level", "medium"),
-            pdf_path=pdf_path,
-        )
+        if pdf_path:
+            slack_ok = send_daily_report_notification(
+                report_date=date.today().strftime("%Y-%m-%d"),
+                total_products=len(df_master),
+                stock_anomaly_count=len(stock_anomalies),
+                sales_anomaly_count=len(sales_anomalies),
+                risk_level=insight.get("risk_level", "medium"),
+                pdf_path=pdf_path,
+            )
+        else:
+            from app.notifier.slack_notifier import send_message
+            send_message(
+                f" 일일 보고서 완료 (PDF 생성 실패)\n"
+                f"총 {len(df_master)}개 상품 | 재고이상 {len(stock_anomalies)}건 | 판매이상 {len(sales_anomalies)}건\n"
+                f"위험도: {insight.get('risk_level', 'medium').upper()}"
+            )
+            slack_ok = True
 
         # --- 분석결과 시트 기록 ---
         try:

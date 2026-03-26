@@ -1,24 +1,23 @@
-
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# weasyprint (PDF)
 RUN apt-get update && apt-get install -y \
-    libpango-1.0-0 \
-    libpangoft2-1.0-0 \
-    libffi-dev \
-    libcairo2 \
+    gcc \
+    python3-dev \
+    pkg-config \
+    libcairo2-dev \
+    libjpeg-dev \
+    zlib1g-dev \
+    libfreetype6-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     pip install uv && \
-    uv pip install --system --index-strategy unsafe-best-match -r requirements.txt
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system weasyprint openai httpx
+    uv pip install --system --index-strategy unsafe-best-match -r requirements.txt && \
+    uv pip install --system openai httpx
 
 COPY . .
 
