@@ -70,7 +70,7 @@ async def trigger_report():
 # CORS (Next.js 관리자 화면 연동)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],   # Next.js 개발 서버
+    allow_origins=["http://localhost:3001"],   # Next.js 개발 서버
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

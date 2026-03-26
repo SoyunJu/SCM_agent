@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getReportHistory, triggerReport, getPdfList, getPdfUrl } from "@/lib/api";
+import {getReportHistory, triggerReport, getPdfList, getPdfUrl, downloadPdf} from "@/lib/api";
 import { ReportExecution, PdfFile } from "@/lib/types";
 import { Play, CheckCircle, XCircle, Clock } from "lucide-react";
+
 
 const STATUS_INFO: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
     success:     { label: "성공",    icon: <CheckCircle size={14} />, color: "text-green-600" },
@@ -17,6 +18,35 @@ export default function ReportsPage() {
     const [message, setMessage]       = useState("");
     const [pdfs, setPdfs]             = useState<PdfFile[]>([]);
     const [previewUrl, setPreview]    = useState<string | null>(null);
+    const [blobUrls, setBlobUrls]     = useState<Record<string, string>>({});
+
+    // PDF blob URL 가져오기 (인증 포함)
+    const getPdfBlob = async (filename: string): Promise<string> => {
+        if (blobUrls[filename]) return blobUrls[filename];
+        const blob = await downloadPdf(filename);
+        const url = URL.createObjectURL(blob);
+        setBlobUrls((prev) => ({ ...prev, [filename]: url }));
+        return url;
+    };
+
+    const handlePreview = async (filename: string) => {
+        const currentUrl = getPdfUrl(filename);
+        if (previewUrl === currentUrl) {
+            setPreview(null);
+            return;
+        }
+        const blobUrl = await getPdfBlob(filename);
+        setPreview(blobUrl);
+    };
+
+    const handleDownload = async (filename: string) => {
+        const blobUrl = await getPdfBlob(filename);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = filename;
+        a.click();
+    };
+
 
     const fetchHistory = () =>
         getReportHistory(20).then((res) => setHistory(res.data.items));
@@ -127,26 +157,19 @@ export default function ReportsPage() {
                                 </div>
                                 <div className="flex gap-2">
                                     <button
-                                        onClick={() =>
-                                            setPreview(
-                                                previewUrl === getPdfUrl(pdf.filename)
-                                                    ? null
-                                                    : getPdfUrl(pdf.filename)
-                                            )
-                                        }
+                                        onClick={() => handlePreview(pdf.filename)}
                                         className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-medium transition"
                                     >
-                                        {previewUrl === getPdfUrl(pdf.filename) ? "닫기" : "미리보기"}
+                                        {previewUrl ? "닫기" : "미리보기"}
                                     </button>
 
-                                    <a
-                                        href={getPdfUrl(pdf.filename)}
-                                        download={pdf.filename}
+                                    <button
+                                        onClick={() => handleDownload(pdf.filename)}
                                         className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-medium transition"
                                     >
-                                    다운로드
-                                </a>
-                            </div>
+                                        다운로드
+                                    </button>
+                                </div>
                         </div>
                         ))
                         )}
@@ -155,13 +178,13 @@ export default function ReportsPage() {
 
             {/* PDF 미리보기 */}
             {previewUrl && (
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                <iframe
-                    src={previewUrl}
-                    className="w-full rounded-lg border border-gray-200"
-                    style={{ height: "800px" }}
-                />
-            </div>
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                    <iframe
+                        src={previewUrl}
+                        className="w-full rounded-lg border border-gray-200"
+                        style={{ height: "800px" }}
+                    />
+                </div>
             )}
         </div>
     );

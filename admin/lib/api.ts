@@ -110,3 +110,11 @@ export const getPdfUrl = (filename: string) =>
 // --- Alerts ---
 export const getUnreadCount = () =>
     apiClient.get("/scm/alerts/unread-count");
+
+// --- PDF (인증 포함) ---
+export const downloadPdf = async (filename: string): Promise<Blob> => {
+    const res = await apiClient.get(`/scm/report/pdf/${filename}`, {
+        responseType: "blob",
+    });
+    return res.data;
+};
