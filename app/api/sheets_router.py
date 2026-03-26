@@ -195,3 +195,44 @@ async def sync_sheets(
     asyncio.create_task(asyncio.to_thread(sync_sheets_only))
     logger.info(f"Sheets 동기화 트리거: {current_user.username}")
     return {"status": "triggered", "message": "데이터 동기화가 시작되었습니다."}
+
+
+
+@router.get("/orders")
+async def get_orders(
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+        status: str | None = None,
+        days: int = 90,
+        page: int = 1,
+        page_size: int = 50,
+):
+
+    try:
+        import pandas as pd
+        from app.sheets.reader import read_orders
+        df = read_orders()
+        if df.empty:
+            return {"total": 0, "page": 1, "page_size": page_size, "total_pages": 0, "items": []}
+
+        if "발주일" in df.columns:
+            df["발주일"] = pd.to_datetime(df["발주일"], errors="coerce")
+            cutoff = pd.Timestamp.now() - pd.Timedelta(days=days)
+            df = df[df["발주일"] >= cutoff].copy()
+            df["발주일"] = df["발주일"].dt.strftime("%Y-%m-%d")
+
+        if status:
+            df = df[df["상태"] == status]
+
+        total       = len(df)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        start       = (page - 1) * page_size
+        page_df     = df.iloc[start: start + page_size]
+
+        return {
+            "total": total, "page": page,
+            "page_size": page_size, "total_pages": total_pages,
+            "items": page_df.to_dict(orient="records"),
+        }
+    except Exception as e:
+        logger.error(f"주문 조회 실패: {e}")
+        return {"total": 0, "page": 1, "page_size": page_size, "total_pages": 0, "items": [], "error": str(e)}

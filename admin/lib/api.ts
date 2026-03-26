@@ -124,3 +124,25 @@ export const deletePdf = (filename: string) =>
 // --- Alerts ---
 export const getUnreadCount = () =>
     apiClient.get("/scm/alerts/unread-count");
+
+// --- Report Status Polling ---
+export const getReportStatus = (executionId: number) =>
+    apiClient.get(`/scm/report/status/${executionId}`);
+
+// --- Settings ---
+export const getSettings = () =>
+    apiClient.get("/scm/settings");
+
+export const saveSettings = (values: Record<string, string>) =>
+    apiClient.put("/scm/settings", values);
+
+// --- Orders ---
+export const getOrders = (params?: { status?: string; days?: number; page?: number; page_size?: number }) => {
+    const p = new URLSearchParams();
+    if (params?.status) p.append("status", params.status);
+    if (params?.days) p.append("days", String(params.days));
+    if (params?.page) p.append("page", String(params.page));
+    if (params?.page_size) p.append("page_size", String(params.page_size));
+    return apiClient.get(`/scm/sheets/orders?${p}`);
+};
+
