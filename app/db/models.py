@@ -112,7 +112,6 @@ class ProposalStatus(str, enum.Enum):
 
 
 class OrderProposal(Base):
-
     __tablename__ = "order_proposals"
 
     id            = Column(Integer, primary_key=True, autoincrement=True)
@@ -126,3 +125,5 @@ class OrderProposal(Base):
     created_at    = Column(DateTime, nullable=False, default=func.now())
     approved_at   = Column(DateTime, nullable=True)
     approved_by   = Column(String(100), nullable=True)
+    slack_ts      = Column(String(50), nullable=True)
+    slack_channel = Column(String(50), nullable=True)

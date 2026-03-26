@@ -18,6 +18,8 @@ from app.api.sheets_router    import router as sheets_router
 from app.api.alert_router     import router as alert_router
 from app.api.settings_router  import router as settings_router
 from app.api.order_router import router as order_router
+from app.api.slack_interactions_router import router as slack_interactions_router
+
 
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
 
@@ -100,6 +102,7 @@ app.include_router(scheduler_router)
 app.include_router(sheets_router)
 app.include_router(alert_router)
 app.include_router(settings_router)
+app.include_router(slack_interactions_router)
 app.include_router(order_router)
 
 
