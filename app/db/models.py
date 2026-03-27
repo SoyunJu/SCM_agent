@@ -148,3 +148,12 @@ class AdminUser(Base):
     is_active       = Column(Boolean, nullable=False, default=True)
     created_at      = Column(DateTime, nullable=False, default=func.now())
     last_login_at   = Column(DateTime, nullable=True)
+
+
+class Severity(str, enum.Enum):
+    LOW      = "low"
+    CHECK   = "check"
+    MEDIUM   = "medium"
+    HIGH     = "high"
+    CRITICAL = "critical"
+

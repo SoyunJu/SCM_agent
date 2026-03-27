@@ -8,6 +8,8 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      - TZ=Asia/Seoul
     volumes:
       - ./credentials:/app/credentials:ro
       - ./logs:/app/logs
@@ -26,6 +28,8 @@ services:
     command: python -m app.scheduler.crawler_job
     env_file:
       - .env
+    environment:
+      - TZ=Asia/Seoul
     volumes:
       - ./credentials:/app/credentials:ro
       - ./sample_data.xlsx:/app/sample_data.xlsx:ro

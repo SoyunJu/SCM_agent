@@ -3,6 +3,20 @@ import pandas as pd
 from loguru import logger
 
 
+def _clean_name(value) -> str:
+    s = str(value).strip()
+    if s in ("", "nan", "None", "NaN"):
+        return "데이터 없음"
+    return s
+
+
+def _clean_category(value) -> str:
+    s = str(value).strip()
+    if s in ("", "nan", "None", "NaN"):
+        return "Default"
+    return s
+
+
 def run_abc_analysis(df_master: pd.DataFrame, df_sales: pd.DataFrame, days: int = 90) -> list[dict]:
     """
     매출 기여도 기준 ABC 분류
@@ -41,6 +55,8 @@ def run_abc_analysis(df_master: pd.DataFrame, df_sales: pd.DataFrame, days: int 
 
         agg["누적매출"] = agg["매출합계"].cumsum()
         agg["누적비율"] = (agg["누적매출"] / total_sales * 100).round(2)
+        # 개별 매출 기여도 (프론트엔드 등급별 합산용)
+        agg["매출비율"] = (agg["매출합계"] / total_sales * 100).round(2)
 
         def _grade(cum_pct: float) -> str:
             if cum_pct <= 70:
@@ -56,6 +72,11 @@ def run_abc_analysis(df_master: pd.DataFrame, df_sales: pd.DataFrame, days: int 
         if "카테고리" in df_master.columns:
             cols.append("카테고리")
         df = agg.merge(df_master[cols], on="상품코드", how="left")
+
+        # 상품명/카테고리 빈값 처리
+        df["상품명"] = df["상품명"].apply(_clean_name)
+        if "카테고리" in df.columns:
+            df["카테고리"] = df["카테고리"].apply(_clean_category)
 
         a_cnt = int((df["등급"] == "A").sum())
         b_cnt = int((df["등급"] == "B").sum())

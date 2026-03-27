@@ -86,8 +86,8 @@ def run_demand_forecast_all(
 
         results.append({
             **result,
-            "product_name":  str(row.get("상품명", "")),
-            "category":      str(row.get("카테고리", "")),
+            "product_name":  str(row.get("상품명", "")) or "데이터 없음",
+            "category":      str(row.get("카테고리", "")) or "Default",
             "current_stock": current_stock,
             "shortage":      shortage,
             "sufficient":    sufficient,

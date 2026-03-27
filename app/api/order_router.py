@@ -17,7 +17,7 @@ from app.api.auth_router import get_current_user, require_admin, TokenData
 router = APIRouter(prefix="/scm/orders", tags=["orders"])
 
 # --- 심각도 순위 ------------
-SEVERITY_RANK: dict[str, int] = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+SEVERITY_RANK: dict[str, int] = {"low": 0, "check":0, "medium": 1, "high": 2, "critical": 3}
 
 
 def _get_severity_threshold(db: Session) -> str:
@@ -26,7 +26,7 @@ def _get_severity_threshold(db: Session) -> str:
     ).first()
     if row and row.setting_value.lower() in SEVERITY_RANK:
         return row.setting_value.lower()
-    return "high"
+    return "medium"
 
 
 # --- Schemas ------------------

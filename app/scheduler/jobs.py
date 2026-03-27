@@ -37,6 +37,8 @@ def _sync_excel_to_sheets(excel_path: str) -> None:
     try:
         df_stock_excel = parse_stock_sheet(excel_path)
         upsert_stock_from_excel(df_stock_excel)
+        # 재고현황 상품코드도 상품마스터에 반영
+        upsert_master_from_excel(df_stock_excel)
     except Exception as e:
         logger.warning(f"엑셀 재고 파싱 스킵: {e}")
 
@@ -137,7 +139,7 @@ def run_daily_job(
         logger.info("[4/7] 감성 분석")
         sales_anomalies = batch_analyze_sales_anomalies(sales_anomalies)
 
-        # --- 6. AI 인사이트 + PDF ---
+        # --- 6. AI 인사이트 ---
         logger.info("[5/7] AI 인사이트")
         insight = generate_daily_insight(
             stock_anomalies=stock_anomalies,
@@ -157,8 +159,10 @@ def run_daily_job(
                and (not category_filter or a.get("category") in category_filter)
         ]
 
+        # --- 6. PDF 보고서 생성 ---
         logger.info("[6/7] PDF 보고서 생성")
         pdf_path = None
+        pdf_ok   = False
         try:
             pdf_path = generate_daily_pdf(
                 report_date=date.today(),
@@ -167,21 +171,29 @@ def run_daily_job(
                 sales_anomalies=filtered_sales,
                 insight=insight,
             )
+            pdf_ok = True
         except Exception as pdf_err:
-            logger.error(f"PDF 생성 실패 (Slack/DB는 계속 진행): {pdf_err}")
+            logger.error(f"PDF 생성 실패: {pdf_err}")
 
-            # --- 7. 알림 발송 (Slack / Email / Both) ---
+        # --- 7. Slack 알림 (보고서 생성 성공 시에만 발송) ---
+        slack_ok = False
+        if pdf_ok:
             logger.info("[7/7] 알림 발송")
-            notify_daily_report(
-                report_date=date.today().strftime("%Y-%m-%d"),
-                total_products=len(df_master),
-                stock_anomaly_count=len(stock_anomalies),
-                sales_anomaly_count=len(sales_anomalies),
-                risk_level=insight.get("risk_level", "medium"),
-                pdf_path=pdf_path,
-                db=db,
-            )
-            slack_ok = True
+            try:
+                notify_daily_report(
+                    report_date=date.today().strftime("%Y-%m-%d"),
+                    total_products=len(df_master),
+                    stock_anomaly_count=len(stock_anomalies),
+                    sales_anomaly_count=len(sales_anomalies),
+                    risk_level=insight.get("risk_level", "medium"),
+                    pdf_path=pdf_path,
+                    db=db,
+                )
+                slack_ok = True
+            except Exception as notify_err:
+                logger.error(f"알림 발송 실패: {notify_err}")
+        else:
+            logger.info("[7/7] 알림 발송 건너뜀 (PDF 생성 실패)")
 
 
         # --- 분석결과 시트 기록 ---
@@ -215,7 +227,7 @@ def run_daily_job(
                 severity=Severity(item["severity"]),
             )
 
-            # --- SSE + 알림 ---
+        # --- SSE + 이상징후 알림 ---
         critical_items = [
             i for i in list(stock_anomalies) + list(sales_anomalies)
             if str(i.get("severity", "")) in ("critical", "high")

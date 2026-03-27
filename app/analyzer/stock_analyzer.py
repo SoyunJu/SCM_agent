@@ -17,6 +17,20 @@ class StockAnomaly(TypedDict):
     severity: str
 
 
+def _clean_name(value) -> str:
+    s = str(value).strip()
+    if s in ("", "nan", "None", "NaN"):
+        return "데이터 없음"
+    return s
+
+
+def _clean_category(value) -> str:
+    s = str(value).strip()
+    if s in ("", "nan", "None", "NaN"):
+        return "Default"
+    return s
+
+
 def _calc_severity_low_stock(
         days_until_stockout: float,
         critical_days: int = 1,
@@ -33,7 +47,6 @@ def _calc_severity_low_stock(
 
 
 def _calc_safety_stock(daily_avg: float, safety_stock_days: int = 7, safety_stock_default: int = 10) -> int:
-
     if daily_avg > 0:
         return max(round(daily_avg * safety_stock_days), safety_stock_default)
     return safety_stock_default
@@ -72,14 +85,30 @@ def detect_low_stock(
     for _, row in df[df["현재재고"] <= df["안전재고기준"]].iterrows():
         avg   = row["일평균판매량"]
         stock = row["현재재고"]
-        days_out = round(stock / avg, 1) if avg > 0 else 999.0
+
+        if avg > 0:
+            days_out = round(stock / avg, 1)
+            severity = _calc_severity_low_stock(days_out, critical_days, high_days, medium_days)
+        elif stock == 0:
+            # 재고=0, 판매이력 없음 → 확인필요
+            days_out = 0.0
+            severity = Severity.CHECK
+        else:
+            # 재고 있지만 판매이력 없음 → 낮음
+            days_out = 999.0
+            severity = Severity.LOW
+
         results.append(StockAnomaly(
-            product_code=str(row["상품코드"]), product_name=str(row["상품명"]),
-            category=str(row.get("카테고리", "")),
-            anomaly_type=AnomalyType.LOW_STOCK, current_stock=int(stock),
-            safety_stock=int(row["안전재고기준"]), daily_avg_sales=round(avg, 2),
-            days_until_stockout=days_out, restock_date=str(row.get("입고예정일", "")),
-            severity=_calc_severity_low_stock(days_out, critical_days, high_days, medium_days),
+            product_code=str(row["상품코드"]),
+            product_name=_clean_name(row["상품명"]),
+            category=_clean_category(row.get("카테고리", "")),
+            anomaly_type=AnomalyType.LOW_STOCK,
+            current_stock=int(stock),
+            safety_stock=int(row["안전재고기준"]),
+            daily_avg_sales=round(avg, 2),
+            days_until_stockout=days_out,
+            restock_date=str(row.get("입고예정일", "")),
+            severity=severity,
         ))
 
     logger.info(f"재고 부족 감지: {len(results)}개 상품")
@@ -117,12 +146,16 @@ def detect_over_stock(
         avg   = row["일평균판매량"]
         stock = row["현재재고"]
         results.append(StockAnomaly(
-            product_code=str(row["상품코드"]), product_name=str(row["상품명"]),
-            category=str(row.get("카테고리", "")),
-            anomaly_type=AnomalyType.OVER_STOCK, current_stock=int(stock),
-            safety_stock=int(row["안전재고기준"]), daily_avg_sales=round(avg, 2),
+            product_code=str(row["상품코드"]),
+            product_name=_clean_name(row["상품명"]),
+            category=_clean_category(row.get("카테고리", "")),
+            anomaly_type=AnomalyType.OVER_STOCK,
+            current_stock=int(stock),
+            safety_stock=int(row["안전재고기준"]),
+            daily_avg_sales=round(avg, 2),
             days_until_stockout=round(stock / avg, 1) if avg > 0 else 999.0,
-            restock_date=str(row.get("입고예정일", "")), severity=Severity.LOW,
+            restock_date=str(row.get("입고예정일", "")),
+            severity=Severity.LOW,
         ))
 
     logger.info(f"재고 과잉 감지: {len(results)}개 상품")
@@ -146,11 +179,16 @@ def detect_long_term_stock(
 
     for _, row in df[(df["현재재고"] > 0) & (~df["상품코드"].isin(recent_sold))].iterrows():
         results.append(StockAnomaly(
-            product_code=str(row["상품코드"]), product_name=str(row["상품명"]),
-            category=str(row.get("카테고리", "")),
-            anomaly_type=AnomalyType.LONG_TERM_STOCK, current_stock=int(row["현재재고"]),
-            safety_stock=10, daily_avg_sales=0.0, days_until_stockout=999.0,
-            restock_date=str(row.get("입고예정일", "")), severity=Severity.LOW,
+            product_code=str(row["상품코드"]),
+            product_name=_clean_name(row["상품명"]),
+            category=_clean_category(row.get("카테고리", "")),
+            anomaly_type=AnomalyType.LONG_TERM_STOCK,
+            current_stock=int(row["현재재고"]),
+            safety_stock=10,
+            daily_avg_sales=0.0,
+            days_until_stockout=999.0,
+            restock_date=str(row.get("입고예정일", "")),
+            severity=Severity.LOW,
         ))
 
     logger.info(f"장기 재고 감지: {len(results)}개 상품")
