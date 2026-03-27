@@ -8,6 +8,12 @@ import {
 import { AdminUser } from "@/lib/types";
 import { Loader2, Plus, Pencil, Trash2, KeyRound, X } from "lucide-react";
 
+// login/page.tsx 와 동일한 sha256 해싱 유틸
+const hashSHA256 = async (text: string): Promise<string> => {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+};
+
 const ROLE_LABEL: Record<string, string> = {
     superadmin: "슈퍼어드민",
     admin:      "관리자",
@@ -83,8 +89,10 @@ export default function AdminUsersPage() {
     const handleAdd = async () => {
         setSaving(true);
         try {
+            const hashedPw = await hashSHA256(addForm.password);
             await createAdminUser({
                 ...addForm,
+                password:      hashedPw,
                 slack_user_id: addForm.slack_user_id || undefined,
                 email:         addForm.email || undefined,
             });
@@ -150,7 +158,12 @@ export default function AdminUsersPage() {
     const handlePwChange = async () => {
         setSaving(true);
         try {
-            await changeMyPassword(pwForm);
+            const hashedCurrent = await hashSHA256(pwForm.current_password);
+            const hashedNew     = await hashSHA256(pwForm.new_password);
+            await changeMyPassword({
+                current_password: hashedCurrent,
+                new_password:     hashedNew,
+            });
             setShowPw(false);
             setPwForm({ current_password: "", new_password: "" });
             flash("✅ 비밀번호가 변경되었습니다.");
