@@ -12,6 +12,12 @@ from app.analyzer.sales_analyzer import (
     SalesAnomaly,
 )
 
+from app.analyzer.stock_analyzer import run_stock_analysis as _run_stock
+
+def detect_stock_anomalies(df_master, df_stock, df_sales):
+    return _run_stock(df_master, df_stock, df_sales)
+
+
 __all__ = [
     "detect_low_stock",
     "detect_over_stock",

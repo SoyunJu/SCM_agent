@@ -17,8 +17,11 @@ export default function SchedulerPage() {
     const [saving, setSaving]         = useState(false);
     const [triggering, setTriggering] = useState(false);
     const [message, setMessage]       = useState("");
+    const [isReadonly, setIsReadonly] = useState(false);
 
     useEffect(() => {
+        const role = localStorage.getItem("user_role") ?? "";
+        setIsReadonly(role === "readonly");
         Promise.all([getSchedulerConfig(), getSchedulerStatus()]).then(([cfg, sts]) => {
             const c = cfg.data;
             setConfig(c);
@@ -143,6 +146,7 @@ export default function SchedulerPage() {
                     </div>
 
                     <div className="flex gap-3 pt-2">
+                        {!isReadonly && (
                         <button
                             onClick={handleSave}
                             disabled={saving}
@@ -151,6 +155,8 @@ export default function SchedulerPage() {
                             <Save size={14} />
                             {saving ? "저장 중..." : "저장"}
                         </button>
+                        )}
+                        {!isReadonly && (
                         <button
                             onClick={handleTrigger}
                             disabled={triggering}
@@ -159,6 +165,8 @@ export default function SchedulerPage() {
                             <Play size={14} />
                             {triggering ? "실행 중..." : "보고서 즉시 생성"}
                         </button>
+                        )}
+
                         {/* 데이터 동기화만 */}
                         <button
                             onClick={async () => {

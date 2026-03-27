@@ -6,11 +6,9 @@ import Link from "next/link";
 import {
     LayoutDashboard, AlertTriangle, FileText,
     MessageSquare, LogOut, Bell, Database,
-    Calendar, BarChart2, X,
-    ShoppingCart, Settings, Users,
+    Calendar, BarChart2, ShoppingCart, Settings, Users, X,
 } from "lucide-react";
 import { useAlerts } from "@/lib/useAlerts";
-import { AlertMessage } from "@/lib/types";
 
 const NAV_ITEMS = [
     { href: "/dashboard",             icon: LayoutDashboard, label: "대시보드",    superadminOnly: false },
@@ -18,35 +16,61 @@ const NAV_ITEMS = [
     { href: "/dashboard/reports",     icon: FileText,        label: "보고서",      superadminOnly: false },
     { href: "/dashboard/stats",       icon: BarChart2,       label: "통계",        superadminOnly: false },
     { href: "/dashboard/sheets",      icon: Database,        label: "데이터 시트", superadminOnly: false },
-    { href: "/dashboard/scheduler",   icon: Calendar,        label: "스케줄 관리", superadminOnly: false },
     { href: "/dashboard/orders",      icon: ShoppingCart,    label: "발주 관리",   superadminOnly: false },
+    { href: "/dashboard/scheduler",   icon: Calendar,        label: "스케줄 관리", superadminOnly: false },
     { href: "/dashboard/chat",        icon: MessageSquare,   label: "AI 챗봇",     superadminOnly: false },
     { href: "/dashboard/settings",    icon: Settings,        label: "설정",        superadminOnly: false },
     { href: "/dashboard/admin-users", icon: Users,           label: "관리자 관리", superadminOnly: true  },
 ];
 
+const ROLE_BADGE: Record<string, { label: string; cls: string }> = {
+    superadmin: { label: "슈퍼관리자", cls: "bg-purple-100 text-purple-700" },
+    admin:      { label: "관리자",     cls: "bg-blue-100 text-blue-700"     },
+    readonly:   { label: "읽기전용",   cls: "bg-gray-100 text-gray-500"     },
+};
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-    const router              = useRouter();
-    const pathname            = usePathname();
+    const router   = useRouter();
+    const pathname = usePathname();
     const { alerts, unreadCount, clearUnread } = useAlerts();
+
     const [showAlerts, setShowAlerts] = useState(false);
-    const [userRole, setUserRole]     = useState<string>("");   // ← 추가
+    const [userRole, setUserRole]     = useState<string>("");
+    const [username, setUsername]     = useState<string>("");
 
     useEffect(() => {
-        if (!localStorage.getItem("access_token")) router.push("/login");
-        // role 조회 (관리자 관리 탭 조건부 표시용)
         const token = localStorage.getItem("access_token");
-        if (!token) return;
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/scm/auth/me`, {
-            headers: { Authorization: `Bearer ${token}` },
-        })
-            .then((r) => r.json())
-            .then((d) => setUserRole(d.role ?? ""))
-            .catch(() => {});
+        if (!token) { router.push("/login"); return; }
+
+        // 역할 정보 로드 (로그인 시 저장된 값 우선, 없으면 API 조회)
+        const cachedRole = localStorage.getItem("user_role") ?? "";
+        const cachedName = localStorage.getItem("username") ?? "";
+        if (cachedRole) {
+            setUserRole(cachedRole);
+            setUsername(cachedName);
+        } else {
+            fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/scm/auth/me`, {
+                headers: { Authorization: `Bearer ${token}` },
+            })
+                .then((r) => r.json())
+                .then((data) => {
+                    setUserRole(data.role ?? "admin");
+                    setUsername(data.username ?? "");
+                    localStorage.setItem("user_role", data.role ?? "admin");
+                    localStorage.setItem("username", data.username ?? "");
+                })
+                .catch(() => { router.push("/login"); });
+        }
     }, [router]);
+
+    const visibleNavItems = NAV_ITEMS.filter(
+        (item) => !item.superadminOnly || userRole === "superadmin"
+    );
 
     const handleLogout = () => {
         localStorage.removeItem("access_token");
+        localStorage.removeItem("user_role");
+        localStorage.removeItem("username");
         router.push("/login");
     };
 
@@ -55,10 +79,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (!showAlerts) clearUnread();
     };
 
-    // superadminOnly 항목은 role이 superadmin일 때만 렌더링
-    const visibleNavItems = NAV_ITEMS.filter(
-        (item) => !item.superadminOnly || userRole === "superadmin"
-    );
+    const badge = ROLE_BADGE[userRole];
 
     return (
         <div className="flex min-h-screen bg-gray-50">
@@ -69,13 +90,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <p className="text-xs text-gray-400 mt-0.5">재고·판매 분석</p>
                 </div>
 
-                <nav className="flex-1 p-4 space-y-1">
+                <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
                     {visibleNavItems.map(({ href, icon: Icon, label }) => {
                         const active = pathname === href;
                         return (
                             <Link key={href} href={href}
                                   className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition ${
-                                      active ? "bg-blue-50 text-blue-600 font-medium" : "text-gray-600 hover:bg-gray-100"
+                                      active
+                                          ? "bg-blue-50 text-blue-600 font-medium"
+                                          : "text-gray-600 hover:bg-gray-100"
                                   }`}
                             >
                                 <Icon size={16} />
@@ -85,7 +108,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     })}
                 </nav>
 
-                <div className="p-4 border-t border-gray-100">
+                {/* 사용자 정보 + 로그아웃 */}
+                <div className="p-4 border-t border-gray-100 space-y-2">
+                    {badge && (
+                        <div className="px-3 py-1.5">
+                            <p className="text-xs text-gray-500 font-medium truncate">{username}</p>
+                            <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium mt-0.5 ${badge.cls}`}>
+                                {badge.label}
+                            </span>
+                        </div>
+                    )}
                     <button onClick={handleLogout}
                             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-500 hover:bg-gray-100 w-full transition"
                     >
@@ -97,7 +129,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
             {/* 메인 */}
             <div className="flex-1 flex flex-col">
-                {/* 상단 바 */}
                 <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-end px-8 gap-4">
                     <div className="relative">
                         <button onClick={toggleAlerts}
@@ -106,12 +137,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             <Bell size={18} className="text-gray-500" />
                             {unreadCount > 0 && (
                                 <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </span>
+                                    {unreadCount > 9 ? "9+" : unreadCount}
+                                </span>
                             )}
                         </button>
 
-                        {/* 알림 드롭다운 */}
                         {showAlerts && (
                             <div className="absolute right-0 top-12 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50">
                                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">

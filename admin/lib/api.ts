@@ -29,14 +29,21 @@ apiClient.interceptors.response.use(
 
 // --- Auth ---
 export const login = async (username: string, password: string) => {
-    const form = new URLSearchParams();
-    form.append("username", username);
-    form.append("password", password);
-    const res = await apiClient.post("/scm/auth/login", form, {
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    });
+    const res = await apiClient.post("/scm/auth/login",
+        new URLSearchParams({ username, password }),
+        { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+    );
+    if (res.data.access_token) {
+        // role 저장
+        const meRes = await apiClient.get("/scm/auth/me", {
+            headers: { Authorization: `Bearer ${res.data.access_token}` },
+        });
+        localStorage.setItem("user_role", meRes.data.role ?? "admin");
+        localStorage.setItem("username", meRes.data.username ?? username);
+    }
     return res.data;
 };
+
 
 // --- Report ---
 export const triggerReport = (filters?: { severity_filter?: string[] | null; category_filter?: string[] | null }) =>

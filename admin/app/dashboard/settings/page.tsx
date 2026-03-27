@@ -12,17 +12,39 @@ interface SettingItem {
 }
 
 const LABELS: Record<string, string> = {
-    SAFETY_STOCK_DAYS:       "안전재고 보유 기준 (일)",
-    SAFETY_STOCK_DEFAULT:    "안전재고 기본값 (판매 없을 때)",
-    CHAT_HISTORY_DAYS:       "챗봇 히스토리 보관 일수",
-    LOW_STOCK_CRITICAL_DAYS: "긴급 경보 소진예상일 기준",
-    LOW_STOCK_HIGH_DAYS:     "높음 경보 소진예상일 기준",
-    LOW_STOCK_MEDIUM_DAYS:   "보통 경보 소진예상일 기준",
-    SALES_SURGE_THRESHOLD:   "판매 급등 기준 (%)",
-    SALES_DROP_THRESHOLD:    "판매 급락 기준 (%)",
-    SHEETS_CACHE_TTL:        "Google Sheets 캐시 시간 (초)",
-    ALERT_CHANNEL:      "알림 채널",
-    ALERT_MIN_SEVERITY: "알림 최소 심각도",
+    SAFETY_STOCK_DAYS:        "안전재고 보유 기준 (일)",
+    SAFETY_STOCK_DEFAULT:     "안전재고 기본값 (판매 없을 때)",
+    CHAT_HISTORY_DAYS:        "챗봇 히스토리 보관 일수",
+    LOW_STOCK_CRITICAL_DAYS:  "긴급 경보 소진예상일 기준",
+    LOW_STOCK_HIGH_DAYS:      "높음 경보 소진예상일 기준",
+    LOW_STOCK_MEDIUM_DAYS:    "보통 경보 소진예상일 기준",
+    SALES_SURGE_THRESHOLD:    "판매 급등 기준 (%)",
+    SALES_DROP_THRESHOLD:     "판매 급락 기준 (%)",
+    SHEETS_CACHE_TTL:         "Google Sheets 캐시 시간 (초)",
+    ALERT_CHANNEL:            "알림 채널",
+    ALERT_MIN_SEVERITY:       "알림 최소 심각도",
+    AUTO_ORDER_MIN_SEVERITY:  "자동발주 에이전트 최소 심각도",
+};
+
+// select로 렌더링할 키 정의
+const SELECT_OPTIONS: Record<string, { value: string; label: string }[]> = {
+    ALERT_CHANNEL: [
+        { value: "slack",  label: "Slack만" },
+        { value: "email",  label: "이메일만" },
+        { value: "both",   label: "Slack + 이메일" },
+    ],
+    ALERT_MIN_SEVERITY: [
+        { value: "low",      label: "낮음 이상" },
+        { value: "medium",   label: "보통 이상" },
+        { value: "high",     label: "높음 이상" },
+        { value: "critical", label: "긴급만" },
+    ],
+    AUTO_ORDER_MIN_SEVERITY: [
+        { value: "low",      label: "낮음 이상 (모두)" },
+        { value: "medium",   label: "보통 이상" },
+        { value: "high",     label: "높음 이상 (권장)" },
+        { value: "critical", label: "긴급만" },
+    ],
 };
 
 const GROUPS = [
@@ -32,16 +54,22 @@ const GROUPS = [
     },
     {
         title: "이상 징후 임계값",
-        keys: ["LOW_STOCK_CRITICAL_DAYS", "LOW_STOCK_HIGH_DAYS", "LOW_STOCK_MEDIUM_DAYS",
-            "SALES_SURGE_THRESHOLD", "SALES_DROP_THRESHOLD"],
-    },
-    {
-        title: "시스템 설정",
-        keys: ["CHAT_HISTORY_DAYS", "SHEETS_CACHE_TTL"],
+        keys: [
+            "LOW_STOCK_CRITICAL_DAYS", "LOW_STOCK_HIGH_DAYS", "LOW_STOCK_MEDIUM_DAYS",
+            "SALES_SURGE_THRESHOLD", "SALES_DROP_THRESHOLD",
+        ],
     },
     {
         title: "알림 설정",
         keys: ["ALERT_CHANNEL", "ALERT_MIN_SEVERITY"],
+    },
+    {
+        title: "발주 설정",
+        keys: ["AUTO_ORDER_MIN_SEVERITY"],
+    },
+    {
+        title: "시스템 설정",
+        keys: ["CHAT_HISTORY_DAYS", "SHEETS_CACHE_TTL"],
     },
 ];
 
@@ -51,8 +79,11 @@ export default function SettingsPage() {
     const [loading, setLoading]   = useState(true);
     const [saving, setSaving]     = useState(false);
     const [message, setMessage]   = useState("");
+    const [isReadonly, setIsReadonly] = useState(false);
 
     useEffect(() => {
+        const role = localStorage.getItem("user_role") ?? "";
+        setIsReadonly(role === "readonly");
         getSettings().then((res) => {
             const items: SettingItem[] = res.data.items;
             setSettings(items);
@@ -96,6 +127,7 @@ export default function SettingsPage() {
                     <h2 className="text-2xl font-bold text-gray-800">시스템 설정</h2>
                     <p className="text-gray-400 text-sm mt-1">분석 임계값 및 동작 설정 (저장 후 다음 실행부터 적용)</p>
                 </div>
+                {!isReadonly && (
                 <button
                     onClick={handleSave}
                     disabled={saving}
@@ -104,6 +136,7 @@ export default function SettingsPage() {
                     {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                     {saving ? "저장 중..." : "저장"}
                 </button>
+                )}
             </div>
 
             {message && (
@@ -119,6 +152,7 @@ export default function SettingsPage() {
                         {group.keys.map((key) => {
                             const item = settings.find((s) => s.key === key);
                             if (!item) return null;
+                            const isSelect = key in SELECT_OPTIONS;
                             return (
                                 <div key={key} className="px-6 py-4 flex items-center justify-between gap-4">
                                     <div className="flex-1">
@@ -126,32 +160,27 @@ export default function SettingsPage() {
                                         <p className="text-xs text-gray-400 mt-0.5">{item.description}</p>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        {key === "ALERT_CHANNEL" ? (
+                                        {isSelect ? (
                                             <select
                                                 value={values[key] ?? item.value}
-                                                onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))}
-                                                className="w-40 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                                onChange={(e) =>
+                                                    setValues((prev) => ({ ...prev, [key]: e.target.value }))
+                                                }
+                                                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                                             >
-                                                <option value="slack">Slack만</option>
-                                                <option value="email">이메일만</option>
-                                                <option value="both">Slack + 이메일</option>
-                                            </select>
-                                        ) : key === "ALERT_MIN_SEVERITY" ? (
-                                            <select
-                                                value={values[key] ?? item.value}
-                                                onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))}
-                                                className="w-40 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                            >
-                                                <option value="low">낮음 이상</option>
-                                                <option value="medium">보통 이상</option>
-                                                <option value="high">높음 이상</option>
-                                                <option value="critical">긴급만</option>
+                                                {SELECT_OPTIONS[key].map((opt) => (
+                                                    <option key={opt.value} value={opt.value}>
+                                                        {opt.label}
+                                                    </option>
+                                                ))}
                                             </select>
                                         ) : (
                                             <input
                                                 type="number"
                                                 value={values[key] ?? item.value}
-                                                onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))}
+                                                onChange={(e) =>
+                                                    setValues((prev) => ({ ...prev, [key]: e.target.value }))
+                                                }
                                                 className="w-24 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
                                             />
                                         )}

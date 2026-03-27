@@ -38,6 +38,7 @@ function OrdersTab() {
     const [page, setPage]             = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [total, setTotal]           = useState(0);
+    const [isReadonly, setIsReadonly] = useState(false);
 
     const fetchData = async () => {
         setLoading(true);
@@ -52,8 +53,16 @@ function OrdersTab() {
         }
     };
 
-    useEffect(() => { setPage(1); }, [tab]);
-    useEffect(() => { fetchData(); }, [tab, page]);
+    useEffect(() => {
+        const role = localStorage.getItem("user_role") ?? "";
+        setIsReadonly(role === "readonly");
+        setPage(1); }, [tab]);
+
+
+    useEffect(() => {
+        const role = localStorage.getItem("user_role") ?? "";
+        setIsReadonly(role === "readonly");
+        fetchData(); }, [tab, page]);
 
     const countByStatus = STATUS_TABS.slice(1).reduce<Record<string, number>>((acc, s) => {
         acc[s] = orders.filter((o) => o.상태 === s).length;
@@ -171,6 +180,7 @@ function ProposalsTab() {
     const [editId, setEditId]         = useState<number | null>(null);
     const [editQty, setEditQty]       = useState<string>("");
     const [editPrice, setEditPrice]   = useState<string>("");
+    const [isReadonly, setIsReadonly] = useState(false);
 
     const fetchProposals = async () => {
         setLoading(true);
@@ -184,7 +194,11 @@ function ProposalsTab() {
         }
     };
 
-    useEffect(() => { fetchProposals(); }, [statusFilter]);
+    useEffect(() => {
+        const role = localStorage.getItem("user_role") ?? "";
+        setIsReadonly(role === "readonly");
+        fetchProposals(); }, [statusFilter]);
+
 
     const handleGenerate = async () => {
         setGenerating(true);
@@ -229,6 +243,7 @@ function ProposalsTab() {
         <div className="space-y-4">
             {/* 헤더 */}
             <div className="flex items-center gap-3 flex-wrap">
+                {!isReadonly && (
                 <button
                     onClick={handleGenerate}
                     disabled={generating}
@@ -239,6 +254,7 @@ function ProposalsTab() {
                         : <Zap size={14} />}
                     발주 제안 생성
                 </button>
+                )}
                 {["all", "pending", "approved", "rejected"].map((s) => (
                     <button
                         key={s}
@@ -328,7 +344,7 @@ function ProposalsTab() {
                                         <button onClick={() => saveEdit(p.id)} className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">저장</button>
                                         <button onClick={() => setEditId(null)} className="px-2 py-1 border border-gray-200 rounded text-xs hover:bg-gray-50">취소</button>
                                     </div>
-                                ) : p.status === "pending" ? (
+                                ) : p.status === "pending" && !isReadonly ? (
                                     <div className="flex gap-1 justify-center">
                                         <button onClick={() => startEdit(p)} title="수정" className="p-1 rounded hover:bg-gray-100 text-gray-500"><Pencil size={14} /></button>
                                         <button onClick={() => handleApprove(p.id)} title="승인" className="p-1 rounded hover:bg-green-50 text-green-600"><CheckCircle size={14} /></button>

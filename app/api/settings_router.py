@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from loguru import logger
 
-from app.api.auth_router import get_current_user, TokenData
+from app.api.auth_router import get_current_user, require_admin, TokenData
 from app.db.connection import get_db
 from app.db.repository import get_setting, upsert_setting
 from app.api.order_router import router as order_router
@@ -31,7 +31,7 @@ DEFAULT_SETTINGS: dict[str, tuple[str, str]] = {
 
 @router.get("")
 async def get_settings(
-        current_user: Annotated[TokenData, Depends(get_current_user)],
+        current_user: Annotated[TokenData, Depends(require_admin)],
         db: Session = Depends(get_db),
 ):
 
@@ -50,7 +50,7 @@ async def get_settings(
 @router.put("")
 async def save_settings(
         body: dict,
-        current_user: Annotated[TokenData, Depends(get_current_user)],
+        current_user: Annotated[TokenData, Depends(require_admin)],
         db: Session = Depends(get_db),
 ):
 

@@ -77,6 +77,7 @@ async def lifespan(app: FastAPI):
 
 
 def _seed_superadmin() -> None:
+    import hashlib
     from app.db.connection import SessionLocal
     from app.db.repository import get_admin_user_by_username, create_admin_user
     from app.db.models import AdminRole
@@ -87,10 +88,11 @@ def _seed_superadmin() -> None:
         existing = get_admin_user_by_username(db, settings.admin_username)
         if not existing:
             ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+            sha256_pw = hashlib.sha256(settings.admin_password.encode()).hexdigest()
             create_admin_user(
                 db,
                 username=settings.admin_username,
-                hashed_password=ctx.hash(settings.admin_password),
+                hashed_password=ctx.hash(sha256_pw),
                 role=AdminRole.SUPERADMIN,
             )
             logger.info(f"슈퍼어드민 자동 생성: {settings.admin_username}")
@@ -100,6 +102,7 @@ def _seed_superadmin() -> None:
         logger.warning(f"슈퍼어드민 seed 실패(무시): {e}")
     finally:
         db.close()
+
 
 
 

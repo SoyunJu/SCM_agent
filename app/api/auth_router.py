@@ -116,3 +116,15 @@ async def refresh_token(
 @router.get("/me")
 async def get_me(current_user: Annotated[TokenData, Depends(get_current_user)]):
     return {"username": current_user.username, "role": current_user.role}
+
+
+
+def require_admin(
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+) -> TokenData:
+    if current_user.role == "readonly":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="읽기 전용 계정은 이 작업을 수행할 수 없습니다.",
+        )
+    return current_user

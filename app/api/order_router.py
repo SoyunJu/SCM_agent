@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.db.connection import get_db
 from app.db.models import OrderProposal, ProposalStatus, SystemSettings
-from app.api.auth_router import get_current_user
+from app.api.auth_router import get_current_user, require_admin, TokenData
 
 router = APIRouter(prefix="/scm/orders", tags=["orders"])
 
@@ -154,7 +154,7 @@ def _build_resolved_blocks(p: OrderProposal) -> list[dict]:
 @router.post("/proposals/generate")
 async def generate_proposals(
         db: Session = Depends(get_db),
-        _: dict = Depends(get_current_user),
+        _: dict = Depends(require_admin),
 ):
     try:
         from app.sheets.reader import read_product_master, read_sales, read_stock
@@ -171,7 +171,7 @@ async def generate_proposals(
             lambda: (read_product_master(), read_stock(), read_sales())
         )
 
-        stock_anomalies = detect_stock_anomalies(df_stock, df_sales)
+        stock_anomalies = detect_stock_anomalies(df_master, df_stock, df_sales)
         filtered = [
             a for a in stock_anomalies
             if SEVERITY_RANK.get(str(a.get("severity", "")).lower(), -1) >= threshold_rank
@@ -250,7 +250,7 @@ def list_proposals(
         limit:  int = Query(50, ge=1, le=200),
         offset: int = Query(0, ge=0),
         db: Session = Depends(get_db),
-        _: dict = Depends(get_current_user),
+        _: TokenData = Depends(get_current_user),
 ):
     q = db.query(OrderProposal)
     if status:
@@ -274,12 +274,12 @@ def list_proposals(
 def approve_proposal(
         proposal_id: int,
         db: Session = Depends(get_db),
-        current_user: dict = Depends(get_current_user),
+        current_user: TokenData = Depends(require_admin),
 ):
     obj = _get_or_404(db, proposal_id)
     obj.status      = ProposalStatus.APPROVED
     obj.approved_at = datetime.now()
-    obj.approved_by = current_user.get("sub", "admin")
+    obj.approved_by = current_user.username
     db.commit()
     _update_slack_message(obj)
     return ProposalOut.from_orm(obj)
@@ -291,12 +291,12 @@ def approve_proposal(
 def reject_proposal(
         proposal_id: int,
         db: Session = Depends(get_db),
-        current_user: dict = Depends(get_current_user),
+        current_user: TokenData = Depends(require_admin),
 ):
     obj = _get_or_404(db, proposal_id)
     obj.status      = ProposalStatus.REJECTED
     obj.approved_at = datetime.now()
-    obj.approved_by = current_user.get("sub", "admin")
+    obj.approved_by = current_user.username
     db.commit()
     _update_slack_message(obj)
     return ProposalOut.from_orm(obj)
@@ -309,7 +309,7 @@ def update_proposal(
         proposal_id: int,
         body: ProposalUpdate,
         db: Session = Depends(get_db),
-        _: dict = Depends(get_current_user),
+        _: dict = Depends(require_admin),
 ):
     obj = _get_or_404(db, proposal_id)
     if body.proposed_qty is not None:
@@ -328,7 +328,7 @@ def update_proposal(
 @router.get("/proposals/threshold")
 def get_threshold(
         db: Session = Depends(get_db),
-        _: dict = Depends(get_current_user),
+        _: TokenData = Depends(get_current_user),
 ):
     return {
         "threshold": _get_severity_threshold(db),

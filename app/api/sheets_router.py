@@ -6,7 +6,7 @@ from loguru import logger
 import asyncio
 import json
 
-from app.api.auth_router import get_current_user, TokenData
+from app.api.auth_router import get_current_user, require_admin, TokenData
 from app.sheets.reader import read_product_master, read_sales, read_stock
 
 router = APIRouter(prefix="/scm/sheets", tags=["sheets"])
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/scm/sheets", tags=["sheets"])
 
 @router.get("/master")
 async def get_master(
-        current_user: Annotated[TokenData, Depends(get_current_user)],
+        current_user: Annotated[TokenData, Depends(require_admin)],
         page: int = 1,
         page_size: int = 50,
         search: str | None = None,
@@ -195,7 +195,7 @@ async def get_stock_stats(
 
 @router.post("/sync")
 async def sync_sheets(
-    current_user: Annotated[TokenData, Depends(get_current_user)],
+    current_user: Annotated[TokenData, Depends(require_admin)],
 ):
 
     import asyncio
@@ -209,7 +209,7 @@ async def sync_sheets(
 
 @router.get("/orders")
 async def get_orders(
-        current_user: Annotated[TokenData, Depends(get_current_user)],
+        current_user: Annotated[TokenData, Depends(require_admin)],
         status: str | None = None,
         days: int = 90,
         page: int = 1,

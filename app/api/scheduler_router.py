@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from loguru import logger
 
-from app.api.auth_router import get_current_user, TokenData
 from app.db.connection import get_db
 from app.db.repository import upsert_schedule_config, get_schedule_config
 from sqlalchemy.orm import Session
+from app.api.auth_router import get_current_user, require_admin, TokenData
+
 
 router = APIRouter(prefix="/scm/scheduler", tags=["scheduler"])
 
@@ -48,7 +49,7 @@ async def get_config(
 @router.put("/config")
 async def update_config(
         req: ScheduleUpdateRequest,
-        current_user: Annotated[TokenData, Depends(get_current_user)],
+        current_user: Annotated[TokenData, Depends(require_admin)],
         db: Session = Depends(get_db),
 ):
 

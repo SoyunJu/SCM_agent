@@ -4,6 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "@/lib/api";
 
+// SHA-256 해싱 유틸 (네트워크 페이로드 평문 노출 방지)
+const hashSHA256 = async (text: string): Promise<string> => {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+};
+
 export default function LoginPage() {
     const router = useRouter();
     const [username, setUsername] = useState("");
@@ -16,7 +22,8 @@ export default function LoginPage() {
         setLoading(true);
         setError("");
         try {
-            const data = await login(username, password);
+            const hashed = await hashSHA256(password);   // 평문 대신 sha256 전송
+            const data   = await login(username, hashed);
             localStorage.setItem("access_token", data.access_token);
             router.push("/dashboard");
         } catch {
@@ -30,13 +37,11 @@ export default function LoginPage() {
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
             <div className="bg-white rounded-2xl shadow-lg p-10 w-full max-w-md">
                 <h1 className="text-2xl font-bold text-gray-800 mb-2">SCM Agent</h1>
-                <p className="text-gray-500 text-sm mb-8">재고·발주 자동 분석 시스템</p>
+                <p className="text-gray-500 text-sm mb-8">재고·판매 자동 분석 시스템</p>
 
                 <form onSubmit={handleLogin} className="space-y-5">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            아이디
-                        </label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">아이디</label>
                         <input
                             type="text"
                             value={username}
@@ -46,11 +51,8 @@ export default function LoginPage() {
                             required
                         />
                     </div>
-
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            비밀번호
-                        </label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">비밀번호</label>
                         <input
                             type="password"
                             value={password}
@@ -60,11 +62,7 @@ export default function LoginPage() {
                             required
                         />
                     </div>
-
-                    {error && (
-                        <p className="text-red-500 text-sm">{error}</p>
-                    )}
-
+                    {error && <p className="text-red-500 text-sm">{error}</p>}
                     <button
                         type="submit"
                         disabled={loading}

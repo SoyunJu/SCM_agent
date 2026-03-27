@@ -16,6 +16,7 @@ export default function SheetsPage() {
     const [totalPages, setTotalPages] = useState(1);
     const [total, setTotal]       = useState(0);
     const topRef                  = useRef<HTMLDivElement>(null);
+    const [isReadonly, setIsReadonly] = useState(false);
 
     const fetchData = async () => {
         setLoad(true);
@@ -42,8 +43,16 @@ export default function SheetsPage() {
     };
 
     // 탭/일수 바뀌면 page 리셋
-    useEffect(() => { setPage(1); }, [tab, days]);
-    useEffect(() => { fetchData(); }, [tab, days, page]);
+    useEffect(() => {
+        const role = localStorage.getItem("user_role") ?? "";
+        setIsReadonly(role === "readonly");
+        setPage(1); }, [tab, days]);
+
+
+    useEffect(() => {
+        const role = localStorage.getItem("user_role") ?? "";
+        setIsReadonly(role === "readonly");
+        fetchData(); }, [tab, days, page]);
 
     const scrollToTop = () => topRef.current?.scrollIntoView({ behavior: "smooth" });
 
@@ -56,9 +65,11 @@ export default function SheetsPage() {
                     <h2 className="text-2xl font-bold text-gray-800">데이터 조회</h2>
                     <p className="text-gray-400 text-sm mt-1">Google Sheets 원본 데이터</p>
                 </div>
+                {!isReadonly && (
                 <button onClick={fetchData} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition">
                     <RefreshCw size={15} className={`text-gray-500 ${loading ? "animate-spin" : ""}`} />
                 </button>
+                )}
             </div>
 
             {/* 탭 */}
