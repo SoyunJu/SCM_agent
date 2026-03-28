@@ -5,6 +5,7 @@ import {
     getOrders, getProposals, generateProposals,
     approveProposal, rejectProposal, updateProposal,
 } from "@/lib/api";
+import { getDefaultPageSize } from "@/lib/utils";
 import { OrderItem, OrderProposal } from "@/lib/types";
 import {
     Package, Loader2, RefreshCw, ChevronLeft, ChevronRight,
@@ -36,7 +37,7 @@ function OrdersTab() {
     const [tab, setTab]               = useState<string>("전체");
     const [loading, setLoading]       = useState(false);
     const [page, setPage]             = useState(1);
-    const [pageSize, setPageSize]     = useState(50);
+    const [pageSize, setPageSize]     = useState(getDefaultPageSize);
     const [totalPages, setTotalPages] = useState(1);
     const [total, setTotal]           = useState(0);
     const [isReadonly, setIsReadonly] = useState(false);
@@ -200,6 +201,7 @@ function ProposalsTab() {
     const [editQty, setEditQty]       = useState<string>("");
     const [editPrice, setEditPrice]   = useState<string>("");
     const [isReadonly, setIsReadonly] = useState(false);
+    const [severityOverride, setSeverityOverride] = useState("");
 
     const fetchProposals = async () => {
         setLoading(true);
@@ -216,14 +218,17 @@ function ProposalsTab() {
     useEffect(() => {
         const role = localStorage.getItem("user_role") ?? "";
         setIsReadonly(role === "readonly");
-        fetchProposals(); }, [statusFilter]);
+        if (role !== "readonly") {
+            fetchProposals();
+        }
+    }, [statusFilter]);
 
 
     const handleGenerate = async () => {
         setGenerating(true);
         setMsg("");
         try {
-            const res = await generateProposals();
+            const res = await generateProposals(severityOverride || undefined);
             setMsg(res.data.message ?? "완료");
             fetchProposals();
         } catch (e: any) {
@@ -258,29 +263,48 @@ function ProposalsTab() {
         fetchProposals();
     };
 
+    if (isReadonly) return (
+        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+            <p className="text-sm">발주제안 관리는 관리자 이상 권한이 필요합니다.</p>
+        </div>
+    );
+
     return (
         <div className="space-y-4">
             {/* 헤더 */}
             <div className="flex items-center gap-3 flex-wrap">
                 {!isReadonly && (
-                <button
-                    onClick={handleGenerate}
-                    disabled={generating}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition"
-                >
-                    {generating
-                        ? <Loader2 size={14} className="animate-spin" />
-                        : <Zap size={14} />}
-                    발주 제안 생성
-                </button>
+                <div className="flex items-center gap-2">
+                    <select
+                        value={severityOverride}
+                        onChange={(e) => setSeverityOverride(e.target.value)}
+                        className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                    >
+                        <option value="">설정값 사용</option>
+                        <option value="LOW">낮음 이상</option>
+                        <option value="MEDIUM">보통 이상</option>
+                        <option value="HIGH">높음 이상</option>
+                        <option value="CRITICAL">긴급만</option>
+                    </select>
+                    <button
+                        onClick={handleGenerate}
+                        disabled={generating}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition"
+                    >
+                        {generating
+                            ? <Loader2 size={14} className="animate-spin" />
+                            : <Zap size={14} />}
+                        발주 제안 생성
+                    </button>
+                </div>
                 )}
-                {["all", "pending", "approved", "rejected"].map((s) => (
+                {["all", "PENDING", "APPROVED", "REJECTED"].map((s) => (
                     <button
                         key={s}
                         onClick={() => setFilter(s)}
                         className={`px-3 py-1.5 rounded-lg text-sm transition ${statusFilter === s ? "bg-gray-800 text-white" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}
                     >
-                        {{ all: "전체", pending: "대기", approved: "승인", rejected: "거절" }[s]}
+                        {{ all: "전체", PENDING: "대기", APPROVED: "승인", REJECTED: "거절" }[s]}
                     </button>
                 ))}
                 <span className="text-xs text-gray-400 ml-auto">총 {total}건</span>
@@ -346,7 +370,9 @@ function ProposalsTab() {
                                 )}
                             </td>
 
-                            <td className="px-4 py-3 text-gray-400 text-xs max-w-[180px] truncate" title={p.reason ?? ""}>{p.reason ?? "-"}</td>
+                            <td className="px-4 py-3 text-gray-400 text-xs max-w-[300px]">
+                                <span className="line-clamp-3 whitespace-pre-wrap" title={p.reason ?? ""}>{p.reason ?? "-"}</span>
+                            </td>
 
                             <td className="px-4 py-3">
                                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${PROPOSAL_STATUS_COLOR[p.status] ?? "bg-gray-100 text-gray-500"}`}>
@@ -363,7 +389,7 @@ function ProposalsTab() {
                                         <button onClick={() => saveEdit(p.id)} className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">저장</button>
                                         <button onClick={() => setEditId(null)} className="px-2 py-1 border border-gray-200 rounded text-xs hover:bg-gray-50">취소</button>
                                     </div>
-                                ) : p.status === "pending" && !isReadonly ? (
+                                ) : p.status === "PENDING" && !isReadonly ? (
                                     <div className="flex gap-1 justify-center">
                                         <button onClick={() => startEdit(p)} title="수정" className="p-1 rounded hover:bg-gray-100 text-gray-500"><Pencil size={14} /></button>
                                         <button onClick={() => handleApprove(p.id)} title="승인" className="p-1 rounded hover:bg-green-50 text-green-600"><CheckCircle size={14} /></button>

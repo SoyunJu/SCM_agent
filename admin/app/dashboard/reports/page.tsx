@@ -17,9 +17,9 @@ const STATUS_INFO: Record<string, { label: string; icon: React.ReactNode; color:
     in_progress: { label: "진행 중", icon: <Clock size={14} />,       color: "text-blue-500"  },
 };
 
-const SEVERITIES = ["critical", "high", "medium", "low"] as const;
+const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
 const SEVERITY_KOR: Record<string, string> = {
-    critical: "긴급", high: "높음", medium: "보통", low: "낮음",
+    CRITICAL: "긴급", HIGH: "높음", MEDIUM: "보통", LOW: "낮음",
 };
 const MAX_POLL = 150;
 
@@ -27,8 +27,9 @@ export default function ReportsPage() {
     const [history, setHistory]       = useState<ReportExecution[]>([]);
     const [historyTotal, setHistoryTotal] = useState(0);
     const [historyPage, setHistoryPage]   = useState(0); // offset = page * pageSize
-    const [pageSize, setPageSize]         = useState(10);
+    const pageSize                        = 5;           // 이력은 5건씩 고정
     const [triggering, setTriggering] = useState(false);
+    const [isReadonly, setIsReadonly] = useState(false);
     const [polling, setPolling]       = useState(false);
     const [message, setMessage]       = useState("");
     const [pdfs, setPdfs]             = useState<PdfFile[]>([]);
@@ -64,6 +65,7 @@ export default function ReportsPage() {
     };
 
     useEffect(() => {
+        setIsReadonly(localStorage.getItem("user_role") === "readonly");
         fetchAll();
         // 카테고리 목록 수집
         getAnomalies(undefined, 200).then((res) => {
@@ -86,10 +88,11 @@ export default function ReportsPage() {
             try {
                 const res = await getReportStatus(executionId);
                 const { status, error_message } = res.data;
-                if (status !== "in_progress") {
+                const s = (status as string).toLowerCase();
+                if (s !== "in_progress") {
                     clearInterval(pollRef.current!);
                     setPolling(false);
-                    if (status === "success") {
+                    if (s === "success") {
                         setMessage("✅ 보고서 생성이 완료되었습니다.");
                         fetchAll();
                     } else {
@@ -184,12 +187,14 @@ export default function ReportsPage() {
                                 {severityFilter.length + categoryFilter.length}
                             </span>}
                     </button>
+                    {!isReadonly && (
                     <button onClick={handleTrigger} disabled={triggering || polling}
                             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50"
                     >
                         {polling ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                         {polling ? "생성 중..." : "즉시 생성"}
                     </button>
+                    )}
                 </div>
             </div>
 
@@ -250,16 +255,7 @@ export default function ReportsPage() {
                         {/* 페이지네이션 상단 */}
                         <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100">
                             <div className="flex items-center gap-3">
-                                <p className="text-sm text-gray-500">총 <span className="font-semibold">{historyTotal}</span>건</p>
-                                <select
-                                    value={pageSize}
-                                    onChange={(e) => { setPageSize(Number(e.target.value)); setHistoryPage(0); }}
-                                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none"
-                                >
-                                    {[5, 10, 20, 50].map((n) => (
-                                        <option key={n} value={n}>{n}건</option>
-                                    ))}
-                                </select>
+                                <p className="text-sm text-gray-500">총 <span className="font-semibold">{historyTotal}</span>건 (5건씩)</p>
                             </div>
                             <div className="flex items-center gap-1">
                                 <button onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
@@ -295,7 +291,7 @@ export default function ReportsPage() {
                                     </tr>
                                 ) : (
                                     history.map((r) => {
-                                        const s = STATUS_INFO[r.status];
+                                        const s = STATUS_INFO[(r.status as string)?.toLowerCase()];
                                         return (
                                             <tr key={r.id} className="hover:bg-gray-50 transition">
                                                 <td className="px-6 py-3 text-gray-400">#{r.id}</td>
@@ -341,12 +337,14 @@ export default function ReportsPage() {
                                                     className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-medium transition">
                                                 다운로드
                                             </button>
+                                            {!isReadonly && (
                                             <button onClick={() => handleDeletePdf(pdf.filename)}
                                                     disabled={deleting === pdf.filename}
                                                     className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg text-xs font-medium transition disabled:opacity-50">
                                                 {deleting === pdf.filename ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                                                 삭제
                                             </button>
+                                            )}
                                         </div>
                                     </div>
                                 ))

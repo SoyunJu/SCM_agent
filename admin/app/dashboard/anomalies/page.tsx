@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getAnomalies, resolveAnomaly } from "@/lib/api";
+import { getDefaultPageSize } from "@/lib/utils";
+import { normSev } from "@/lib/severity";
 import { AnomalyLog } from "@/lib/types";
 import { CheckCircle, Search } from "lucide-react";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
@@ -23,7 +25,12 @@ export default function AnomaliesPage() {
     const [typeFilter, setType]         = useState("");
     const [search, setSearch]           = useState("");
     const [page, setPage]               = useState(1);
-    const [pageSize, setPageSize]       = useState(50);
+    const [pageSize, setPageSize]       = useState(getDefaultPageSize);
+    const [isReadonly, setIsReadonly]   = useState(false);
+
+    useEffect(() => {
+        setIsReadonly(localStorage.getItem("user_role") === "readonly");
+    }, []);
 
     const isResolved =
         statusFilter === "unresolved" ? false :
@@ -31,7 +38,7 @@ export default function AnomaliesPage() {
 
     const { data, isLoading } = useQuery({
         queryKey: ["anomalies", statusFilter, page, pageSize],
-        queryFn:  () => getAnomalies(isResolved, pageSize, page, pageSize).then((r) => r.data as {
+        queryFn:  () => getAnomalies(isResolved, pageSize, page).then((r) => r.data as {
             items: AnomalyLog[];
             total: number;
             total_pages: number;
@@ -46,7 +53,8 @@ export default function AnomaliesPage() {
     // 클라이언트 사이드 필터 (심각도, 유형, 검색)
     const filtered = useMemo(() => {
         let d = anomalies;
-        if (severityFilter) d = d.filter((a) => a.severity === severityFilter);
+        // severity는 DB에서 대문자("LOW","CHECK" 등) → normSev로 통일 비교
+        if (severityFilter) d = d.filter((a) => normSev(a.severity) === severityFilter);
         if (typeFilter)     d = d.filter((a) => a.anomaly_type === typeFilter);
         if (search)         d = d.filter((a) =>
             a.product_name.includes(search) || a.product_code.includes(search)
@@ -95,11 +103,11 @@ export default function AnomaliesPage() {
                     className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 outline-none"
                 >
                     <option value="">전체 심각도</option>
-                    <option value="critical">긴급</option>
-                    <option value="high">높음</option>
-                    <option value="medium">보통</option>
-                    <option value="check">확인</option>
-                    <option value="low">낮음</option>
+                    <option value="CRITICAL">긴급</option>
+                    <option value="HIGH">높음</option>
+                    <option value="MEDIUM">보통</option>
+                    <option value="CHECK">확인</option>
+                    <option value="LOW">낮음</option>
                 </select>
 
                 <select
@@ -179,7 +187,7 @@ export default function AnomaliesPage() {
                                     </td>
                                     <td className="px-6 py-3 text-gray-400 text-xs">{a.detected_at.slice(0, 16)}</td>
                                     <td className="px-6 py-3">
-                                        {!a.is_resolved && (
+                                        {!a.is_resolved && !isReadonly && (
                                             <button
                                                 onClick={() => resolveMutation.mutate(a.id)}
                                                 disabled={resolveMutation.isPending}

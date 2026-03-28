@@ -1,21 +1,79 @@
 
 import os
 import tempfile
-from typing import Annotated
+from typing import Annotated, Optional
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from loguru import logger
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.auth_router import get_current_user, require_admin, TokenData
 from app.db.connection import get_db
 from app.db.repository import get_setting
+from app.db.models import Product, ProductStatus
 from app.sheets.reader import read_product_master, read_sales, read_stock
 from app.sheets.writer import upsert_master_from_excel, write_sales, upsert_stock_from_excel
 
 router = APIRouter(prefix="/scm/sheets", tags=["sheets"])
+
+
+class ProductUpdate(BaseModel):
+    name:          Optional[str] = None
+    category:      Optional[str] = None
+    safety_stock:  Optional[int] = None
+    status:        Optional[str] = None
+
+
+@router.put("/products/{code}")
+async def update_product(
+        code: str,
+        body: ProductUpdate,
+        _: Annotated[TokenData, Depends(require_admin)],
+        db: Session = Depends(get_db),
+):
+    product = db.query(Product).filter(Product.code == code).first()
+    if not product:
+        raise HTTPException(status_code=404, detail=f"상품을 찾을 수 없습니다: {code}")
+    if body.name is not None:
+        product.name = body.name
+    if body.category is not None:
+        product.category = body.category
+    if body.safety_stock is not None:
+        product.safety_stock = body.safety_stock
+    if body.status is not None:
+        try:
+            product.status = ProductStatus(body.status.upper())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"유효하지 않은 상태값: {body.status}")
+    db.commit()
+    db.refresh(product)
+    return {
+        "code": product.code,
+        "name": product.name,
+        "category": product.category,
+        "safety_stock": product.safety_stock,
+        "status": product.status.value.lower(),
+    }
+
+
+@router.get("/categories")
+async def get_categories(
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+):
+    """상품마스터의 고유 카테고리 목록 반환."""
+    try:
+        df = read_product_master()
+        col = next((c for c in ["카테고리", "category"] if c in df.columns), None)
+        if col is None:
+            return {"items": []}
+        cats = sorted(df[col].dropna().unique().tolist())
+        return {"items": [c for c in cats if c]}
+    except Exception as e:
+        logger.error(f"카테고리 목록 조회 실패: {e}")
+        return {"items": []}
 
 
 @router.get("/master")
@@ -24,10 +82,11 @@ async def get_master(
         page: int = 1,
         page_size: int = 50,
         search: str | None = None,
+        category: str | None = None,
+        download: bool = False,
 ):
 
     try:
-        page_size = min(page_size, 200)   # 최대 200건 제한
         df = read_product_master()
 
         # 검색 필터
@@ -38,6 +97,26 @@ async def get_master(
             )
             df = df[mask]
 
+        # 카테고리 필터
+        if category:
+            col = next((c for c in ["카테고리", "category"] if c in df.columns), None)
+            if col:
+                df = df[df[col] == category]
+
+        # 다운로드 요청: CSV 반환 (UTF-8 BOM으로 Excel 한글 정상 표시)
+        if download:
+            import io
+            buf = io.BytesIO()
+            buf.write(b'\xef\xbb\xbf')  # UTF-8 BOM
+            df.to_csv(buf, index=False, encoding="utf-8")
+            buf.seek(0)
+            return StreamingResponse(
+                buf,
+                media_type="text/csv; charset=utf-8-sig",
+                headers={"Content-Disposition": 'attachment; filename="master.csv"'},
+            )
+
+        page_size = min(page_size, 200)   # 최대 200건 제한
         total = len(df)
         total_pages = max(1, (total + page_size - 1) // page_size)
 
@@ -66,21 +145,41 @@ async def get_sales(
         page: int = 1,
         page_size: int = 50,
         category: str | None = None,
+        search: str | None = None,
+        download: bool = False,
 ):
 
     try:
         import pandas as pd
-        page_size = min(page_size, 200)
         df = read_sales()
         df["날짜"] = pd.to_datetime(df["날짜"])
         cutoff = df["날짜"].max() - pd.Timedelta(days=days)
         df = df[df["날짜"] >= cutoff].copy()
+
+        if search and "상품코드" in df.columns:
+            mask = df["상품코드"].astype(str).str.contains(search, case=False, na=False)
+            if "상품명" in df.columns:
+                mask = mask | df["상품명"].astype(str).str.contains(search, case=False, na=False)
+            df = df[mask]
 
         if category and "카테고리" in df.columns:
             df = df[df["카테고리"] == category]
 
         df["날짜"] = df["날짜"].dt.strftime("%Y-%m-%d")
 
+        if download:
+            import io
+            buf = io.BytesIO()
+            buf.write(b'\xef\xbb\xbf')
+            df.to_csv(buf, index=False, encoding="utf-8")
+            buf.seek(0)
+            return StreamingResponse(
+                buf,
+                media_type="text/csv; charset=utf-8-sig",
+                headers={"Content-Disposition": 'attachment; filename="sales.csv"'},
+            )
+
+        page_size   = min(page_size, 200)
         total       = len(df)
         total_pages = max(1, (total + page_size - 1) // page_size)
         start       = (page - 1) * page_size
@@ -103,15 +202,35 @@ async def get_stock(
         page: int = 1,
         page_size: int = 50,
         category: str | None = None,
+        search: str | None = None,
+        download: bool = False,
 ):
 
     try:
-        page_size = min(page_size, 200)
         df = read_stock()
+
+        if search and "상품코드" in df.columns:
+            mask = df["상품코드"].astype(str).str.contains(search, case=False, na=False)
+            if "상품명" in df.columns:
+                mask = mask | df["상품명"].astype(str).str.contains(search, case=False, na=False)
+            df = df[mask]
 
         if category and "카테고리" in df.columns:
             df = df[df["카테고리"] == category]
 
+        if download:
+            import io
+            buf = io.BytesIO()
+            buf.write(b'\xef\xbb\xbf')
+            df.to_csv(buf, index=False, encoding="utf-8")
+            buf.seek(0)
+            return StreamingResponse(
+                buf,
+                media_type="text/csv; charset=utf-8-sig",
+                headers={"Content-Disposition": 'attachment; filename="stock.csv"'},
+            )
+
+        page_size   = min(page_size, 200)
         total       = len(df)
         total_pages = max(1, (total + page_size - 1) // page_size)
         start       = (page - 1) * page_size
@@ -213,13 +332,14 @@ async def get_stock_stats(
 
         db = SessionLocal()
         try:
-            records = get_anomaly_logs(db, is_resolved=False, limit=200)
+            result = get_anomaly_logs(db, is_resolved=False, page=1, page_size=200)
+            records = result["items"]
         finally:
             db.close()
 
-        severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "CHECK": 0}
         for r in records:
-            sev = r.severity.value
+            sev = r.severity.value   # already uppercase from UpperCaseEnum
             if sev in severity_counts:
                 severity_counts[sev] += 1
 

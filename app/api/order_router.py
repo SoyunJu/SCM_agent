@@ -13,20 +13,18 @@ from sqlalchemy.orm import Session
 from app.db.connection import get_db
 from app.db.models import OrderProposal, ProposalStatus, SystemSettings
 from app.api.auth_router import get_current_user, require_admin, TokenData
+from app.utils.severity import norm, SEVERITY_RANK
 
 router = APIRouter(prefix="/scm/orders", tags=["orders"])
-
-# --- 심각도 순위 ------------
-SEVERITY_RANK: dict[str, int] = {"low": 0, "check":0, "medium": 1, "high": 2, "critical": 3}
 
 
 def _get_severity_threshold(db: Session) -> str:
     row = db.query(SystemSettings).filter(
-        SystemSettings.setting_key == "AUTO_PROPOSAL_SEVERITY"
+        SystemSettings.setting_key == "AUTO_ORDER_MIN_SEVERITY"
     ).first()
-    if row and row.setting_value.lower() in SEVERITY_RANK:
-        return row.setting_value.lower()
-    return "medium"
+    if row and norm(row.setting_value) in SEVERITY_RANK:
+        return norm(row.setting_value)
+    return "MEDIUM"
 
 
 # --- Schemas ------------------
@@ -34,6 +32,10 @@ def _get_severity_threshold(db: Session) -> str:
 class ProposalUpdate(BaseModel):
     proposed_qty: Optional[int]   = None
     unit_price:   Optional[float] = None
+
+
+class GenerateRequest(BaseModel):
+    severity_override: Optional[str] = None
 
 
 class ProposalOut(BaseModel):
@@ -153,6 +155,7 @@ def _build_resolved_blocks(p: OrderProposal) -> list[dict]:
 
 @router.post("/proposals/generate")
 async def generate_proposals(
+        body: GenerateRequest = GenerateRequest(),
         db: Session = Depends(get_db),
         _: dict = Depends(require_admin),
 ):
@@ -163,7 +166,10 @@ async def generate_proposals(
         from app.notifier.slack_notifier import get_slack_client, send_blocks
         from app.config import settings as app_settings
 
-        threshold = _get_severity_threshold(db)
+        if body.severity_override and norm(body.severity_override) in SEVERITY_RANK:
+            threshold = norm(body.severity_override)
+        else:
+            threshold = _get_severity_threshold(db)
         threshold_rank = SEVERITY_RANK[threshold]
         logger.info(f"발주 제안 생성 — 심각도 임계값: {threshold} (rank≥{threshold_rank})")
 
@@ -174,7 +180,7 @@ async def generate_proposals(
         stock_anomalies = detect_stock_anomalies(df_master, df_stock, df_sales)
         filtered = [
             a for a in stock_anomalies
-            if SEVERITY_RANK.get(str(a.get("severity", "")).lower(), -1) >= threshold_rank
+            if SEVERITY_RANK.get(norm(a.get("severity", "")), -1) >= threshold_rank
         ]
 
         if not filtered:

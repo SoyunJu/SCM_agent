@@ -7,9 +7,10 @@ import {
     LayoutDashboard, AlertTriangle, FileText,
     MessageSquare, LogOut, Bell, Database,
     Calendar, BarChart2, ShoppingCart, Settings, Users, X,
-    ChevronLeft, ChevronRight, User,
+    ChevronLeft, ChevronRight, Pencil,
 } from "lucide-react";
 import { useAlerts } from "@/lib/useAlerts";
+import { changeMyPassword, updateMyProfile, getMyAdminProfile } from "@/lib/api";
 
 const NAV_ITEMS = [
     { href: "/dashboard",             icon: LayoutDashboard, label: "대시보드",    adminOnly: false },
@@ -47,10 +48,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const pathname = usePathname();
     const { alerts, unreadCount, clearUnread } = useAlerts();
 
-    const [showAlerts, setShowAlerts] = useState(false);
-    const [userRole, setUserRole]     = useState<string>("");
-    const [username, setUsername]     = useState<string>("");
-    const [collapsed, setCollapsed]   = useState(false);
+    const [showAlerts, setShowAlerts]   = useState(false);
+    const [userRole, setUserRole]       = useState<string>("");
+    const [username, setUsername]       = useState<string>("");
+    const [collapsed, setCollapsed]     = useState(false);
+    const [showProfile, setShowProfile] = useState(false);
+
+    // 프로필 편집 상태
+    const [profileEmail,    setProfileEmail]    = useState("");
+    const [profileSlack,    setProfileSlack]    = useState("");
+    const [currentPw,       setCurrentPw]       = useState("");
+    const [newPw,           setNewPw]           = useState("");
+    const [profileMsg,      setProfileMsg]      = useState("");
+    const [profileSaving,   setProfileSaving]   = useState(false);
 
     // 사이드바 접힘 상태 localStorage 복원
     useEffect(() => {
@@ -64,9 +74,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         // JWT payload에서 role/username 직접 추출 (API 호출 불필요)
         const decoded = decodeJwtPayload(token);
         if (decoded && decoded.role) {
-            setUserRole(decoded.role);
+            const role = decoded.role.toLowerCase();
+            setUserRole(role);
             setUsername(decoded.username);
-            localStorage.setItem("user_role", decoded.role);
+            localStorage.setItem("user_role", role);
             localStorage.setItem("username", decoded.username);
         } else {
             // JWT 디코딩 실패 시 localStorage fallback
@@ -102,6 +113,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const toggleAlerts = () => {
         setShowAlerts((v) => !v);
         if (!showAlerts) clearUnread();
+    };
+
+    const openProfile = async () => {
+        setProfileMsg("");
+        setCurrentPw(""); setNewPw("");
+        try {
+            const res = await getMyAdminProfile();
+            setProfileEmail(res.data.email ?? "");
+            setProfileSlack(res.data.slack_user_id ?? "");
+        } catch {
+            setProfileEmail(""); setProfileSlack("");
+        }
+        setShowProfile(true);
+    };
+
+    const handleSaveProfile = async () => {
+        setProfileSaving(true);
+        setProfileMsg("");
+        try {
+            await updateMyProfile({ email: profileEmail || undefined, slack_user_id: profileSlack || undefined });
+            if (currentPw && newPw) {
+                await changeMyPassword({ current_password: currentPw, new_password: newPw });
+            }
+            setProfileMsg("✅ 저장되었습니다.");
+            setCurrentPw(""); setNewPw("");
+        } catch (e: any) {
+            setProfileMsg(`❌ ${e?.response?.data?.detail ?? "저장 실패"}`);
+        } finally {
+            setProfileSaving(false);
+        }
     };
 
     const badge = ROLE_BADGE[userRole];
@@ -149,18 +190,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 {/* 사용자 정보 + 로그아웃 */}
                 <div className="p-2 border-t border-gray-100 space-y-0.5">
                     {collapsed ? (
-                        <div className="flex justify-center py-1.5" title={`${username} (${badge?.label ?? userRole})`}>
-                            <User size={16} className="text-gray-400" />
-                        </div>
+                        <button
+                            onClick={openProfile}
+                            title={`${username} (${badge?.label ?? userRole}) — 프로필 편집`}
+                            className="flex justify-center w-full py-1.5 hover:bg-gray-100 rounded-lg transition"
+                        >
+                            <Pencil size={14} className="text-gray-400" />
+                        </button>
                     ) : (
-                        <div className="px-3 py-1.5">
-                            <p className="text-xs text-gray-700 font-medium truncate">{username || "-"}</p>
+                        <button
+                            onClick={openProfile}
+                            className="w-full px-3 py-1.5 rounded-lg hover:bg-gray-100 transition text-left group"
+                        >
+                            <div className="flex items-center justify-between">
+                                <p className="text-xs text-gray-700 font-medium truncate">{username || "-"}</p>
+                                <Pencil size={12} className="text-gray-300 group-hover:text-gray-500 shrink-0 ml-1" />
+                            </div>
                             {badge && (
                                 <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium mt-0.5 ${badge.cls}`}>
                                     {badge.label}
                                 </span>
                             )}
-                        </div>
+                        </button>
                     )}
                     <button onClick={handleLogout}
                             title={collapsed ? "로그아웃" : undefined}
@@ -201,7 +252,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                     ) : (
                                         alerts.map((a, i) => (
                                             <div key={i} className={`px-4 py-3 border-b border-gray-50 text-sm ${
-                                                a.severity === "critical" ? "bg-red-50" : "bg-orange-50"
+                                                a.severity === "CRITICAL" ? "bg-red-50" : "bg-orange-50"
                                             }`}>
                                                 <p className="font-medium text-gray-700">{a.message}</p>
                                                 <p className="text-xs text-gray-400 mt-0.5">
@@ -218,6 +269,87 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                 <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto min-w-0">{children}</main>
             </div>
+
+            {/* 프로필 편집 모달 */}
+            {showProfile && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-lg font-bold text-gray-800">내 프로필 편집</h2>
+                            <button onClick={() => setShowProfile(false)}>
+                                <X size={18} className="text-gray-400" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">계정 ID</label>
+                                <p className="text-sm text-gray-700 font-medium">{username}</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">이메일</label>
+                                <input
+                                    type="email"
+                                    value={profileEmail}
+                                    onChange={(e) => setProfileEmail(e.target.value)}
+                                    placeholder="example@email.com"
+                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Slack User ID</label>
+                                <input
+                                    type="text"
+                                    value={profileSlack}
+                                    onChange={(e) => setProfileSlack(e.target.value)}
+                                    placeholder="U0XXXXXXX"
+                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                        </div>
+
+                        <hr className="border-gray-100" />
+
+                        <div className="space-y-3">
+                            <p className="text-xs font-medium text-gray-500">비밀번호 변경 (선택)</p>
+                            <input
+                                type="password"
+                                value={currentPw}
+                                onChange={(e) => setCurrentPw(e.target.value)}
+                                placeholder="현재 비밀번호"
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <input
+                                type="password"
+                                value={newPw}
+                                onChange={(e) => setNewPw(e.target.value)}
+                                placeholder="새 비밀번호"
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+
+                        {profileMsg && (
+                            <p className="text-sm">{profileMsg}</p>
+                        )}
+
+                        <div className="flex gap-2 justify-end">
+                            <button
+                                onClick={() => setShowProfile(false)}
+                                className="px-4 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition"
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={handleSaveProfile}
+                                disabled={profileSaving}
+                                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50"
+                            >
+                                {profileSaving ? "저장 중..." : "저장"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

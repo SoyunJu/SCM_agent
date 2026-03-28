@@ -52,6 +52,7 @@ class Severity(str, enum.Enum):
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
     CRITICAL = "CRITICAL"
+    CHECK = "CHECK"
 
 class ChatRole(str, enum.Enum):
     USER = "USER"

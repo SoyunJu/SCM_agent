@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getSalesStats, getStockStats, getAbcStats, getDemandForecast, getTurnoverStats, getTaskStatus } from "@/lib/api";
+import { getDefaultPageSize } from "@/lib/utils";
 import { SalesStatItem, StockItem } from "@/lib/types";
 import {
     LineChart, Line, BarChart, Bar,
@@ -77,7 +78,7 @@ export default function StatsPage() {
     const [abcData, setAbcData]     = useState<any[]>([]);
     const [demandData, setDemandData] = useState<any[]>([]);
     const [demandPage, setDemandPage]           = useState(1);
-    const [demandPageSize, setDemandPageSize]   = useState(50);
+    const [demandPageSize, setDemandPageSize]   = useState(getDefaultPageSize);
     const [demandTotalPages, setDemandTotalPages] = useState(1);
     const [demandTotal, setDemandTotal]         = useState(0);
     const [demandCategory, setDemandCategory]   = useState<string>("");
@@ -85,7 +86,7 @@ export default function StatsPage() {
 
     const [turnoverData, setTurnoverData] = useState<any[]>([]);
     const [turnoverPage, setTurnoverPage]           = useState(1);
-    const [turnoverPageSize, setTurnoverPageSize] = useState(50);
+    const [turnoverPageSize, setTurnoverPageSize] = useState(getDefaultPageSize);
     const [turnoverTotalPages, setTurnoverTotalPages] = useState(1);
     const [turnoverTotal, setTurnoverTotal]         = useState(0);
     const [turnoverCategory, setTurnoverCategory]   = useState<string>("");

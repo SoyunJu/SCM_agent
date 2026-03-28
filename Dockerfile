@@ -21,4 +21,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY . .
 
+# 혹시 복사된 .pyc / __pycache__ 제거 (stale bytecode 방지)
+RUN find . -name "*.pyc" -delete && find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

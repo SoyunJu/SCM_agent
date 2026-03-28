@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { getSheetsMaster, getSheetsSales, getSheetsStock, updateProductStatus, uploadExcel } from "@/lib/api";
-import { RefreshCw, Loader2, ArrowUp, ChevronLeft, ChevronRight, Upload } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getSheetsMaster, getSheetsSales, getSheetsStock, updateProductStatus, updateProduct, uploadExcel, getSheetCategories, downloadSheetCsv } from "@/lib/api";
+import { getDefaultPageSize } from "@/lib/utils";
+import { RefreshCw, Loader2, ArrowUp, ChevronLeft, ChevronRight, Upload, Pencil, X, Check, Search, Download } from "lucide-react";
 import { ProductStatus } from "@/lib/types";
 
-const TABS = ["상품마스터", "일별판매", "재고현황"] as const;
-type Tab = typeof TABS[number];
+// 일별판매, 재고현황을 앞에 두어 readonly 사용자가 기본 탭에서 403 알럿을 보지 않도록 함
+const ALL_TABS = ["일별판매", "재고현황", "상품마스터"] as const;
+const READONLY_TABS = ["일별판매", "재고현황"] as const;
+type Tab = typeof ALL_TABS[number];
 
 const STATUS_LABEL: Record<ProductStatus, string> = {
     active:   "활성",
@@ -26,19 +30,25 @@ const STATUS_TRANSITIONS: Record<ProductStatus, ProductStatus[]> = {
 };
 
 export default function SheetsPage() {
-    const [tab, setTab]           = useState<Tab>("상품마스터");
-    const [data, setData]         = useState<any[]>([]);
-    const [loading, setLoad]      = useState(false);
+    const qc = useQueryClient();
+    const [isReadonly, setIsReadonly] = useState(false);
+    const [tab, setTab]           = useState<Tab>("일별판매");
     const [days, setDays]         = useState(30);
     const [page, setPage]         = useState(1);
-    const [pageSize, setPageSize] = useState(50);
-    const [totalPages, setTotalPages] = useState(1);
-    const [total, setTotal]       = useState(0);
+    const [pageSize, setPageSize] = useState(getDefaultPageSize);
     const topRef                  = useRef<HTMLDivElement>(null);
-    const [isReadonly, setIsReadonly] = useState(false);
+    const [search, setSearch]     = useState("");
+    const [category, setCategory] = useState("");
+    const [categories, setCategories] = useState<string[]>([]);
+    const [downloading, setDownloading] = useState(false);
 
     // 상품 상태 변경
     const [statusChanging, setStatusChanging] = useState<string | null>(null);
+
+    // 상품 편집 모달
+    const [editRow, setEditRow] = useState<any | null>(null);
+    const [editValues, setEditValues] = useState<{ name: string; category: string; safety_stock: string; status: string }>({ name: "", category: "", safety_stock: "", status: "" });
+    const [editSaving, setEditSaving] = useState(false);
 
     // Excel 업로드
     const [uploadFile, setUploadFile]       = useState<File | null>(null);
@@ -47,35 +57,34 @@ export default function SheetsPage() {
     const [uploadMsg, setUploadMsg]         = useState("");
     const fileInputRef                      = useRef<HTMLInputElement>(null);
 
-    const fetchData = async () => {
-        setLoad(true);
-        try {
-            if (tab === "상품마스터") {
-                const res = await getSheetsMaster(page, pageSize);
-                setData(res.data.items ?? []);
-                setTotalPages(res.data.total_pages ?? 1);
-                setTotal(res.data.total ?? 0);
-            } else if (tab === "일별판매") {
-                const res = await getSheetsSales(days, page, pageSize);
-                setData(res.data.items ?? []);
-                setTotalPages(res.data.total_pages ?? 1);
-                setTotal(res.data.total ?? 0);
-            } else {
-                const res = await getSheetsStock(page, pageSize);
-                setData(res.data.items ?? []);
-                setTotalPages(res.data.total_pages ?? 1);
-                setTotal(res.data.total ?? 0);
-            }
-        } finally {
-            setLoad(false);
+    const queryKey = ["sheets", tab, page, pageSize, days, search, category];
+
+    const fetchFn = useCallback(async () => {
+        if (tab === "상품마스터") {
+            return getSheetsMaster(page, pageSize, search || undefined, category || undefined).then(r => r.data);
+        } else if (tab === "일별판매") {
+            return getSheetsSales(days, page, pageSize, category || undefined, search || undefined).then(r => r.data);
+        } else {
+            return getSheetsStock(page, pageSize, category || undefined, search || undefined).then(r => r.data);
         }
-    };
+    }, [tab, page, pageSize, days, search, category]);
+
+    const { data: queryData, isLoading: loading, refetch: fetchData } = useQuery({
+        queryKey,
+        queryFn: fetchFn,
+        staleTime: 30_000,
+        keepPreviousData: true,
+    } as any);
+
+    const data  = queryData?.items ?? [];
+    const total = queryData?.total ?? 0;
+    const totalPages = queryData?.total_pages ?? 1;
 
     useEffect(() => {
-        setIsReadonly(localStorage.getItem("user_role") === "readonly");
-        fetchData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tab, days, page, pageSize]);
+        const role = localStorage.getItem("user_role") ?? "";
+        setIsReadonly(role === "readonly");
+        getSheetCategories().then((r) => setCategories(r.data.items ?? [])).catch(() => {});
+    }, []);
 
     const scrollToTop = () => topRef.current?.scrollIntoView({ behavior: "smooth" });
 
@@ -83,14 +92,7 @@ export default function SheetsPage() {
         setStatusChanging(productCode);
         try {
             await updateProductStatus(productCode, newStatus);
-            // 로컬 상태 즉시 반영
-            setData((prev) =>
-                prev.map((row) =>
-                    row["상품코드"] === productCode || row["product_code"] === productCode
-                        ? { ...row, status: newStatus }
-                        : row
-                )
-            );
+            qc.invalidateQueries({ queryKey: ["sheets"] });
         } finally {
             setStatusChanging(null);
         }
@@ -113,6 +115,49 @@ export default function SheetsPage() {
         } finally {
             setUploading(false);
             setTimeout(() => setUploadMsg(""), 6000);
+        }
+    };
+
+    const handleDownload = async () => {
+        setDownloading(true);
+        try {
+            const typeMap: Record<Tab, "master" | "sales" | "stock"> = {
+                "상품마스터": "master", "일별판매": "sales", "재고현황": "stock",
+            };
+            const filenames: Record<Tab, string> = {
+                "상품마스터": "master.csv", "일별판매": "sales.csv", "재고현황": "stock.csv",
+            };
+            await downloadSheetCsv(typeMap[tab], { search: search || undefined, category: category || undefined, days: tab === "일별판매" ? days : undefined }, filenames[tab]);
+        } finally {
+            setDownloading(false);
+        }
+    };
+
+    const openEdit = (row: any) => {
+        setEditRow(row);
+        setEditValues({
+            name:          row["상품명"]    ?? row["name"]          ?? "",
+            category:      row["카테고리"] ?? row["category"]       ?? "",
+            safety_stock:  String(row["안전재고"] ?? row["safety_stock"] ?? "0"),
+            status:        row["status"]    ?? "active",
+        });
+    };
+
+    const saveEdit = async () => {
+        if (!editRow) return;
+        const code: string = editRow["상품코드"] ?? editRow["product_code"] ?? "";
+        setEditSaving(true);
+        try {
+            await updateProduct(code, {
+                name:         editValues.name || undefined,
+                category:     editValues.category || undefined,
+                safety_stock: editValues.safety_stock ? Number(editValues.safety_stock) : undefined,
+                status:       editValues.status || undefined,
+            });
+            qc.invalidateQueries({ queryKey: ["sheets"] });
+            setEditRow(null);
+        } finally {
+            setEditSaving(false);
         }
     };
 
@@ -176,11 +221,11 @@ export default function SheetsPage() {
             )}
 
             {/* 탭 */}
-            <div className="flex gap-2 flex-wrap">
-                {TABS.map((t) => (
+            <div className="flex gap-2 flex-wrap items-center">
+                {(isReadonly ? READONLY_TABS : ALL_TABS).map((t) => (
                     <button
                         key={t}
-                        onClick={() => { setTab(t); setPage(1); }}
+                        onClick={() => { setTab(t); setPage(1); setSearch(""); setCategory(""); }}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
                             tab === t ? "bg-blue-600 text-white" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
                         }`}
@@ -192,13 +237,48 @@ export default function SheetsPage() {
                     <select
                         value={days}
                         onChange={(e) => { setDays(Number(e.target.value)); setPage(1); }}
-                        className="ml-2 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
+                        className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
                     >
                         <option value={7}>최근 7일</option>
                         <option value={30}>최근 30일</option>
                         <option value={90}>최근 90일</option>
                     </select>
                 )}
+            </div>
+
+            {/* 검색 / 카테고리 필터 / 다운로드 */}
+            <div className="flex flex-wrap gap-2 items-center">
+                <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-1.5 bg-white flex-1 min-w-48">
+                    <Search size={13} className="text-gray-400 shrink-0" />
+                    <input
+                        type="text"
+                        placeholder={tab === "상품마스터" ? "상품명 / 상품코드 검색" : "검색"}
+                        value={search}
+                        onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                        className="text-sm outline-none w-full"
+                    />
+                    {search && (
+                        <button onClick={() => { setSearch(""); setPage(1); }} className="text-gray-400 hover:text-gray-600"><X size={12} /></button>
+                    )}
+                </div>
+                {categories.length > 0 && (
+                    <select
+                        value={category}
+                        onChange={(e) => { setCategory(e.target.value); setPage(1); }}
+                        className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
+                    >
+                        <option value="">전체 카테고리</option>
+                        {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                )}
+                <button
+                    onClick={handleDownload}
+                    disabled={downloading}
+                    className="flex items-center gap-1.5 border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 px-3 py-1.5 rounded-lg text-sm transition disabled:opacity-50"
+                >
+                    {downloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                    CSV
+                </button>
             </div>
 
             {/* 페이지네이션 (상단) + 총 건수 */}
@@ -277,6 +357,7 @@ export default function SheetsPage() {
                             ))}
                             {isMasterTab && <th className="px-5 py-3 text-left whitespace-nowrap">상태</th>}
                             {isMasterTab && !isReadonly && <th className="px-5 py-3 text-left whitespace-nowrap">상태 변경</th>}
+                            {isMasterTab && !isReadonly && <th className="px-5 py-3 text-left whitespace-nowrap">편집</th>}
                         </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
@@ -316,6 +397,16 @@ export default function SheetsPage() {
                                             </div>
                                         </td>
                                     )}
+                                    {isMasterTab && !isReadonly && (
+                                        <td className="px-5 py-2.5 whitespace-nowrap">
+                                            <button
+                                                onClick={() => openEdit(row)}
+                                                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition"
+                                            >
+                                                <Pencil size={13} />
+                                            </button>
+                                        </td>
+                                    )}
                                 </tr>
                             );
                         })}
@@ -333,6 +424,51 @@ export default function SheetsPage() {
                     <ArrowUp size={13} /> ▲
                 </button>
             </div>
+
+            {/* 상품 편집 모달 */}
+            {editRow && (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+                        <div className="flex items-center justify-between mb-5">
+                            <h3 className="text-lg font-semibold text-gray-800">상품 편집</h3>
+                            <button onClick={() => setEditRow(null)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><X size={16} /></button>
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">상품코드</label>
+                                <p className="text-sm text-gray-700">{editRow["상품코드"] ?? editRow["product_code"]}</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">상품명</label>
+                                <input type="text" value={editValues.name} onChange={(e) => setEditValues((v) => ({ ...v, name: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">카테고리</label>
+                                <input type="text" value={editValues.category} onChange={(e) => setEditValues((v) => ({ ...v, category: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">안전재고</label>
+                                <input type="number" value={editValues.safety_stock} onChange={(e) => setEditValues((v) => ({ ...v, safety_stock: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">상태</label>
+                                <select value={editValues.status} onChange={(e) => setEditValues((v) => ({ ...v, status: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                                    <option value="active">활성</option>
+                                    <option value="inactive">비활성</option>
+                                    <option value="sample">샘플</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-6">
+                            <button onClick={() => setEditRow(null)} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition">취소</button>
+                            <button onClick={saveEdit} disabled={editSaving} className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition">
+                                {editSaving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                                저장
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

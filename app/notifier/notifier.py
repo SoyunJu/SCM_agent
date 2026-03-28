@@ -39,11 +39,13 @@ def _get_admin_slack_ids(db) -> list[str]:
         return []
 
 
-_SEVERITY_RANK = {"low": 0, "review": 1, "medium": 1, "high": 2, "critical": 3}
+_SEVERITY_RANK = {"LOW": 0, "CHECK": 0, "REVIEW": 1, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
 
 
 def _should_alert(severity: str, min_severity: str) -> bool:
-    return _SEVERITY_RANK.get(severity, 0) >= _SEVERITY_RANK.get(min_severity, 2)
+    s = severity.upper() if severity else ""
+    m = min_severity.upper() if min_severity else ""
+    return _SEVERITY_RANK.get(s, 0) >= _SEVERITY_RANK.get(m, 2)
 
 
 def mention_user(

@@ -15,13 +15,14 @@ import {
 } from "recharts";
 
 const SEVERITY_COLOR: Record<string, string> = {
-    critical: "text-red-600 bg-red-50",
-    high:     "text-orange-500 bg-orange-50",
-    medium:   "text-yellow-500 bg-yellow-50",
-    low:      "text-green-600 bg-green-50",
+    CRITICAL: "text-red-600 bg-red-50",
+    HIGH:     "text-orange-500 bg-orange-50",
+    MEDIUM:   "text-yellow-500 bg-yellow-50",
+    CHECK:    "text-blue-500 bg-blue-50",
+    LOW:      "text-green-600 bg-green-50",
 };
 const SEVERITY_KOR: Record<string, string> = {
-    critical: "긴급", high: "높음", medium: "보통", low: "낮음",
+    CRITICAL: "긴급", HIGH: "높음", MEDIUM: "보통", CHECK: "확인", LOW: "낮음",
 };
 const ANOMALY_KOR: Record<string, string> = {
     low_stock: "재고 부족", over_stock: "재고 과잉",
@@ -42,6 +43,7 @@ export default function DashboardPage() {
     const [polling, setPolling]       = useState(false);
     const [message, setMessage]       = useState("");
     const [loading, setLoading]       = useState(true);
+    const [isReadonly, setIsReadonly] = useState(false);
     const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
     const pollCountRef = useRef(0);
 
@@ -64,6 +66,7 @@ export default function DashboardPage() {
     };
 
     useEffect(() => {
+        setIsReadonly(localStorage.getItem("user_role") === "readonly");
         fetchAll();
         return () => { if (pollRef.current) clearInterval(pollRef.current); };
     }, []);
@@ -80,10 +83,11 @@ export default function DashboardPage() {
             try {
                 const res = await getReportStatus(executionId);
                 const { status, error_message } = res.data;
-                if (status !== "in_progress") {
+                const s = (status as string).toLowerCase();
+                if (s !== "in_progress") {
                     clearInterval(pollRef.current!);
                     setPolling(false);
-                    if (status === "success") {
+                    if (s === "success") {
                         setMessage("✅ 보고서 생성이 완료되었습니다.");
                         fetchAll();
                     } else {
@@ -120,17 +124,17 @@ export default function DashboardPage() {
     const lastRun = history[0];
     const severityCards = [
         { label: "미해결 이상 징후", value: stockStats?.total_anomalies ?? anomalies.length, icon: AlertTriangle, color: "text-orange-500" },
-        { label: "긴급",            value: stockStats?.severity_counts?.critical ?? 0,       icon: Package,       color: "text-red-500"    },
-        { label: "높음",            value: stockStats?.severity_counts?.high ?? 0,            icon: TrendingUp,    color: "text-orange-400" },
+        { label: "긴급",            value: stockStats?.severity_counts?.CRITICAL ?? 0,       icon: Package,       color: "text-red-500"    },
+        { label: "높음",            value: stockStats?.severity_counts?.HIGH ?? 0,            icon: TrendingUp,    color: "text-orange-400" },
         { label: "최근 보고서",
             value: lastRun?.status === "success" ? "성공" : lastRun?.status ?? "-",
             icon: FileText, color: "text-blue-500" },
     ];
     const severityBarData = [
-        { name: "긴급", count: stockStats?.severity_counts?.critical ?? 0 },
-        { name: "높음", count: stockStats?.severity_counts?.high ?? 0 },
-        { name: "보통", count: stockStats?.severity_counts?.medium ?? 0 },
-        { name: "낮음", count: stockStats?.severity_counts?.low ?? 0 },
+        { name: "긴급", count: stockStats?.severity_counts?.CRITICAL ?? 0 },
+        { name: "높음", count: stockStats?.severity_counts?.HIGH ?? 0 },
+        { name: "보통", count: stockStats?.severity_counts?.MEDIUM ?? 0 },
+        { name: "낮음", count: stockStats?.severity_counts?.LOW ?? 0 },
     ];
 
     return (
@@ -144,6 +148,7 @@ export default function DashboardPage() {
                     <button onClick={fetchAll} disabled={loading} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition disabled:opacity-50">
                         <RefreshCw size={15} className={`text-gray-500 ${loading ? "animate-spin" : ""}`} />
                     </button>
+                    {!isReadonly && (
                     <button
                         onClick={handleTrigger}
                         disabled={triggering || polling}
@@ -152,6 +157,7 @@ export default function DashboardPage() {
                         {polling ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                         {polling ? "생성 중..." : triggering ? "요청 중..." : "보고서 즉시 생성"}
                     </button>
+                    )}
                 </div>
             </div>
 
@@ -166,7 +172,7 @@ export default function DashboardPage() {
             ) : (
                 <>
                     {/* 통계 카드 */}
-                    <div className="grid grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         {severityCards.map(({ label, value, icon: Icon, color }) => (
                             <div key={label} className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
                                 <div className="flex items-center justify-between mb-3">
@@ -202,8 +208,11 @@ export default function DashboardPage() {
                                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                                     <XAxis dataKey="날짜" tick={{ fontSize: 11 }} />
                                     <YAxis yAxisId="qty" orientation="left" tick={{ fontSize: 11 }} />
-                                    <YAxis yAxisId="rev" orientation="right" tick={{ fontSize: 11 }} />
-                                    <Tooltip />
+                                    <YAxis yAxisId="rev" orientation="right" tick={{ fontSize: 11 }}
+                                               tickFormatter={(v: number) => v >= 10000 ? `${(v / 10000).toFixed(0)}만` : v.toLocaleString()} />
+                                    <Tooltip formatter={(v: number, name: string) =>
+                                        name === "매출액" ? [`${Number(v).toLocaleString()}원`, name] : [v, name]
+                                    } />
                                     <Legend />
                                     <Line yAxisId="qty" type="monotone" dataKey="판매수량" stroke="#3b82f6" strokeWidth={2} dot={false} name="판매수량" />
                                     <Line yAxisId="rev" type="monotone" dataKey="매출액" stroke="#10b981" strokeWidth={2} dot={false} name="매출액" />
@@ -214,7 +223,7 @@ export default function DashboardPage() {
 
                     {/* 재고 차트 */}
                     {stockStats && (
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
                                 <h3 className="font-semibold text-gray-700 mb-4">심각도별 이상 징후</h3>
                                 <ResponsiveContainer width="100%" height={180}>

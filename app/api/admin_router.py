@@ -46,6 +46,11 @@ class PasswordChange(BaseModel):
     new_password:     str
 
 
+class MyProfileUpdate(BaseModel):
+    email:         Optional[str] = None
+    slack_user_id: Optional[str] = None
+
+
 class AdminUserOut(BaseModel):
     id:            int
     username:      str
@@ -91,7 +96,7 @@ async def add_admin_user(
     if db.query(AdminUser).filter(AdminUser.username == body.username).first():
         raise HTTPException(status_code=400, detail="이미 존재하는 사용자명입니다.")
     try:
-        role_enum = AdminRole(body.role)
+        role_enum = AdminRole(body.role.upper())
     except ValueError:
         raise HTTPException(status_code=400, detail=f"유효하지 않은 역할입니다: {body.role}")
 
@@ -117,7 +122,7 @@ async def edit_admin_user(
     role_enum = None
     if body.role is not None:
         try:
-            role_enum = AdminRole(body.role)
+            role_enum = AdminRole(body.role.upper())
         except ValueError:
             raise HTTPException(status_code=400, detail=f"유효하지 않은 역할입니다: {body.role}")
 
@@ -146,6 +151,31 @@ async def remove_admin_user(
     if not delete_admin_user(db, user_id):
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
     logger.info(f"관리자 삭제: id={user_id}")
+
+
+@router.get("/me")
+async def get_my_profile(
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),
+):
+    user = get_admin_user_by_username(db, current_user.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    return _to_out(user)
+
+
+@router.put("/me/profile")
+async def update_my_profile(
+        body: MyProfileUpdate,
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),
+):
+    user = get_admin_user_by_username(db, current_user.username)
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    update_admin_user(db, user.id, email=body.email, slack_user_id=body.slack_user_id)
+    logger.info(f"프로필 수정: {current_user.username}")
+    return {"message": "프로필이 수정되었습니다."}
 
 
 @router.put("/me/password")

@@ -131,7 +131,8 @@ def _get_anomalies(input: str = "unresolved") -> str:
         db = SessionLocal()
         try:
             is_resolved = False if status == "unresolved" else None
-            records = get_anomaly_logs(db, is_resolved=is_resolved, limit=20)
+            result = get_anomaly_logs(db, is_resolved=is_resolved, page=1, page_size=20)
+            records = result["items"]
         finally:
             db.close()
 
@@ -144,8 +145,8 @@ def _get_anomalies(input: str = "unresolved") -> str:
             "long_term_stock": "장기 재고",
         }
         SEVERITY_KOR = {
-            "low": "낮음", "medium": "보통",
-            "high": "높음", "critical": "긴급",
+            "LOW": "낮음", "MEDIUM": "보통",
+            "HIGH": "높음", "CRITICAL": "긴급", "CHECK": "확인",
         }
 
         label = "미해결" if status == "unresolved" else "전체"

@@ -74,12 +74,13 @@ async def get_unread_count(
 
         db = SessionLocal()
         try:
-            records = get_anomaly_logs(db, is_resolved=False, limit=200)
+            result = get_anomaly_logs(db, is_resolved=False, page=1, page_size=200)
+            records = result["items"]
         finally:
             db.close()
 
-        critical = sum(1 for r in records if r.severity.value == "critical")
-        high     = sum(1 for r in records if r.severity.value == "high")
+        critical = sum(1 for r in records if r.severity.value == "CRITICAL")
+        high     = sum(1 for r in records if r.severity.value == "HIGH")
         return {"critical": critical, "high": high, "total": critical + high}
     except Exception as e:
         return {"critical": 0, "high": 0, "total": 0, "error": str(e)}

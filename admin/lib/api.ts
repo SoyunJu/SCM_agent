@@ -16,6 +16,9 @@ apiClient.interceptors.request.use((config) => {
     return config;
 });
 
+// 403 알럿 중복 방지 (5초 쿨다운)
+let _403lastShown = 0;
+
 apiClient.interceptors.response.use(
     (res) => res,
     (err) => {
@@ -24,7 +27,11 @@ apiClient.interceptors.response.use(
             window.location.href = "/login";
         }
         if (err.response?.status === 403) {
-            alert("권한이 없습니다.");
+            const now = Date.now();
+            if (now - _403lastShown > 5000) {
+                _403lastShown = now;
+                console.warn("[SCM] 권한이 없습니다.");
+            }
         }
         return Promise.reject(err);
     }
@@ -41,7 +48,7 @@ export const login = async (username: string, password: string) => {
         const meRes = await apiClient.get("/scm/auth/me", {
             headers: { Authorization: `Bearer ${res.data.access_token}` },
         });
-        localStorage.setItem("user_role", meRes.data.role ?? "admin");
+        localStorage.setItem("user_role", (meRes.data.role ?? "admin").toLowerCase());
         localStorage.setItem("username", meRes.data.username ?? username);
     }
     return res.data;
@@ -55,7 +62,7 @@ export const triggerReport = (filters?: { severity_filter?: string[] | null; cat
 export const getReportHistory = (limit = 5, offset = 0) =>
     apiClient.get(`/scm/report/history?limit=${limit}&offset=${offset}`);
 
-export const getAnomalies = (isResolved?: boolean, limit = 50, page = 1, pageSize = 50) => {
+export const getAnomalies = (isResolved?: boolean, pageSize = 50, page = 1) => {
     const params = new URLSearchParams();
     if (isResolved !== undefined) params.append("is_resolved", String(isResolved));
     params.append("page", String(page));
@@ -83,8 +90,10 @@ export const getProposals = (status?: string, limit = 50, offset = 0) => {
     return apiClient.get(`/scm/orders/proposals?${p}`);
 };
 
-export const generateProposals = () =>
-    apiClient.post("/scm/orders/proposals/generate");
+export const generateProposals = (severityOverride?: string) =>
+    apiClient.post("/scm/orders/proposals/generate",
+        severityOverride ? { severity_override: severityOverride } : {}
+    );
 
 export const approveProposal = (id: number) =>
     apiClient.patch(`/scm/orders/proposals/${id}/approve`);
@@ -119,22 +128,47 @@ export const getSchedulerStatus = () =>
     apiClient.get("/scm/scheduler/status");
 
 // --- Sheets ---
-export const getSheetsMaster = (page = 1, pageSize = 50, search?: string) => {
+export const getSheetCategories = () =>
+    apiClient.get("/scm/sheets/categories");
+
+export const getSheetsMaster = (page = 1, pageSize = 50, search?: string, category?: string) => {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-    if (search) params.append("search", search);
+    if (search)   params.append("search", search);
+    if (category) params.append("category", category);
     return apiClient.get(`/scm/sheets/master?${params}`);
 };
 
-export const getSheetsSales = (days = 30, page = 1, pageSize = 50, category?: string) => {
+export const getSheetsSales = (days = 30, page = 1, pageSize = 50, category?: string, search?: string) => {
     const params = new URLSearchParams({ days: String(days), page: String(page), page_size: String(pageSize) });
     if (category) params.append("category", category);
+    if (search)   params.append("search", search);
     return apiClient.get(`/scm/sheets/sales?${params}`);
 };
 
-export const getSheetsStock = (page = 1, pageSize = 50, category?: string) => {
+export const getSheetsStock = (page = 1, pageSize = 50, category?: string, search?: string) => {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (category) params.append("category", category);
+    if (search)   params.append("search", search);
     return apiClient.get(`/scm/sheets/stock?${params}`);
+};
+
+/** 현재 필터 기준 CSV blob 다운로드 */
+export const downloadSheetCsv = async (
+    type: "master" | "sales" | "stock",
+    filters: { search?: string; category?: string; days?: number },
+    filename: string,
+) => {
+    const params = new URLSearchParams({ download: "true" });
+    if (filters.search)   params.append("search", filters.search);
+    if (filters.category) params.append("category", filters.category);
+    if (filters.days)     params.append("days", String(filters.days));
+    const res = await apiClient.get(`/scm/sheets/${type}?${params}`, { responseType: "blob" });
+    const url = URL.createObjectURL(new Blob([res.data], { type: "text/csv;charset=utf-8-sig" }));
+    const a   = document.createElement("a");
+    a.href    = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
 };
 
 export const getSalesStats = (period: "daily" | "weekly" | "monthly") =>
@@ -212,6 +246,12 @@ export const changeMyPassword = (data: {
     new_password:     string;
 }) => apiClient.put("/scm/admin/me/password", data);
 
+export const getMyAdminProfile = () =>
+    apiClient.get("/scm/admin/me");
+
+export const updateMyProfile = (data: { email?: string; slack_user_id?: string }) =>
+    apiClient.put("/scm/admin/me/profile", data);
+
 // --- 분석 통계 ---
 export const getAbcStats = (days = 90) =>
     apiClient.get(`/scm/sheets/stats/abc?days=${days}`);
@@ -235,6 +275,10 @@ export const getTaskStatus = (taskId: string) =>
 // --- Product Status ---
 export const updateProductStatus = (code: string, status: string) =>
     apiClient.patch(`/scm/products/${code}/status`, { status });
+
+export const updateProduct = (code: string, data: {
+    name?: string; category?: string; safety_stock?: number; status?: string;
+}) => apiClient.put(`/scm/sheets/products/${code}`, data);
 
 // --- Excel Upload ---
 export const uploadExcel = (file: File, sheetType: "master" | "sales" | "stock") => {

@@ -3,10 +3,10 @@ from datetime import date
 
 
 RISK_COLOR = {
-    "low":      "#27ae60",
-    "medium":   "#f39c12",
-    "high":     "#e67e22",
-    "critical": "#e74c3c",
+    "LOW":      "#27ae60",
+    "MEDIUM":   "#f39c12",
+    "HIGH":     "#e67e22",
+    "CRITICAL": "#e74c3c",
 }
 
 ANOMALY_TYPE_KOR = {
@@ -18,10 +18,11 @@ ANOMALY_TYPE_KOR = {
 }
 
 SEVERITY_KOR = {
-    "low":      "낮음",
-    "medium":   "보통",
-    "high":     "높음",
-    "critical": "긴급",
+    "LOW":      "낮음",
+    "MEDIUM":   "보통",
+    "HIGH":     "높음",
+    "CRITICAL": "긴급",
+    "CHECK":    "확인",
 }
 
 
@@ -33,13 +34,14 @@ def build_daily_report_html(
         insight: dict,
 ) -> str:
 
-    risk_color = RISK_COLOR.get(insight.get("risk_level", "medium"), "#f39c12")
+    risk_color = RISK_COLOR.get(str(insight.get("risk_level", "MEDIUM")).upper(), "#f39c12")
 
     # 재고 이상 테이블 행 생성
     stock_rows = ""
     for a in stock_anomalies:
         atype = ANOMALY_TYPE_KOR.get(str(a.get("anomaly_type", "")).lower(), a.get("anomaly_type", ""))
-        sev = SEVERITY_KOR.get(str(a.get("severity", "")).lower(), a.get("severity", ""))
+        sev_key = str(a.get("severity", "")).upper()
+        sev = SEVERITY_KOR.get(sev_key, a.get("severity", ""))
         days = a.get("days_until_stockout", "")
         days_str = f"{days}일" if days and days != 999.0 else "-"
         stock_rows += f"""
