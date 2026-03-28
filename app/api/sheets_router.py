@@ -57,32 +57,69 @@ async def get_master(
 async def get_sales(
         current_user: Annotated[TokenData, Depends(get_current_user)],
         days: int = 30,
+        page: int = 1,
+        page_size: int = 50,
+        category: str | None = None,
 ):
 
     try:
         import pandas as pd
+        page_size = min(page_size, 200)
         df = read_sales()
         df["날짜"] = pd.to_datetime(df["날짜"])
         cutoff = df["날짜"].max() - pd.Timedelta(days=days)
         df = df[df["날짜"] >= cutoff].copy()
+
+        if category and "카테고리" in df.columns:
+            df = df[df["카테고리"] == category]
+
         df["날짜"] = df["날짜"].dt.strftime("%Y-%m-%d")
-        return {"total": len(df), "items": df.to_dict(orient="records")}
+
+        total       = len(df)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        start       = (page - 1) * page_size
+        page_df     = df.iloc[start:start + page_size]
+
+        return {
+            "total": total, "page": page, "page_size": page_size,
+            "total_pages": total_pages,
+            "items": page_df.to_dict(orient="records"),
+        }
     except Exception as e:
         logger.error(f"일별판매 조회 실패: {e}")
-        return {"total": 0, "items": [], "error": str(e)}
+        return {"total": 0, "page": 1, "page_size": page_size,
+                "total_pages": 0, "items": [], "error": str(e)}
 
 
 @router.get("/stock")
 async def get_stock(
         current_user: Annotated[TokenData, Depends(get_current_user)],
+        page: int = 1,
+        page_size: int = 50,
+        category: str | None = None,
 ):
 
     try:
+        page_size = min(page_size, 200)
         df = read_stock()
-        return {"total": len(df), "items": df.to_dict(orient="records")}
+
+        if category and "카테고리" in df.columns:
+            df = df[df["카테고리"] == category]
+
+        total       = len(df)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        start       = (page - 1) * page_size
+        page_df     = df.iloc[start:start + page_size]
+
+        return {
+            "total": total, "page": page, "page_size": page_size,
+            "total_pages": total_pages,
+            "items": page_df.to_dict(orient="records"),
+        }
     except Exception as e:
         logger.error(f"재고현황 조회 실패: {e}")
-        return {"total": 0, "items": [], "error": str(e)}
+        return {"total": 0, "page": 1, "page_size": page_size,
+                "total_pages": 0, "items": [], "error": str(e)}
 
 
 @router.get("/stats/sales")
@@ -270,33 +307,79 @@ async def get_abc_stats(
 async def get_demand_forecast(
         current_user: Annotated[TokenData, Depends(get_current_user)],
         forecast_days: int = 14,
+        page: int = 1,
+        page_size: int = 50,
+        category: str | None = None,
 ):
     try:
+        page_size = min(page_size, 200)
         from app.analyzer.demand_forecaster import run_demand_forecast_all
 
         df_master = read_product_master()
         df_sales  = read_sales()
         df_stock  = read_stock()
         items     = run_demand_forecast_all(df_master, df_sales, df_stock, forecast_days=forecast_days)
-        return {"forecast_days": forecast_days, "items": items}
+
+        categories = sorted({i.get("category", "") for i in items if i.get("category")})
+
+        if category:
+            items = [i for i in items if i.get("category") == category]
+
+        total       = len(items)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        start       = (page - 1) * page_size
+        page_items  = items[start:start + page_size]
+
+        return {
+            "forecast_days": forecast_days,
+            "categories": categories,
+            "total": total, "page": page, "page_size": page_size,
+            "total_pages": total_pages,
+            "items": page_items,
+        }
     except Exception as e:
         logger.error(f"수요 예측 조회 실패: {e}")
-        return {"forecast_days": forecast_days, "items": [], "error": str(e)}
+        return {"forecast_days": forecast_days, "categories": [], "total": 0,
+                "page": 1, "page_size": page_size, "total_pages": 0,
+                "items": [], "error": str(e)}
 
 
 @router.get("/stats/turnover")
 async def get_turnover_stats(
         current_user: Annotated[TokenData, Depends(get_current_user)],
         days: int = 30,
+        page: int = 1,
+        page_size: int = 50,
+        category: str | None = None,
 ):
     try:
+        page_size = min(page_size, 200)
         from app.analyzer.turnover_analyzer import calc_inventory_turnover
 
         df_master = read_product_master()
         df_sales  = read_sales()
         df_stock  = read_stock()
         items     = calc_inventory_turnover(df_master, df_sales, df_stock, days=days)
-        return {"days": days, "items": items}
+
+        categories = sorted({i.get("카테고리", "") for i in items if i.get("카테고리")})
+
+        if category:
+            items = [i for i in items if i.get("카테고리") == category]
+
+        total       = len(items)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        start       = (page - 1) * page_size
+        page_items  = items[start:start + page_size]
+
+        return {
+            "days": days,
+            "categories": categories,
+            "total": total, "page": page, "page_size": page_size,
+            "total_pages": total_pages,
+            "items": page_items,
+        }
     except Exception as e:
         logger.error(f"재고 회전율 조회 실패: {e}")
-        return {"days": days, "items": [], "error": str(e)}
+        return {"days": days, "categories": [], "total": 0,
+                "page": 1, "page_size": page_size, "total_pages": 0,
+                "items": [], "error": str(e)}

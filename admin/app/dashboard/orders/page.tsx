@@ -39,6 +39,25 @@ function OrdersTab() {
     const [totalPages, setTotalPages] = useState(1);
     const [total, setTotal]           = useState(0);
     const [isReadonly, setIsReadonly] = useState(false);
+    const [summaryCounts, setSummaryCounts] = useState<Record<string, number>>({});
+
+    // 마운트 시 각 상태별 총계 조회 (필터 변경과 무관하게 고정)
+    useEffect(() => {
+        const loadCounts = async () => {
+            try {
+                const statuses = ["발주완료", "입고중", "입고완료", "반품"] as const;
+                const results = await Promise.all(
+                    statuses.map((s) => getOrders({ status: s, page: 1, page_size: 1 }))
+                );
+                const counts: Record<string, number> = {};
+                statuses.forEach((s, i) => { counts[s] = results[i].data.total ?? 0; });
+                setSummaryCounts(counts);
+            } catch {
+                // 카드 숫자 없이 표시
+            }
+        };
+        loadCounts();
+    }, []);
 
     const fetchData = async () => {
         setLoading(true);
@@ -64,11 +83,6 @@ function OrdersTab() {
         setIsReadonly(role === "readonly");
         fetchData(); }, [tab, page]);
 
-    const countByStatus = STATUS_TABS.slice(1).reduce<Record<string, number>>((acc, s) => {
-        acc[s] = orders.filter((o) => o.상태 === s).length;
-        return acc;
-    }, {});
-
     return (
         <div className="space-y-6">
             {/* 상태 카드 */}
@@ -80,7 +94,7 @@ function OrdersTab() {
                         className={`bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-left transition hover:border-blue-200 ${tab === s ? "border-blue-400 ring-1 ring-blue-400" : ""}`}
                     >
                         <p className="text-xs text-gray-400 mb-1">{s}</p>
-                        <p className="text-2xl font-bold text-gray-800">{countByStatus[s] ?? "-"}</p>
+                        <p className="text-2xl font-bold text-gray-800">{summaryCounts[s] ?? "-"}</p>
                     </button>
                 ))}
             </div>

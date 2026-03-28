@@ -121,11 +121,17 @@ export const getSheetsMaster = (page = 1, pageSize = 50, search?: string) => {
     return apiClient.get(`/scm/sheets/master?${params}`);
 };
 
-export const getSheetsSales = (days = 30) =>
-    apiClient.get(`/scm/sheets/sales?days=${days}`);
+export const getSheetsSales = (days = 30, page = 1, pageSize = 50, category?: string) => {
+    const params = new URLSearchParams({ days: String(days), page: String(page), page_size: String(pageSize) });
+    if (category) params.append("category", category);
+    return apiClient.get(`/scm/sheets/sales?${params}`);
+};
 
-export const getSheetsStock = () =>
-    apiClient.get("/scm/sheets/stock");
+export const getSheetsStock = (page = 1, pageSize = 50, category?: string) => {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    if (category) params.append("category", category);
+    return apiClient.get(`/scm/sheets/stock?${params}`);
+};
 
 export const getSalesStats = (period: "daily" | "weekly" | "monthly") =>
     apiClient.get(`/scm/sheets/stats/sales?period=${period}`);
@@ -206,8 +212,14 @@ export const changeMyPassword = (data: {
 export const getAbcStats = (days = 90) =>
     apiClient.get(`/scm/sheets/stats/abc?days=${days}`);
 
-export const getDemandForecast = (forecastDays = 14) =>
-    apiClient.get(`/scm/sheets/stats/demand?forecast_days=${forecastDays}`);
+export const getDemandForecast = (forecastDays = 14, page = 1, pageSize = 50, category?: string) => {
+    const params = new URLSearchParams({ forecast_days: String(forecastDays), page: String(page), page_size: String(pageSize) });
+    if (category) params.append("category", category);
+    return apiClient.get(`/scm/sheets/stats/demand?${params}`);
+};
 
-export const getTurnoverStats = (days = 30) =>
-    apiClient.get(`/scm/sheets/stats/turnover?days=${days}`);
+export const getTurnoverStats = (days = 30, page = 1, pageSize = 50, category?: string) => {
+    const params = new URLSearchParams({ days: String(days), page: String(page), page_size: String(pageSize) });
+    if (category) params.append("category", category);
+    return apiClient.get(`/scm/sheets/stats/turnover?${params}`);
+};
