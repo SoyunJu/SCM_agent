@@ -36,6 +36,7 @@ function OrdersTab() {
     const [tab, setTab]               = useState<string>("전체");
     const [loading, setLoading]       = useState(false);
     const [page, setPage]             = useState(1);
+    const [pageSize, setPageSize]     = useState(50);
     const [totalPages, setTotalPages] = useState(1);
     const [total, setTotal]           = useState(0);
     const [isReadonly, setIsReadonly] = useState(false);
@@ -63,7 +64,7 @@ function OrdersTab() {
         setLoading(true);
         try {
             const status = tab === "전체" ? undefined : tab;
-            const res = await getOrders({ status, page, page_size: 50 });
+            const res = await getOrders({ status, page, page_size: pageSize });
             setOrders(res.data.items ?? []);
             setTotalPages(res.data.total_pages ?? 1);
             setTotal(res.data.total ?? 0);
@@ -75,13 +76,13 @@ function OrdersTab() {
     useEffect(() => {
         const role = localStorage.getItem("user_role") ?? "";
         setIsReadonly(role === "readonly");
-        setPage(1); }, [tab]);
+        setPage(1); }, [tab, pageSize]);
 
 
     useEffect(() => {
         const role = localStorage.getItem("user_role") ?? "";
         setIsReadonly(role === "readonly");
-        fetchData(); }, [tab, page]);
+        fetchData(); }, [tab, page, pageSize]);
 
     return (
         <div className="space-y-6">
@@ -113,6 +114,15 @@ function OrdersTab() {
                     </button>
                 ))}
                 <span className="flex items-center text-xs text-gray-400 ml-2">총 {total}건</span>
+                <select
+                    value={pageSize}
+                    onChange={(e) => setPageSize(Number(e.target.value))}
+                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none"
+                >
+                    {[10, 25, 50, 100].map((n) => (
+                        <option key={n} value={n}>{n}건</option>
+                    ))}
+                </select>
                 <button onClick={fetchData} disabled={loading} className="ml-auto p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50">
                     <RefreshCw size={15} className={`text-gray-500 ${loading ? "animate-spin" : ""}`} />
                 </button>

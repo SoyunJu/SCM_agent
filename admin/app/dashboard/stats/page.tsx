@@ -77,6 +77,7 @@ export default function StatsPage() {
     const [abcData, setAbcData]     = useState<any[]>([]);
     const [demandData, setDemandData] = useState<any[]>([]);
     const [demandPage, setDemandPage]           = useState(1);
+    const [demandPageSize, setDemandPageSize]   = useState(50);
     const [demandTotalPages, setDemandTotalPages] = useState(1);
     const [demandTotal, setDemandTotal]         = useState(0);
     const [demandCategory, setDemandCategory]   = useState<string>("");
@@ -84,6 +85,7 @@ export default function StatsPage() {
 
     const [turnoverData, setTurnoverData] = useState<any[]>([]);
     const [turnoverPage, setTurnoverPage]           = useState(1);
+    const [turnoverPageSize, setTurnoverPageSize] = useState(50);
     const [turnoverTotalPages, setTurnoverTotalPages] = useState(1);
     const [turnoverTotal, setTurnoverTotal]         = useState(0);
     const [turnoverCategory, setTurnoverCategory]   = useState<string>("");
@@ -119,12 +121,16 @@ export default function StatsPage() {
             .finally(() => { setLoading(false); setTaskMsg(""); });
     }, [tab]);
 
+    // 페이지 사이즈 변경 시 페이지 초기화
+    useEffect(() => { setDemandPage(1); }, [demandPageSize]);
+    useEffect(() => { setTurnoverPage(1); }, [turnoverPageSize]);
+
     // 수요 예측
     useEffect(() => {
         if (tab !== "demand") return;
         setLoading(true);
         setTaskMsg("");
-        getDemandForecast(14, demandPage, 50, demandCategory || undefined)
+        getDemandForecast(14, demandPage, demandPageSize, demandCategory || undefined)
             .then((res) => {
                 if (res.data?.task_id) setTaskMsg("수요 예측 태스크 처리 중...");
                 return resolveAnalysis(res);
@@ -137,14 +143,14 @@ export default function StatsPage() {
             })
             .catch(() => setDemandData([]))
             .finally(() => { setLoading(false); setTaskMsg(""); });
-    }, [tab, demandPage, demandCategory]);
+    }, [tab, demandPage, demandPageSize, demandCategory]);
 
     // 재고 회전율
     useEffect(() => {
         if (tab !== "turnover") return;
         setLoading(true);
         setTaskMsg("");
-        getTurnoverStats(30, turnoverPage, 50, turnoverCategory || undefined)
+        getTurnoverStats(30, turnoverPage, turnoverPageSize, turnoverCategory || undefined)
             .then((res) => {
                 if (res.data?.task_id) setTaskMsg("재고 회전율 태스크 처리 중...");
                 return resolveAnalysis(res);
@@ -157,7 +163,7 @@ export default function StatsPage() {
             })
             .catch(() => setTurnoverData([]))
             .finally(() => { setLoading(false); setTaskMsg(""); });
-    }, [tab, turnoverPage, turnoverCategory]);
+    }, [tab, turnoverPage, turnoverPageSize, turnoverCategory]);
 
     const pieData = stockStats
         ? [
@@ -345,6 +351,13 @@ export default function StatsPage() {
                             </select>
                         )}
                         <span className="text-xs text-gray-400">총 {demandTotal}건</span>
+                        <select
+                            value={demandPageSize}
+                            onChange={(e) => setDemandPageSize(Number(e.target.value))}
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none"
+                        >
+                            {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n}건</option>)}
+                        </select>
                     </div>
 
                     {loading ? (
@@ -435,6 +448,13 @@ export default function StatsPage() {
                             </select>
                         )}
                         <span className="ml-auto text-xs text-gray-400">총 {turnoverTotal}건</span>
+                        <select
+                            value={turnoverPageSize}
+                            onChange={(e) => setTurnoverPageSize(Number(e.target.value))}
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none"
+                        >
+                            {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n}건</option>)}
+                        </select>
                     </div>
 
                     {loading ? (
