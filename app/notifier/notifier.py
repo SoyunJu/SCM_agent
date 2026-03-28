@@ -1,11 +1,9 @@
-# app/notifier/notifier.py
 
 from pathlib import Path
 from loguru import logger
 
 
 def _get_channel(db=None) -> str:
-    """DB에서 ALERT_CHANNEL 설정 읽기. 기본값 'slack'"""
     if db is None:
         return "slack"
     try:
@@ -25,11 +23,37 @@ def _get_min_severity(db=None) -> str:
         return "high"
 
 
-_SEVERITY_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+def _get_admin_slack_ids(db) -> list[str]:
+    if db is None:
+        return []
+    try:
+        from app.db.models import AdminUser
+        users = db.query(AdminUser).filter(
+            AdminUser.is_active == True,
+            AdminUser.slack_user_id.isnot(None),
+            AdminUser.slack_user_id != "",
+            ).all()
+        return [u.slack_user_id for u in users]
+    except Exception as e:
+        logger.warning(f"관리자 Slack ID 조회 실패: {e}")
+        return []
+
+
+_SEVERITY_RANK = {"low": 0, "review": 1, "medium": 1, "high": 2, "critical": 3}
 
 
 def _should_alert(severity: str, min_severity: str) -> bool:
     return _SEVERITY_RANK.get(severity, 0) >= _SEVERITY_RANK.get(min_severity, 2)
+
+
+def mention_user(
+        user_id:    str,
+        message:    str,
+        channel_id: str | None = None,
+) -> bool:
+
+    from app.notifier.slack_notifier import send_message
+    return send_message(text=f"<@{user_id}> {message}", channel_id=channel_id)
 
 
 def notify_daily_report(
@@ -41,13 +65,15 @@ def notify_daily_report(
         pdf_path:            Path | None = None,
         db=None,
 ) -> None:
-    """설정에 따라 Slack/Email/Both 발송"""
+
     channel = _get_channel(db)
     logger.info(f"일일 보고서 알림 발송: channel={channel}")
 
     if channel in ("slack", "both"):
         try:
             from app.notifier.slack_notifier import send_daily_report_notification, send_message
+
+            # 1. 채널 전송 (PDF 포함)
             if pdf_path:
                 send_daily_report_notification(
                     report_date=report_date,
@@ -63,6 +89,19 @@ def notify_daily_report(
                     f"총 {total_products}개 상품 | 재고이상 {stock_anomaly_count}건 | "
                     f"판매이상 {sales_anomaly_count}건\n위험도: {risk_level.upper()}"
                 )
+
+            # 2. slack_user_id 설정된 관리자에게 DM 발송
+            admin_ids = _get_admin_slack_ids(db)
+            if admin_ids:
+                dm_text = (
+                    f"📋 *일일 보고서 ({report_date})*\n"
+                    f"총 {total_products}개 상품 | 재고이상 {stock_anomaly_count}건 | "
+                    f"판매이상 {sales_anomaly_count}건 | 위험도: {risk_level.upper()}"
+                )
+                for uid in admin_ids:
+                    send_message(text=dm_text, channel_id=uid)
+                logger.info(f"관리자 DM 발송: {len(admin_ids)}명")
+
         except Exception as e:
             logger.error(f"Slack 일일 보고서 발송 실패: {e}")
 
@@ -99,7 +138,14 @@ def notify_anomaly_alert(
     if channel in ("slack", "both"):
         try:
             from app.notifier.slack_notifier import send_message
-            send_message(f"🔴 [{severity.upper()}] {product_name} - {anomaly_type}\n{message}")
+
+            # slack_user_id 관리자 멘션 구성
+            admin_ids = _get_admin_slack_ids(db)
+            mention_str = " ".join(f"<@{uid}>" for uid in admin_ids) + " " if admin_ids else ""
+
+            send_message(
+                f"{mention_str}🔴 [{severity.upper()}] {product_name} - {anomaly_type}\n{message}"
+            )
         except Exception as e:
             logger.error(f"Slack 알림 발송 실패: {e}")
 
@@ -109,11 +155,3 @@ def notify_anomaly_alert(
             send_alert_email(product_name, anomaly_type, severity, message)
         except Exception as e:
             logger.error(f"이메일 알림 발송 실패: {e}")
-
-
-    def mention_user(
-            user_id:    str,
-            message:    str,
-            channel_id: str | None = None,
-    ) -> bool:
-        return send_message(text=f"<@{user_id}> {message}", channel_id=channel_id)
