@@ -7,7 +7,7 @@ import {
     LayoutDashboard, AlertTriangle, FileText,
     MessageSquare, LogOut, Bell, Database,
     Calendar, BarChart2, ShoppingCart, Settings, Users, X,
-    ChevronLeft, ChevronRight,
+    ChevronLeft, ChevronRight, User,
 } from "lucide-react";
 import { useAlerts } from "@/lib/useAlerts";
 
@@ -30,6 +30,18 @@ const ROLE_BADGE: Record<string, { label: string; cls: string }> = {
     readonly:   { label: "읽기전용",   cls: "bg-gray-100 text-gray-500"     },
 };
 
+/** JWT payload에서 role/username 추출 (API 호출 없이 즉시) */
+function decodeJwtPayload(token: string): { role: string; username: string } | null {
+    try {
+        const parts = token.split(".");
+        if (parts.length !== 3) return null;
+        const payload = JSON.parse(atob(parts[1]));
+        return { role: payload.role ?? "", username: payload.sub ?? "" };
+    } catch {
+        return null;
+    }
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const router   = useRouter();
     const pathname = usePathname();
@@ -49,24 +61,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         const token = localStorage.getItem("access_token");
         if (!token) { router.push("/login"); return; }
 
-        // 역할 정보 로드 (로그인 시 저장된 값 우선, 없으면 API 조회)
-        const cachedRole = localStorage.getItem("user_role") ?? "";
-        const cachedName = localStorage.getItem("username") ?? "";
-        if (cachedRole) {
-            setUserRole(cachedRole);
-            setUsername(cachedName);
+        // JWT payload에서 role/username 직접 추출 (API 호출 불필요)
+        const decoded = decodeJwtPayload(token);
+        if (decoded && decoded.role) {
+            setUserRole(decoded.role);
+            setUsername(decoded.username);
+            localStorage.setItem("user_role", decoded.role);
+            localStorage.setItem("username", decoded.username);
         } else {
-            fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/scm/auth/me`, {
-                headers: { Authorization: `Bearer ${token}` },
-            })
-                .then((r) => r.json())
-                .then((data) => {
-                    setUserRole(data.role ?? "admin");
-                    setUsername(data.username ?? "");
-                    localStorage.setItem("user_role", data.role ?? "admin");
-                    localStorage.setItem("username", data.username ?? "");
-                })
-                .catch(() => { router.push("/login"); });
+            // JWT 디코딩 실패 시 localStorage fallback
+            const cachedRole = localStorage.getItem("user_role") ?? "";
+            const cachedName = localStorage.getItem("username") ?? "";
+            if (cachedRole) {
+                setUserRole(cachedRole);
+                setUsername(cachedName);
+            } else {
+                router.push("/login");
+            }
         }
     }, [router]);
 
@@ -137,12 +148,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
                 {/* 사용자 정보 + 로그아웃 */}
                 <div className="p-2 border-t border-gray-100 space-y-0.5">
-                    {badge && !collapsed && (
+                    {collapsed ? (
+                        <div className="flex justify-center py-1.5" title={`${username} (${badge?.label ?? userRole})`}>
+                            <User size={16} className="text-gray-400" />
+                        </div>
+                    ) : (
                         <div className="px-3 py-1.5">
-                            <p className="text-xs text-gray-500 font-medium truncate">{username}</p>
-                            <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium mt-0.5 ${badge.cls}`}>
-                                {badge.label}
-                            </span>
+                            <p className="text-xs text-gray-700 font-medium truncate">{username || "-"}</p>
+                            {badge && (
+                                <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium mt-0.5 ${badge.cls}`}>
+                                    {badge.label}
+                                </span>
+                            )}
                         </div>
                     )}
                     <button onClick={handleLogout}
@@ -156,8 +173,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </aside>
 
             {/* 메인 */}
-            <div className="flex-1 flex flex-col">
-                <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-end px-8 gap-4">
+            <div className="flex-1 flex flex-col min-w-0">
+                <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-end px-4 md:px-8 gap-4 shrink-0">
                     <div className="relative">
                         <button onClick={toggleAlerts}
                                 className="relative p-2 rounded-lg hover:bg-gray-100 transition"
@@ -199,7 +216,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </div>
                 </header>
 
-                <main className="flex-1 p-8 overflow-auto">{children}</main>
+                <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto min-w-0">{children}</main>
             </div>
         </div>
     );

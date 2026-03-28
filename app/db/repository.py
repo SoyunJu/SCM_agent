@@ -70,12 +70,25 @@ def create_anomaly_log(
 
 
 def get_anomaly_logs(
-        db: Session, is_resolved: Optional[bool] = None, limit: int = 50
-) -> list[AnomalyLog]:
+        db: Session,
+        is_resolved: Optional[bool] = None,
+        anomaly_type: Optional[str] = None,
+        severity: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
+) -> dict:
     query = db.query(AnomalyLog)
     if is_resolved is not None:
         query = query.filter(AnomalyLog.is_resolved == is_resolved)
-    return query.order_by(desc(AnomalyLog.created_at)).limit(limit).all()
+    if anomaly_type:
+        query = query.filter(AnomalyLog.anomaly_type == anomaly_type)
+    if severity:
+        query = query.filter(AnomalyLog.severity == severity)
+
+    total = query.count()
+    items = query.order_by(desc(AnomalyLog.created_at)).offset((page - 1) * page_size).limit(page_size).all()
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    return {"total": total, "page": page, "page_size": page_size, "total_pages": total_pages, "items": items}
 
 
 def resolve_anomaly(db: Session, anomaly_id: int) -> Optional[AnomalyLog]:

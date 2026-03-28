@@ -26,7 +26,6 @@ DEFAULT_SETTINGS: dict[str, tuple[str, str]] = {
     "ALERT_CHANNEL":               ("slack","알림 채널 (slack | email | both)"),
     "ALERT_MIN_SEVERITY":          ("high", "알림 최소 심각도 (low | medium | high | critical)"),
     "AUTO_ORDER_MIN_SEVERITY":     ("high", "자동발주 에이전트 실행 최소 심각도 (low | medium | high | critical)"),
-    # Phase 5
     "DATA_RETENTION_SALES_DAYS":     ("365",  "매출 데이터 보존 기간 (일, 0=무제한)"),
     "DATA_RETENTION_STOCK_DAYS":     ("180",  "재고 스냅샷 보존 기간 (일, 0=무제한)"),
     "DATA_RETENTION_ANALYSIS_HOURS": ("24",   "분석 결과 캐시 보존 기간 (시간)"),
