@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { login } from "@/lib/api";
+import { login, apiClient } from "@/lib/api";
 
 // SHA-256 해싱 유틸 (네트워크 페이로드 평문 노출 방지)
 const hashSHA256 = async (text: string): Promise<string> => {
@@ -25,6 +25,10 @@ export default function LoginPage() {
             const hashed = await hashSHA256(password);   // 평문 대신 sha256 전송
             const data   = await login(username, hashed);
             localStorage.setItem("access_token", data.access_token);
+            // role/username 즉시 저장 → layout이 /me 비동기 호출 없이 탭 즉시 렌더링
+            const me = await apiClient.get("/scm/auth/me");
+            localStorage.setItem("user_role", me.data.role ?? "admin");
+            localStorage.setItem("username",  me.data.username ?? "");
             router.push("/dashboard");
         } catch {
             setError("아이디 또는 비밀번호가 올바르지 않습니다.");

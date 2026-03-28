@@ -74,11 +74,8 @@ export default function ReportsPage() {
     }, []);
 
     useEffect(() => {
-        setHistoryPage(0);
-    }, [pageSize]);
-
-    useEffect(() => {
         fetchHistory(historyPage);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [historyPage, pageSize]);
 
     const startPolling = (executionId: number) => {
@@ -256,7 +253,7 @@ export default function ReportsPage() {
                                 <p className="text-sm text-gray-500">총 <span className="font-semibold">{historyTotal}</span>건</p>
                                 <select
                                     value={pageSize}
-                                    onChange={(e) => setPageSize(Number(e.target.value))}
+                                    onChange={(e) => { setPageSize(Number(e.target.value)); setHistoryPage(0); }}
                                     className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none"
                                 >
                                     {[5, 10, 20, 50].map((n) => (

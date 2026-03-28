@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI):
     check_db_connection()
     init_db()
     _seed_superadmin()
+    _seed_test_user()
 
     loop = asyncio.get_running_loop()
     from app.api.alert_router import set_main_loop
@@ -96,6 +97,39 @@ def _seed_superadmin() -> None:
         db.close()
 
 
+
+
+def _seed_test_user() -> None:
+    """test/test 계정이 구버전 bcrypt(plain) 해시로 생성된 경우 sha256+bcrypt로 자동 업그레이드."""
+    import hashlib
+    from app.db.connection import SessionLocal
+    from app.db.repository import get_admin_user_by_username, create_admin_user
+    from app.db.models import AdminRole
+    from passlib.context import CryptContext
+
+    db = SessionLocal()
+    try:
+        ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        sha256_pw = hashlib.sha256("test".encode()).hexdigest()
+        user = get_admin_user_by_username(db, "test")
+        if not user:
+            create_admin_user(
+                db,
+                username="test",
+                hashed_password=ctx.hash(sha256_pw),
+                role=AdminRole.ADMIN,
+            )
+            logger.info("test 계정 자동 생성 (admin 역할)")
+        elif not ctx.verify(sha256_pw, user.hashed_password):
+            user.hashed_password = ctx.hash(sha256_pw)
+            db.commit()
+            logger.info("test 계정 패스워드 해시를 sha256+bcrypt로 업그레이드")
+        else:
+            logger.info("test 계정 이미 정상 (sha256+bcrypt)")
+    except Exception as e:
+        logger.warning(f"test 계정 seed 실패(무시): {e}")
+    finally:
+        db.close()
 
 
 def _warmup_sheets() -> None:

@@ -121,10 +121,6 @@ export default function StatsPage() {
             .finally(() => { setLoading(false); setTaskMsg(""); });
     }, [tab]);
 
-    // 페이지 사이즈 변경 시 페이지 초기화
-    useEffect(() => { setDemandPage(1); }, [demandPageSize]);
-    useEffect(() => { setTurnoverPage(1); }, [turnoverPageSize]);
-
     // 수요 예측
     useEffect(() => {
         if (tab !== "demand") return;
@@ -143,6 +139,7 @@ export default function StatsPage() {
             })
             .catch(() => setDemandData([]))
             .finally(() => { setLoading(false); setTaskMsg(""); });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tab, demandPage, demandPageSize, demandCategory]);
 
     // 재고 회전율
@@ -163,6 +160,7 @@ export default function StatsPage() {
             })
             .catch(() => setTurnoverData([]))
             .finally(() => { setLoading(false); setTaskMsg(""); });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tab, turnoverPage, turnoverPageSize, turnoverCategory]);
 
     const pieData = stockStats
@@ -343,7 +341,7 @@ export default function StatsPage() {
                         {demandCategories.length > 0 && (
                             <select
                                 value={demandCategory}
-                                onChange={(e) => { setDemandCategory(e.target.value); setDemandPage(1); }}
+                                onChange={(e) => { setDemandCategory(e.target.value); setDemandPage(1); }}  // category 변경 시 1페이지로
                                 className="ml-auto border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
                             >
                                 <option value="">전체 카테고리</option>
@@ -353,7 +351,7 @@ export default function StatsPage() {
                         <span className="text-xs text-gray-400">총 {demandTotal}건</span>
                         <select
                             value={demandPageSize}
-                            onChange={(e) => setDemandPageSize(Number(e.target.value))}
+                            onChange={(e) => { setDemandPageSize(Number(e.target.value)); setDemandPage(1); }}
                             className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none"
                         >
                             {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n}건</option>)}
@@ -440,7 +438,7 @@ export default function StatsPage() {
                         {turnoverCategories.length > 0 && (
                             <select
                                 value={turnoverCategory}
-                                onChange={(e) => { setTurnoverCategory(e.target.value); setTurnoverPage(1); }}
+                                onChange={(e) => { setTurnoverCategory(e.target.value); setTurnoverPage(1); }}  // category 변경 시 1페이지로
                                 className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
                             >
                                 <option value="">전체 카테고리</option>
@@ -450,7 +448,7 @@ export default function StatsPage() {
                         <span className="ml-auto text-xs text-gray-400">총 {turnoverTotal}건</span>
                         <select
                             value={turnoverPageSize}
-                            onChange={(e) => setTurnoverPageSize(Number(e.target.value))}
+                            onChange={(e) => { setTurnoverPageSize(Number(e.target.value)); setTurnoverPage(1); }}
                             className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none"
                         >
                             {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n}건</option>)}

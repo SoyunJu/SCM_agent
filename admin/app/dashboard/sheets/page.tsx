@@ -72,15 +72,9 @@ export default function SheetsPage() {
     };
 
     useEffect(() => {
-        const role = localStorage.getItem("user_role") ?? "";
-        setIsReadonly(role === "readonly");
-        setPage(1);
-    }, [tab, days, pageSize]);
-
-    useEffect(() => {
-        const role = localStorage.getItem("user_role") ?? "";
-        setIsReadonly(role === "readonly");
+        setIsReadonly(localStorage.getItem("user_role") === "readonly");
         fetchData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tab, days, page, pageSize]);
 
     const scrollToTop = () => topRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -186,7 +180,7 @@ export default function SheetsPage() {
                 {TABS.map((t) => (
                     <button
                         key={t}
-                        onClick={() => setTab(t)}
+                        onClick={() => { setTab(t); setPage(1); }}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
                             tab === t ? "bg-blue-600 text-white" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
                         }`}
@@ -197,7 +191,7 @@ export default function SheetsPage() {
                 {tab === "일별판매" && (
                     <select
                         value={days}
-                        onChange={(e) => setDays(Number(e.target.value))}
+                        onChange={(e) => { setDays(Number(e.target.value)); setPage(1); }}
                         className="ml-2 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
                     >
                         <option value={7}>최근 7일</option>
@@ -213,7 +207,7 @@ export default function SheetsPage() {
                     <span className="text-xs text-gray-400">총 {total}건</span>
                     <select
                         value={pageSize}
-                        onChange={(e) => setPageSize(Number(e.target.value))}
+                        onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
                         className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none"
                     >
                         {[10, 25, 50, 100].map((n) => (
