@@ -42,7 +42,6 @@ def write_product_master(df_crawled: pd.DataFrame) -> None:
             raise
 
 
-<<<<<<< Updated upstream
 def upsert_master_from_excel(df_sales: pd.DataFrame) -> None:
     with _get_lock("상품마스터"):
         try:
@@ -54,7 +53,6 @@ def upsert_master_from_excel(df_sales: pd.DataFrame) -> None:
         df = df_source.copy()
         df["상품코드"] = df["상품코드"].astype(str)
 
-=======
 def upsert_master_from_excel(df_source: pd.DataFrame) -> None:
 
     try:
@@ -66,7 +64,7 @@ def upsert_master_from_excel(df_source: pd.DataFrame) -> None:
         df = df_source.copy()
         df["상품코드"] = df["상품코드"].astype(str)
 
->>>>>>> Stashed changes
+        # Stashed changes
         if "상품명" not in df.columns:
             df["상품명"] = "데이터 없음"
         else:

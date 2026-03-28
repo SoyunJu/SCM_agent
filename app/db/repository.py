@@ -259,3 +259,124 @@ def update_last_login(db: Session, user_id: int) -> None:
     if record:
         record.last_login_at = datetime.now()
         db.commit()
+
+
+# --- DB SoT 변경 ---
+from app.db.models import Product, ProductStatus, DailySales, StockLevel, AnalysisCache
+from sqlalchemy import and_
+from datetime import date as date_type, timedelta
+
+
+# --- Product ---
+def get_products_paginated(
+        db: Session,
+        page: int = 1,
+        page_size: int = 50,
+        search: Optional[str] = None,
+        category: Optional[str] = None,
+        status: Optional[ProductStatus] = None,
+) -> dict:
+    query = db.query(Product)
+    if search:
+        query = query.filter(Product.name.contains(search))
+    if category:
+        query = query.filter(Product.category == category)
+    if status:
+        query = query.filter(Product.status == status)
+
+    total = query.count()
+    items = query.offset((page - 1) * page_size).limit(page_size).all()
+    return {"total": total, "page": page, "page_size": page_size, "items": items}
+
+
+def get_product_by_code(db: Session, code: str) -> Optional[Product]:
+    return db.query(Product).filter(Product.code == code).first()
+
+
+def update_product_status(db: Session, code: str, status: ProductStatus) -> Optional[Product]:
+    record = get_product_by_code(db, code)
+    if not record:
+        return None
+    record.status = status
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def get_active_product_codes(db: Session) -> list[str]:
+    rows = db.query(Product.code).filter(Product.status == ProductStatus.ACTIVE).all()
+    return [r.code for r in rows]
+
+
+# --- DailySales ---
+def get_daily_sales_range(
+        db: Session,
+        start: date_type,
+        end: date_type,
+        product_codes: Optional[list[str]] = None,
+) -> list[DailySales]:
+    query = db.query(DailySales).filter(
+        and_(DailySales.date >= start, DailySales.date <= end)
+    )
+    if product_codes:
+        query = query.filter(DailySales.product_code.in_(product_codes))
+    return query.all()
+
+
+# --- StockLevel ---
+def get_stock_level(db: Session, product_code: str) -> Optional[StockLevel]:
+    return db.query(StockLevel).filter(StockLevel.product_code == product_code).first()
+
+
+def get_all_stock_levels(db: Session) -> list[StockLevel]:
+    return db.query(StockLevel).all()
+
+
+# --- AnalysisCache ---
+def get_analysis_cache(
+        db: Session, analysis_type: str, params_hash: str, max_age_minutes: int = 30
+) -> Optional[AnalysisCache]:
+    cutoff = datetime.now() - timedelta(minutes=max_age_minutes)
+    return (
+        db.query(AnalysisCache)
+        .filter(
+            AnalysisCache.analysis_type == analysis_type,
+            AnalysisCache.params_hash   == params_hash,
+            AnalysisCache.created_at    >= cutoff,
+            )
+        .order_by(desc(AnalysisCache.created_at))
+        .first()
+    )
+
+
+def upsert_analysis_cache(
+        db: Session, analysis_type: str, params_hash: str, result_json: str
+) -> AnalysisCache:
+    # 기존 data del -> new insert
+    db.query(AnalysisCache).filter(
+        AnalysisCache.analysis_type == analysis_type,
+        AnalysisCache.params_hash   == params_hash,
+        ).delete()
+    record = AnalysisCache(
+        analysis_type=analysis_type,
+        params_hash=params_hash,
+        result_json=result_json,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def delete_old_analysis_cache(db: Session, older_than_hours: int = 24) -> int:
+    cutoff = datetime.now() - timedelta(hours=older_than_hours)
+    deleted = db.query(AnalysisCache).filter(AnalysisCache.created_at < cutoff).delete()
+    db.commit()
+    return deleted
+
+
+def delete_old_daily_sales(db: Session, older_than_days: int = 365) -> int:
+    cutoff = datetime.now().date() - timedelta(days=older_than_days)
+    deleted = db.query(DailySales).filter(DailySales.date < cutoff).delete()
+    db.commit()
+    return deleted

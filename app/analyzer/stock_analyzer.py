@@ -206,6 +206,15 @@ def run_stock_analysis(
         medium_days: int = 7,
 ) -> list[StockAnomaly]:
     logger.info("################## 재고 분석 시작 ##################")
+
+    # inactive / sample 제외
+    if "status" in df_master.columns:
+        before = len(df_master)
+        df_master = df_master[df_master["status"] == "active"].copy()
+        excluded = before - len(df_master)
+        if excluded:
+            logger.info(f"[재고분석] inactive/sample 상품 {excluded}개 분석 제외")
+
     results = []
     results.extend(detect_low_stock(
         df_master, df_stock, df_sales,
