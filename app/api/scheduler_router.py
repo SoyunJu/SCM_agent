@@ -115,3 +115,68 @@ async def scheduler_status(
         }
     except Exception as e:
         return {"running": False, "jobs": [], "error": str(e)}
+
+
+
+
+import asyncio
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+
+
+_sync_scheduler: BackgroundScheduler | None = None
+
+class SyncScheduleRequest(BaseModel):
+    interval_seconds: int = 60   # 기본 1분
+    is_active: bool = True
+
+
+@router.get("/sync-config")
+async def get_sync_config(
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+):
+    global _sync_scheduler
+    is_running = _sync_scheduler is not None and _sync_scheduler.running
+    return {
+        "is_active":        is_running,
+        "interval_seconds": 60,
+        "description":      "Sheets(화면SoT) → DB(실제SoT) 단방향 동기화",
+    }
+
+
+# Sheets→DB 동기화
+@router.post("/sync-start")
+async def start_sync_schedule(
+        req: SyncScheduleRequest,
+        current_user: Annotated[TokenData, Depends(require_admin)],
+):
+    global _sync_scheduler
+    from app.scheduler.jobs import sync_sheets_to_db_incremental
+
+    if _sync_scheduler and _sync_scheduler.running:
+        _sync_scheduler.shutdown(wait=False)
+
+    _sync_scheduler = BackgroundScheduler(timezone="Asia/Seoul")
+    _sync_scheduler.add_job(
+        func=sync_sheets_to_db_incremental,
+        trigger=IntervalTrigger(seconds=max(30, req.interval_seconds)),  # 최소 30초
+        id="sheets_to_db_sync",
+        replace_existing=True,
+    )
+    _sync_scheduler.start()
+    logger.info(f"Sheets→DB 주기 동기화 시작: {req.interval_seconds}초 간격")
+    return {"status": "started", "interval_seconds": req.interval_seconds}
+
+
+
+@router.post("/sync-stop")
+async def stop_sync_schedule(
+        current_user: Annotated[TokenData, Depends(require_admin)],
+):
+    global _sync_scheduler
+    if _sync_scheduler and _sync_scheduler.running:
+        _sync_scheduler.shutdown(wait=False)
+        _sync_scheduler = None
+        logger.info("Sheets→DB 주기 동기화 중지")
+        return {"status": "stopped"}
+    return {"status": "already_stopped"}
