@@ -178,11 +178,23 @@ export const downloadSheetCsv = async (
 };
 
 
-export const getSalesStats = (period: "daily" | "weekly" | "monthly") =>
-    apiClient.get(`/scm/sheets/stats/sales?period=${period}`);
+export const getSalesStats = (period: "daily" | "weekly" | "monthly", category?: string) => {
+    const params = new URLSearchParams({ period });
+    if (category) params.append("category", category);
+    return apiClient.get(`/scm/sheets/stats/sales?${params}`);
+};
 
-export const getStockStats = () =>
-    apiClient.get("/scm/sheets/stats/stock");
+export const getStockStats = (category?: string) => {
+    const params = new URLSearchParams();
+    if (category) params.append("category", category);
+    return apiClient.get(`/scm/sheets/stats/stock?${params}`);
+};
+
+export const getAbcStats = (days = 90, category?: string) => {
+    const params = new URLSearchParams({ days: String(days) });
+    if (category) params.append("category", category);
+    return apiClient.get(`/scm/sheets/stats/abc?${params}`);
+};
 
 // --- PDF ---
 export const getPdfList = () =>
@@ -258,10 +270,6 @@ export const getMyAdminProfile = () =>
 
 export const updateMyProfile = (data: { email?: string; slack_user_id?: string }) =>
     apiClient.put("/scm/admin/me/profile", data);
-
-// --- 분석 통계 ---
-export const getAbcStats = (days = 90) =>
-    apiClient.get(`/scm/sheets/stats/abc?days=${days}`);
 
 export const getDemandForecast = (forecastDays = 14, page = 1, pageSize = 50, category?: string) => {
     const params = new URLSearchParams({ forecast_days: String(forecastDays), page: String(page), page_size: String(pageSize) });

@@ -250,56 +250,30 @@ async def get_stock(
 @router.get("/stats/sales")
 async def get_sales_stats(
         current_user: Annotated[TokenData, Depends(get_current_user)],
-        period: str = "daily",  # daily | weekly | monthly
+        period: str = "daily",
+        category: str | None = None,
 ):
-
     try:
         import pandas as pd
-        df = read_sales()
-        df["날짜"] = pd.to_datetime(df["날짜"])
+        df_sales  = read_sales()
+        df_master = read_product_master()
 
-        if period == "daily":
-            cutoff = df["날짜"].max() - pd.Timedelta(days=29)
-            df = df[df["날짜"] >= cutoff]
-            agg = (
-                df.groupby("날짜")
-                .agg(판매수량=("판매수량", "sum"), 매출액=("매출액", "sum"))
-                .reset_index()
-                .sort_values("날짜")
-            )
-            agg["날짜"] = agg["날짜"].dt.strftime("%Y-%m-%d")
+        if category:
+            cat_codes = df_master[df_master["카테고리"] == category]["상품코드"].tolist()
+            df_sales  = df_sales[df_sales["상품코드"].isin(cat_codes)]
 
-        elif period == "weekly":
-            cutoff = df["날짜"].max() - pd.Timedelta(weeks=12)
-            df = df[df["날짜"] >= cutoff]
-            df["주"] = df["날짜"].dt.to_period("W").dt.start_time
-            agg = (
-                df.groupby("주")
-                .agg(판매수량=("판매수량", "sum"), 매출액=("매출액", "sum"))
-                .reset_index()
-                .rename(columns={"주": "날짜"})
-                .sort_values("날짜")
-            )
-            agg["날짜"] = agg["날짜"].dt.strftime("%Y-%m-%d")
+        df_sales["날짜"] = pd.to_datetime(df_sales["날짜"])
 
+        if period == "weekly":
+            df_sales["날짜"] = df_sales["날짜"].dt.to_period("W").dt.start_time
         elif period == "monthly":
-            df["월"] = df["날짜"].dt.to_period("M").dt.start_time
-            agg = (
-                df.groupby("월")
-                .agg(판매수량=("판매수량", "sum"), 매출액=("매출액", "sum"))
-                .reset_index()
-                .rename(columns={"월": "날짜"})
-                .sort_values("날짜")
-            )
-            agg["날짜"] = agg["날짜"].dt.strftime("%Y-%m")
+            df_sales["날짜"] = df_sales["날짜"].dt.to_period("M").dt.start_time
 
-        else:
-            return {"error": "period는 daily/weekly/monthly 중 하나여야 합니다."}
+        agg = df_sales.groupby("날짜").agg(판매수량=("판매수량","sum"), 매출액=("매출액","sum")).reset_index()
+        agg["날짜"] = agg["날짜"].dt.strftime("%Y-%m-%d")
 
-        return {
-            "period": period,
-            "items": agg.to_dict(orient="records"),
-        }
+        categories = sorted(df_master["카테고리"].dropna().unique().tolist())
+        return {"period": period, "category": category, "categories": categories, "items": agg.to_dict(orient="records")}
     except Exception as e:
         logger.error(f"판매 통계 조회 실패: {e}")
         return {"period": period, "items": [], "error": str(e)}
@@ -310,20 +284,23 @@ async def get_sales_stats(
 @router.get("/stats/stock")
 async def get_stock_stats(
         current_user: Annotated[TokenData, Depends(get_current_user)],
+        category: str | None = None,
 ):
     try:
         import pandas as pd
         from app.db.connection import SessionLocal
         from app.db.repository import get_anomaly_logs
+        from app.utils.severity import norm
 
         df_stock  = read_stock()
         df_master = read_product_master()
 
         df = df_master.merge(df_stock, on="상품코드", how="left")
-
         df["현재재고"] = pd.to_numeric(df["현재재고"], errors="coerce").fillna(0).astype(int)
 
-        # 재고 > 0 인 상품만 TOP 20
+        if category:
+            df = df[df["카테고리"] == category]
+
         stock_items = (
             df[df["현재재고"] > 0]
             .nlargest(20, "현재재고")[["상품코드", "상품명", "현재재고"]]
@@ -332,15 +309,16 @@ async def get_stock_stats(
 
         db = SessionLocal()
         try:
-            result = get_anomaly_logs(db, is_resolved=False, page=1, page_size=200)
+            result = get_anomaly_logs(db, is_resolved=False, page=1, page_size=500)
             records = result["items"]
         finally:
             db.close()
 
-        from app.utils.severity import norm
+        if category:
+            records = [r for r in records if getattr(r, "category", "") == category]
+
         severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "CHECK": 0}
         for r in records:
-
             raw_sev = r.severity if isinstance(r.severity, str) else (
                 r.severity.value if hasattr(r.severity, "value") else str(r.severity)
             )
@@ -348,10 +326,12 @@ async def get_stock_stats(
             if sev in severity_counts:
                 severity_counts[sev] += 1
 
+        categories = sorted(df_master["카테고리"].dropna().unique().tolist())
         return {
-            "stock_items": stock_items,
+            "stock_items":     stock_items,
             "severity_counts": severity_counts,
             "total_anomalies": len(records),
+            "categories":      categories,
         }
     except Exception as e:
         logger.error(f"재고 통계 조회 실패: {e}")
@@ -417,6 +397,7 @@ async def get_orders(
 async def get_abc_stats(
         current_user: Annotated[TokenData, Depends(get_current_user)],
         days: int = 90,
+        category: str | None = None,
 ):
     try:
         import pandas as pd
@@ -424,8 +405,13 @@ async def get_abc_stats(
 
         df_master = read_product_master()
         df_sales  = read_sales()
-        items     = run_abc_analysis(df_master, df_sales, days=days)
-        return {"days": days, "items": items}
+
+        if category:
+            df_master = df_master[df_master["카테고리"] == category].copy()
+
+        items      = run_abc_analysis(df_master, df_sales, days=days)
+        categories = sorted(read_product_master()["카테고리"].dropna().unique().tolist())
+        return {"days": days, "category": category, "categories": categories, "items": items}
     except Exception as e:
         logger.error(f"ABC 분석 조회 실패: {e}")
         return {"days": days, "items": [], "error": str(e)}
