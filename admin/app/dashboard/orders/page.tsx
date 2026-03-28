@@ -201,6 +201,7 @@ function ProposalsTab() {
     const [editQty, setEditQty]       = useState<string>("");
     const [editPrice, setEditPrice]   = useState<string>("");
     const [isReadonly, setIsReadonly] = useState(false);
+    const [severityOverride, setSeverityOverride] = useState("");
 
     const fetchProposals = async () => {
         setLoading(true);
@@ -224,7 +225,7 @@ function ProposalsTab() {
         setGenerating(true);
         setMsg("");
         try {
-            const res = await generateProposals();
+            const res = await generateProposals(severityOverride || undefined);
             setMsg(res.data.message ?? "완료");
             fetchProposals();
         } catch (e: any) {
@@ -264,16 +265,29 @@ function ProposalsTab() {
             {/* 헤더 */}
             <div className="flex items-center gap-3 flex-wrap">
                 {!isReadonly && (
-                <button
-                    onClick={handleGenerate}
-                    disabled={generating}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition"
-                >
-                    {generating
-                        ? <Loader2 size={14} className="animate-spin" />
-                        : <Zap size={14} />}
-                    발주 제안 생성
-                </button>
+                <div className="flex items-center gap-2">
+                    <select
+                        value={severityOverride}
+                        onChange={(e) => setSeverityOverride(e.target.value)}
+                        className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                    >
+                        <option value="">설정값 사용</option>
+                        <option value="low">낮음 이상</option>
+                        <option value="medium">보통 이상</option>
+                        <option value="high">높음 이상</option>
+                        <option value="critical">긴급만</option>
+                    </select>
+                    <button
+                        onClick={handleGenerate}
+                        disabled={generating}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition"
+                    >
+                        {generating
+                            ? <Loader2 size={14} className="animate-spin" />
+                            : <Zap size={14} />}
+                        발주 제안 생성
+                    </button>
+                </div>
                 )}
                 {["all", "pending", "approved", "rejected"].map((s) => (
                     <button

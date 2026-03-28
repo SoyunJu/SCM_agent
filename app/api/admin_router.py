@@ -96,7 +96,7 @@ async def add_admin_user(
     if db.query(AdminUser).filter(AdminUser.username == body.username).first():
         raise HTTPException(status_code=400, detail="이미 존재하는 사용자명입니다.")
     try:
-        role_enum = AdminRole(body.role)
+        role_enum = AdminRole(body.role.upper())
     except ValueError:
         raise HTTPException(status_code=400, detail=f"유효하지 않은 역할입니다: {body.role}")
 
@@ -122,7 +122,7 @@ async def edit_admin_user(
     role_enum = None
     if body.role is not None:
         try:
-            role_enum = AdminRole(body.role)
+            role_enum = AdminRole(body.role.upper())
         except ValueError:
             raise HTTPException(status_code=400, detail=f"유효하지 않은 역할입니다: {body.role}")
 

@@ -1,21 +1,62 @@
 
 import os
 import tempfile
-from typing import Annotated
+from typing import Annotated, Optional
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from loguru import logger
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.auth_router import get_current_user, require_admin, TokenData
 from app.db.connection import get_db
 from app.db.repository import get_setting
+from app.db.models import Product, ProductStatus
 from app.sheets.reader import read_product_master, read_sales, read_stock
 from app.sheets.writer import upsert_master_from_excel, write_sales, upsert_stock_from_excel
 
 router = APIRouter(prefix="/scm/sheets", tags=["sheets"])
+
+
+class ProductUpdate(BaseModel):
+    name:          Optional[str] = None
+    category:      Optional[str] = None
+    safety_stock:  Optional[int] = None
+    status:        Optional[str] = None
+
+
+@router.put("/products/{code}")
+async def update_product(
+        code: str,
+        body: ProductUpdate,
+        _: Annotated[TokenData, Depends(require_admin)],
+        db: Session = Depends(get_db),
+):
+    product = db.query(Product).filter(Product.code == code).first()
+    if not product:
+        raise HTTPException(status_code=404, detail=f"상품을 찾을 수 없습니다: {code}")
+    if body.name is not None:
+        product.name = body.name
+    if body.category is not None:
+        product.category = body.category
+    if body.safety_stock is not None:
+        product.safety_stock = body.safety_stock
+    if body.status is not None:
+        try:
+            product.status = ProductStatus(body.status.upper())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"유효하지 않은 상태값: {body.status}")
+    db.commit()
+    db.refresh(product)
+    return {
+        "code": product.code,
+        "name": product.name,
+        "category": product.category,
+        "safety_stock": product.safety_stock,
+        "status": product.status.value.lower(),
+    }
 
 
 @router.get("/master")
@@ -213,13 +254,14 @@ async def get_stock_stats(
 
         db = SessionLocal()
         try:
-            records = get_anomaly_logs(db, is_resolved=False, limit=200)
+            result = get_anomaly_logs(db, is_resolved=False, page=1, page_size=200)
+            records = result["items"]
         finally:
             db.close()
 
         severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
         for r in records:
-            sev = r.severity.value
+            sev = r.severity.value.lower()
             if sev in severity_counts:
                 severity_counts[sev] += 1
 

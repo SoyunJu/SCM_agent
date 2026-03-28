@@ -168,7 +168,7 @@ export default function DashboardPage() {
             ) : (
                 <>
                     {/* 통계 카드 */}
-                    <div className="grid grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         {severityCards.map(({ label, value, icon: Icon, color }) => (
                             <div key={label} className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
                                 <div className="flex items-center justify-between mb-3">
@@ -204,8 +204,11 @@ export default function DashboardPage() {
                                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                                     <XAxis dataKey="날짜" tick={{ fontSize: 11 }} />
                                     <YAxis yAxisId="qty" orientation="left" tick={{ fontSize: 11 }} />
-                                    <YAxis yAxisId="rev" orientation="right" tick={{ fontSize: 11 }} />
-                                    <Tooltip />
+                                    <YAxis yAxisId="rev" orientation="right" tick={{ fontSize: 11 }}
+                                               tickFormatter={(v: number) => v >= 10000 ? `${(v / 10000).toFixed(0)}만` : v.toLocaleString()} />
+                                    <Tooltip formatter={(v: number, name: string) =>
+                                        name === "매출액" ? [`${Number(v).toLocaleString()}원`, name] : [v, name]
+                                    } />
                                     <Legend />
                                     <Line yAxisId="qty" type="monotone" dataKey="판매수량" stroke="#3b82f6" strokeWidth={2} dot={false} name="판매수량" />
                                     <Line yAxisId="rev" type="monotone" dataKey="매출액" stroke="#10b981" strokeWidth={2} dot={false} name="매출액" />
@@ -216,7 +219,7 @@ export default function DashboardPage() {
 
                     {/* 재고 차트 */}
                     {stockStats && (
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
                                 <h3 className="font-semibold text-gray-700 mb-4">심각도별 이상 징후</h3>
                                 <ResponsiveContainer width="100%" height={180}>

@@ -131,7 +131,8 @@ def _get_anomalies(input: str = "unresolved") -> str:
         db = SessionLocal()
         try:
             is_resolved = False if status == "unresolved" else None
-            records = get_anomaly_logs(db, is_resolved=is_resolved, limit=20)
+            result = get_anomaly_logs(db, is_resolved=is_resolved, page=1, page_size=20)
+            records = result["items"]
         finally:
             db.close()
 

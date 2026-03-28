@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getSheetsMaster, getSheetsSales, getSheetsStock, updateProductStatus, uploadExcel } from "@/lib/api";
+import { getSheetsMaster, getSheetsSales, getSheetsStock, updateProductStatus, updateProduct, uploadExcel } from "@/lib/api";
 import { getDefaultPageSize } from "@/lib/utils";
-import { RefreshCw, Loader2, ArrowUp, ChevronLeft, ChevronRight, Upload } from "lucide-react";
+import { RefreshCw, Loader2, ArrowUp, ChevronLeft, ChevronRight, Upload, Pencil, X, Check } from "lucide-react";
 import { ProductStatus } from "@/lib/types";
 
 const TABS = ["상품마스터", "일별판매", "재고현황"] as const;
@@ -40,6 +40,11 @@ export default function SheetsPage() {
 
     // 상품 상태 변경
     const [statusChanging, setStatusChanging] = useState<string | null>(null);
+
+    // 상품 편집 모달
+    const [editRow, setEditRow] = useState<any | null>(null);
+    const [editValues, setEditValues] = useState<{ name: string; category: string; safety_stock: string; status: string }>({ name: "", category: "", safety_stock: "", status: "" });
+    const [editSaving, setEditSaving] = useState(false);
 
     // Excel 업로드
     const [uploadFile, setUploadFile]       = useState<File | null>(null);
@@ -114,6 +119,40 @@ export default function SheetsPage() {
         } finally {
             setUploading(false);
             setTimeout(() => setUploadMsg(""), 6000);
+        }
+    };
+
+    const openEdit = (row: any) => {
+        setEditRow(row);
+        setEditValues({
+            name:          row["상품명"]    ?? row["name"]          ?? "",
+            category:      row["카테고리"] ?? row["category"]       ?? "",
+            safety_stock:  String(row["안전재고"] ?? row["safety_stock"] ?? "0"),
+            status:        row["status"]    ?? "active",
+        });
+    };
+
+    const saveEdit = async () => {
+        if (!editRow) return;
+        const code: string = editRow["상품코드"] ?? editRow["product_code"] ?? "";
+        setEditSaving(true);
+        try {
+            await updateProduct(code, {
+                name:         editValues.name || undefined,
+                category:     editValues.category || undefined,
+                safety_stock: editValues.safety_stock ? Number(editValues.safety_stock) : undefined,
+                status:       editValues.status || undefined,
+            });
+            setData((prev) =>
+                prev.map((r) =>
+                    (r["상품코드"] ?? r["product_code"]) === code
+                        ? { ...r, 상품명: editValues.name, 카테고리: editValues.category, status: editValues.status }
+                        : r
+                )
+            );
+            setEditRow(null);
+        } finally {
+            setEditSaving(false);
         }
     };
 
@@ -278,6 +317,7 @@ export default function SheetsPage() {
                             ))}
                             {isMasterTab && <th className="px-5 py-3 text-left whitespace-nowrap">상태</th>}
                             {isMasterTab && !isReadonly && <th className="px-5 py-3 text-left whitespace-nowrap">상태 변경</th>}
+                            {isMasterTab && !isReadonly && <th className="px-5 py-3 text-left whitespace-nowrap">편집</th>}
                         </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
@@ -317,6 +357,16 @@ export default function SheetsPage() {
                                             </div>
                                         </td>
                                     )}
+                                    {isMasterTab && !isReadonly && (
+                                        <td className="px-5 py-2.5 whitespace-nowrap">
+                                            <button
+                                                onClick={() => openEdit(row)}
+                                                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition"
+                                            >
+                                                <Pencil size={13} />
+                                            </button>
+                                        </td>
+                                    )}
                                 </tr>
                             );
                         })}
@@ -334,6 +384,51 @@ export default function SheetsPage() {
                     <ArrowUp size={13} /> ▲
                 </button>
             </div>
+
+            {/* 상품 편집 모달 */}
+            {editRow && (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+                        <div className="flex items-center justify-between mb-5">
+                            <h3 className="text-lg font-semibold text-gray-800">상품 편집</h3>
+                            <button onClick={() => setEditRow(null)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><X size={16} /></button>
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">상품코드</label>
+                                <p className="text-sm text-gray-700">{editRow["상품코드"] ?? editRow["product_code"]}</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">상품명</label>
+                                <input type="text" value={editValues.name} onChange={(e) => setEditValues((v) => ({ ...v, name: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">카테고리</label>
+                                <input type="text" value={editValues.category} onChange={(e) => setEditValues((v) => ({ ...v, category: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">안전재고</label>
+                                <input type="number" value={editValues.safety_stock} onChange={(e) => setEditValues((v) => ({ ...v, safety_stock: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">상태</label>
+                                <select value={editValues.status} onChange={(e) => setEditValues((v) => ({ ...v, status: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                                    <option value="active">활성</option>
+                                    <option value="inactive">비활성</option>
+                                    <option value="sample">샘플</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-6">
+                            <button onClick={() => setEditRow(null)} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition">취소</button>
+                            <button onClick={saveEdit} disabled={editSaving} className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition">
+                                {editSaving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                                저장
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

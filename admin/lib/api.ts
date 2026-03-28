@@ -83,8 +83,10 @@ export const getProposals = (status?: string, limit = 50, offset = 0) => {
     return apiClient.get(`/scm/orders/proposals?${p}`);
 };
 
-export const generateProposals = () =>
-    apiClient.post("/scm/orders/proposals/generate");
+export const generateProposals = (severityOverride?: string) =>
+    apiClient.post("/scm/orders/proposals/generate",
+        severityOverride ? { severity_override: severityOverride } : {}
+    );
 
 export const approveProposal = (id: number) =>
     apiClient.patch(`/scm/orders/proposals/${id}/approve`);
@@ -241,6 +243,10 @@ export const getTaskStatus = (taskId: string) =>
 // --- Product Status ---
 export const updateProductStatus = (code: string, status: string) =>
     apiClient.patch(`/scm/products/${code}/status`, { status });
+
+export const updateProduct = (code: string, data: {
+    name?: string; category?: string; safety_stock?: number; status?: string;
+}) => apiClient.put(`/scm/sheets/products/${code}`, data);
 
 // --- Excel Upload ---
 export const uploadExcel = (file: File, sheetType: "master" | "sales" | "stock") => {

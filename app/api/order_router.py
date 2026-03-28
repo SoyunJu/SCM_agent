@@ -36,6 +36,10 @@ class ProposalUpdate(BaseModel):
     unit_price:   Optional[float] = None
 
 
+class GenerateRequest(BaseModel):
+    severity_override: Optional[str] = None
+
+
 class ProposalOut(BaseModel):
     id:            int
     product_code:  str
@@ -153,6 +157,7 @@ def _build_resolved_blocks(p: OrderProposal) -> list[dict]:
 
 @router.post("/proposals/generate")
 async def generate_proposals(
+        body: GenerateRequest = GenerateRequest(),
         db: Session = Depends(get_db),
         _: dict = Depends(require_admin),
 ):
@@ -163,7 +168,10 @@ async def generate_proposals(
         from app.notifier.slack_notifier import get_slack_client, send_blocks
         from app.config import settings as app_settings
 
-        threshold = _get_severity_threshold(db)
+        if body.severity_override and body.severity_override.lower() in SEVERITY_RANK:
+            threshold = body.severity_override.lower()
+        else:
+            threshold = _get_severity_threshold(db)
         threshold_rank = SEVERITY_RANK[threshold]
         logger.info(f"발주 제안 생성 — 심각도 임계값: {threshold} (rank≥{threshold_rank})")
 
