@@ -7,20 +7,21 @@ import {
     LayoutDashboard, AlertTriangle, FileText,
     MessageSquare, LogOut, Bell, Database,
     Calendar, BarChart2, ShoppingCart, Settings, Users, X,
+    ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { useAlerts } from "@/lib/useAlerts";
 
 const NAV_ITEMS = [
-    { href: "/dashboard",             icon: LayoutDashboard, label: "대시보드",    superadminOnly: false },
-    { href: "/dashboard/anomalies",   icon: AlertTriangle,   label: "이상 징후",   superadminOnly: false },
-    { href: "/dashboard/reports",     icon: FileText,        label: "보고서",      superadminOnly: false },
-    { href: "/dashboard/stats",       icon: BarChart2,       label: "통계",        superadminOnly: false },
-    { href: "/dashboard/sheets",      icon: Database,        label: "데이터 시트", superadminOnly: false },
-    { href: "/dashboard/orders",      icon: ShoppingCart,    label: "발주 관리",   superadminOnly: false },
-    { href: "/dashboard/scheduler",   icon: Calendar,        label: "스케줄 관리", superadminOnly: false },
-    { href: "/dashboard/chat",        icon: MessageSquare,   label: "AI 챗봇",     superadminOnly: false },
-    { href: "/dashboard/settings",    icon: Settings,        label: "설정",        superadminOnly: false },
-    { href: "/dashboard/admin-users", icon: Users,           label: "관리자 관리", superadminOnly: true  },
+    { href: "/dashboard",             icon: LayoutDashboard, label: "대시보드",    adminOnly: false },
+    { href: "/dashboard/anomalies",   icon: AlertTriangle,   label: "이상 징후",   adminOnly: false },
+    { href: "/dashboard/reports",     icon: FileText,        label: "보고서",      adminOnly: false },
+    { href: "/dashboard/stats",       icon: BarChart2,       label: "통계",        adminOnly: false },
+    { href: "/dashboard/sheets",      icon: Database,        label: "데이터 시트", adminOnly: false },
+    { href: "/dashboard/orders",      icon: ShoppingCart,    label: "발주 관리",   adminOnly: false },
+    { href: "/dashboard/scheduler",   icon: Calendar,        label: "스케줄 관리", adminOnly: false },
+    { href: "/dashboard/chat",        icon: MessageSquare,   label: "AI 챗봇",     adminOnly: false },
+    { href: "/dashboard/settings",    icon: Settings,        label: "설정",        adminOnly: false },
+    { href: "/dashboard/admin-users", icon: Users,           label: "관리자 관리", adminOnly: true  },
 ];
 
 const ROLE_BADGE: Record<string, { label: string; cls: string }> = {
@@ -37,6 +38,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const [showAlerts, setShowAlerts] = useState(false);
     const [userRole, setUserRole]     = useState<string>("");
     const [username, setUsername]     = useState<string>("");
+    const [collapsed, setCollapsed]   = useState(false);
+
+    // 사이드바 접힘 상태 localStorage 복원
+    useEffect(() => {
+        setCollapsed(localStorage.getItem("sidebar_collapsed") === "true");
+    }, []);
 
     useEffect(() => {
         const token = localStorage.getItem("access_token");
@@ -64,8 +71,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }, [router]);
 
     const visibleNavItems = NAV_ITEMS.filter(
-        (item) => !item.superadminOnly || userRole === "superadmin"
+        (item) => !item.adminOnly || userRole === "admin" || userRole === "superadmin"
     );
+
+    const toggleSidebar = () => {
+        setCollapsed((v) => {
+            localStorage.setItem("sidebar_collapsed", String(!v));
+            return !v;
+        });
+    };
 
     const handleLogout = () => {
         localStorage.removeItem("access_token");
@@ -84,33 +98,46 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return (
         <div className="flex min-h-screen bg-gray-50">
             {/* 사이드바 */}
-            <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
-                <div className="p-6 border-b border-gray-100">
-                    <h1 className="text-lg font-bold text-gray-800">SCM Agent</h1>
-                    <p className="text-xs text-gray-400 mt-0.5">재고·판매 분석</p>
+            <aside className={`${collapsed ? "w-14" : "w-56"} bg-white border-r border-gray-200 flex flex-col transition-all duration-200 shrink-0`}>
+                {/* 헤더 + 토글 버튼 */}
+                <div className={`flex items-center border-b border-gray-100 ${collapsed ? "justify-center p-3" : "justify-between p-4 pl-5"}`}>
+                    {!collapsed && (
+                        <div>
+                            <h1 className="text-base font-bold text-gray-800">SCM Agent</h1>
+                            <p className="text-xs text-gray-400">재고·판매 분석</p>
+                        </div>
+                    )}
+                    <button
+                        onClick={toggleSidebar}
+                        className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition"
+                        title={collapsed ? "사이드바 펼치기" : "사이드바 접기"}
+                    >
+                        {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                    </button>
                 </div>
 
-                <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+                <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto overflow-x-hidden">
                     {visibleNavItems.map(({ href, icon: Icon, label }) => {
                         const active = pathname === href;
                         return (
                             <Link key={href} href={href}
+                                  title={collapsed ? label : undefined}
                                   className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition ${
                                       active
                                           ? "bg-blue-50 text-blue-600 font-medium"
                                           : "text-gray-600 hover:bg-gray-100"
-                                  }`}
+                                  } ${collapsed ? "justify-center" : ""}`}
                             >
-                                <Icon size={16} />
-                                {label}
+                                <Icon size={16} className="shrink-0" />
+                                {!collapsed && <span className="truncate">{label}</span>}
                             </Link>
                         );
                     })}
                 </nav>
 
                 {/* 사용자 정보 + 로그아웃 */}
-                <div className="p-4 border-t border-gray-100 space-y-2">
-                    {badge && (
+                <div className="p-2 border-t border-gray-100 space-y-0.5">
+                    {badge && !collapsed && (
                         <div className="px-3 py-1.5">
                             <p className="text-xs text-gray-500 font-medium truncate">{username}</p>
                             <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium mt-0.5 ${badge.cls}`}>
@@ -119,10 +146,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         </div>
                     )}
                     <button onClick={handleLogout}
-                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-500 hover:bg-gray-100 w-full transition"
+                            title={collapsed ? "로그아웃" : undefined}
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-500 hover:bg-gray-100 w-full transition ${collapsed ? "justify-center" : ""}`}
                     >
-                        <LogOut size={16} />
-                        로그아웃
+                        <LogOut size={16} className="shrink-0" />
+                        {!collapsed && "로그아웃"}
                     </button>
                 </div>
             </aside>

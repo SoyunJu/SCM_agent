@@ -21,13 +21,13 @@ const SEVERITIES = ["critical", "high", "medium", "low"] as const;
 const SEVERITY_KOR: Record<string, string> = {
     critical: "긴급", high: "높음", medium: "보통", low: "낮음",
 };
-const PAGE_SIZE = 5;
 const MAX_POLL = 150;
 
 export default function ReportsPage() {
     const [history, setHistory]       = useState<ReportExecution[]>([]);
     const [historyTotal, setHistoryTotal] = useState(0);
-    const [historyPage, setHistoryPage]   = useState(0); // offset = page * PAGE_SIZE
+    const [historyPage, setHistoryPage]   = useState(0); // offset = page * pageSize
+    const [pageSize, setPageSize]         = useState(10);
     const [triggering, setTriggering] = useState(false);
     const [polling, setPolling]       = useState(false);
     const [message, setMessage]       = useState("");
@@ -48,7 +48,7 @@ export default function ReportsPage() {
     const pollCountRef = useRef(0);
 
     const fetchHistory = async (page = historyPage) => {
-        const res = await getReportHistory(PAGE_SIZE, page * PAGE_SIZE);
+        const res = await getReportHistory(pageSize, page * pageSize);
         setHistory(res.data.items ?? []);
         setHistoryTotal(res.data.total ?? 0);
     };
@@ -75,7 +75,8 @@ export default function ReportsPage() {
 
     useEffect(() => {
         fetchHistory(historyPage);
-    }, [historyPage]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [historyPage, pageSize]);
 
     const startPolling = (executionId: number) => {
         pollCountRef.current = 0;
@@ -161,7 +162,7 @@ export default function ReportsPage() {
         finally { setDeleting(null); }
     };
 
-    const totalPages = Math.max(1, Math.ceil(historyTotal / PAGE_SIZE));
+    const totalPages = Math.max(1, Math.ceil(historyTotal / pageSize));
 
     return (
         <div className="space-y-6">
@@ -248,7 +249,18 @@ export default function ReportsPage() {
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
                         {/* 페이지네이션 상단 */}
                         <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100">
-                            <p className="text-sm text-gray-500">총 <span className="font-semibold">{historyTotal}</span>건</p>
+                            <div className="flex items-center gap-3">
+                                <p className="text-sm text-gray-500">총 <span className="font-semibold">{historyTotal}</span>건</p>
+                                <select
+                                    value={pageSize}
+                                    onChange={(e) => { setPageSize(Number(e.target.value)); setHistoryPage(0); }}
+                                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none"
+                                >
+                                    {[5, 10, 20, 50].map((n) => (
+                                        <option key={n} value={n}>{n}건</option>
+                                    ))}
+                                </select>
+                            </div>
                             <div className="flex items-center gap-1">
                                 <button onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
                                         disabled={historyPage === 0}

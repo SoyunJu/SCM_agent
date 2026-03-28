@@ -1,53 +1,90 @@
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Float, Enum, Date, UniqueConstraint, Index
 from sqlalchemy.sql import func
+from sqlalchemy.types import TypeDecorator
 from app.db.connection import Base
 import enum
 
+# --- 1. 헬퍼 ---
+class UpperCaseEnum(TypeDecorator):
+    impl = String(50)
+    cache_ok = True
+
+    def __init__(self, enum_class):
+        super().__init__()
+        self.enum_class = enum_class
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, enum.Enum):
+            return value.value.upper()
+        return str(value).upper()
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        try:
+            return self.enum_class(value.upper())
+        except ValueError:
+            return value
+
+# --- 2. Enum 정의 ---
 
 class ReportType(str, enum.Enum):
-    DAILY = "daily"
-    WEEKLY = "weekly"
-    MANUAL = "manual"
-
+    DAILY = "DAILY"
+    WEEKLY = "WEEKLY"
+    MANUAL = "MANUAL"
 
 class ExecutionStatus(str, enum.Enum):
-    SUCCESS = "success"
-    FAILURE = "failure"
-    IN_PROGRESS = "in_progress"
-
+    SUCCESS = "SUCCESS"
+    FAILURE = "FAILURE"
+    IN_PROGRESS = "IN_PROGRESS"
 
 class AnomalyType(str, enum.Enum):
-    LOW_STOCK = "low_stock"
-    OVER_STOCK = "over_stock"
-    SALES_SURGE = "sales_surge"
-    SALES_DROP = "sales_drop"
-    LONG_TERM_STOCK = "long_term_stock"
-
+    LOW_STOCK = "LOW_STOCK"
+    OVER_STOCK = "OVER_STOCK"
+    SALES_SURGE = "SALES_SURGE"
+    SALES_DROP = "SALES_DROP"
+    LONG_TERM_STOCK = "LONG_TERM_STOCK"
 
 class Severity(str, enum.Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
-
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
 
 class ChatRole(str, enum.Enum):
-    USER = "user"
-    ASSISTANT = "assistant"
+    USER = "USER"
+    ASSISTANT = "ASSISTANT"
 
+class ProposalStatus(str, enum.Enum):
+    PENDING  = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+class AdminRole(str, enum.Enum):
+    SUPERADMIN = "SUPERADMIN"
+    ADMIN      = "ADMIN"
+    READONLY   = "READONLY"
+
+class ProductStatus(str, enum.Enum):
+    ACTIVE   = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    SAMPLE   = "SAMPLE"
+
+# --- 3. 모델 정의 ---
 
 class ReportExecution(Base):
     __tablename__ = "report_executions"
 
     id            = Column(Integer, primary_key=True, autoincrement=True)
     executed_at   = Column(DateTime, nullable=False, default=func.now())
-    report_type   = Column(Enum(ReportType), nullable=False, default=ReportType.DAILY)
-    status        = Column(Enum(ExecutionStatus), nullable=False, default=ExecutionStatus.IN_PROGRESS)
+    report_type   = Column(UpperCaseEnum(ReportType), nullable=False, default=ReportType.DAILY)
+    status        = Column(UpperCaseEnum(ExecutionStatus), nullable=False, default=ExecutionStatus.IN_PROGRESS)
     docs_url      = Column(String(500), nullable=True)
     slack_sent    = Column(Boolean, nullable=False, default=False)
     error_message = Column(Text, nullable=True)
     created_at    = Column(DateTime, nullable=False, default=func.now())
-
 
 class AnomalyLog(Base):
     __tablename__ = "anomaly_logs"
@@ -57,14 +94,13 @@ class AnomalyLog(Base):
     product_code        = Column(String(20), nullable=False)
     product_name        = Column(String(200), nullable=False)
     category            = Column(String(100), nullable=True)
-    anomaly_type        = Column(Enum(AnomalyType), nullable=False)
+    anomaly_type        = Column(UpperCaseEnum(AnomalyType), nullable=False)
     current_stock       = Column(Integer, nullable=True)
     daily_avg_sales     = Column(Float, nullable=True)
     days_until_stockout = Column(Float, nullable=True)
-    severity            = Column(Enum(Severity), nullable=False, default=Severity.MEDIUM)
+    severity            = Column(UpperCaseEnum(Severity), nullable=False, default=Severity.MEDIUM)
     is_resolved         = Column(Boolean, nullable=False, default=False)
     created_at          = Column(DateTime, nullable=False, default=func.now())
-
 
 class ScheduleConfig(Base):
     __tablename__ = "schedule_configs"
@@ -78,18 +114,16 @@ class ScheduleConfig(Base):
     last_run_at     = Column(DateTime, nullable=True)
     updated_at      = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
 
-
 class ChatHistory(Base):
     __tablename__ = "chat_histories"
 
     id         = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(String(100), nullable=False)
     user_id    = Column(String(100), nullable=False)
-    role       = Column(Enum(ChatRole), nullable=False)
+    role       = Column(UpperCaseEnum(ChatRole), nullable=False)
     message    = Column(Text, nullable=False)
     tool_used  = Column(String(100), nullable=True)
     created_at = Column(DateTime, nullable=False, default=func.now())
-
 
 class SystemSettings(Base):
     __tablename__ = "system_settings"
@@ -99,14 +133,6 @@ class SystemSettings(Base):
     setting_value = Column(String(500), nullable=False)
     description   = Column(String(200), nullable=True)
     updated_at    = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
-
-
-
-class ProposalStatus(str, enum.Enum):
-    PENDING  = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-
 
 class OrderProposal(Base):
     __tablename__ = "order_proposals"
@@ -118,20 +144,12 @@ class OrderProposal(Base):
     proposed_qty  = Column(Integer, nullable=False)
     unit_price    = Column(Float, nullable=False, default=0.0)
     reason        = Column(Text, nullable=True)
-    status        = Column(Enum(ProposalStatus), nullable=False, default=ProposalStatus.PENDING)
+    status        = Column(UpperCaseEnum(ProposalStatus), nullable=False, default=ProposalStatus.PENDING)
     created_at    = Column(DateTime, nullable=False, default=func.now())
     approved_at   = Column(DateTime, nullable=True)
     approved_by   = Column(String(100), nullable=True)
     slack_ts      = Column(String(50), nullable=True)
     slack_channel = Column(String(50), nullable=True)
-
-
-
-class AdminRole(str, enum.Enum):
-    SUPERADMIN = "superadmin"
-    ADMIN      = "admin"
-    READONLY   = "readonly"
-
 
 class AdminUser(Base):
     __tablename__ = "admin_users"
@@ -139,38 +157,21 @@ class AdminUser(Base):
     id              = Column(Integer, primary_key=True, autoincrement=True)
     username        = Column(String(50), nullable=False, unique=True)
     hashed_password = Column(String(255), nullable=False)
-    role            = Column(Enum(AdminRole), nullable=False, default=AdminRole.ADMIN)
-    slack_user_id   = Column(String(50), nullable=True)    # Slack Member ID (예: U012ABCDE)
+    role            = Column(UpperCaseEnum(AdminRole), nullable=False, default=AdminRole.ADMIN)
+    slack_user_id   = Column(String(50), nullable=True)
     email           = Column(String(200), nullable=True)
     is_active       = Column(Boolean, nullable=False, default=True)
     created_at      = Column(DateTime, nullable=False, default=func.now())
     last_login_at   = Column(DateTime, nullable=True)
 
-
-class Severity(str, enum.Enum):
-    LOW      = "low"
-    CHECK   = "check"
-    MEDIUM   = "medium"
-    HIGH     = "high"
-    CRITICAL = "critical"
-
-
-class ProductStatus(str, enum.Enum):
-    ACTIVE   = "active"
-    INACTIVE = "inactive"
-    SAMPLE   = "sample"
-
-
 class Product(Base):
-    """상품 마스터 미러 (100k+ 지원)"""
     __tablename__ = "products"
-
     code          = Column(String(20),  primary_key=True)
     name          = Column(String(200), nullable=False)
     category      = Column(String(100), nullable=True)
     safety_stock  = Column(Integer,     nullable=False, default=0)
-    status        = Column(Enum(ProductStatus), nullable=False, default=ProductStatus.ACTIVE)
-    source        = Column(String(50),  nullable=True)   # "sheets" | "excel"
+    status        = Column(UpperCaseEnum(ProductStatus), nullable=False, default=ProductStatus.ACTIVE)
+    source        = Column(String(50),  nullable=True)
     updated_at    = Column(DateTime,    nullable=False,
                            default=func.now(), onupdate=func.now())
 
@@ -179,9 +180,7 @@ class Product(Base):
         Index("ix_products_status",   "status"),
     )
 
-
 class DailySales(Base):
-    """일별 매출 미러"""
     __tablename__ = "daily_sales"
 
     id            = Column(Integer, primary_key=True, autoincrement=True)
@@ -196,9 +195,7 @@ class DailySales(Base):
         Index("ix_daily_sales_product_code", "product_code"),
     )
 
-
 class StockLevel(Base):
-    """재고 스냅샷 (상품별 최신 1건)"""
     __tablename__ = "stock_levels"
 
     product_code  = Column(String(20), primary_key=True)
@@ -208,14 +205,12 @@ class StockLevel(Base):
     updated_at    = Column(DateTime,   nullable=False,
                            default=func.now(), onupdate=func.now())
 
-
 class AnalysisCache(Base):
-    """분석 결과 캐시 (중복 계산 방지)"""
     __tablename__ = "analysis_cache"
 
     id            = Column(Integer,     primary_key=True, autoincrement=True)
     analysis_type = Column(String(50),  nullable=False)
-    params_hash   = Column(String(64),  nullable=False)   # SHA256(params)
+    params_hash   = Column(String(64),  nullable=False)
     result_json   = Column(Text,        nullable=False)
     created_at    = Column(DateTime,    nullable=False, default=func.now())
 

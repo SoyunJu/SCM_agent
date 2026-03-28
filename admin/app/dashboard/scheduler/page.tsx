@@ -1,69 +1,70 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getSchedulerConfig, updateSchedulerConfig, getSchedulerStatus, triggerReport, apiClient } from "@/lib/api";
 import { ScheduleConfig } from "@/lib/types";
-import {Clock, Play, RefreshCw, Save} from "lucide-react";
-import { getSchedulerConfig, updateSchedulerConfig, getSchedulerStatus, triggerReport } from "@/lib/api";
-import { apiClient } from "@/lib/api"
-
-
+import { Clock, Play, RefreshCw, Save, Loader2 } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 
 export default function SchedulerPage() {
-    const [config, setConfig]         = useState<ScheduleConfig | null>(null);
-    const [status, setStatus]         = useState<any>(null);
-    const [hour, setHour]             = useState(0);
-    const [minute, setMinute]         = useState(0);
-    const [isActive, setIsActive]     = useState(true);
-    const [saving, setSaving]         = useState(false);
-    const [triggering, setTriggering] = useState(false);
-    const [message, setMessage]       = useState("");
+    const qc = useQueryClient();
+
+    const [hour, setHour]         = useState(0);
+    const [minute, setMinute]     = useState(0);
+    const [isActive, setIsActive] = useState(true);
+    const [message, setMessage]   = useState("");
     const [isReadonly, setIsReadonly] = useState(false);
 
     useEffect(() => {
-        const role = localStorage.getItem("user_role") ?? "";
-        setIsReadonly(role === "readonly");
-        Promise.all([getSchedulerConfig(), getSchedulerStatus()]).then(([cfg, sts]) => {
-            const c = cfg.data;
-            setConfig(c);
-            setHour(c.schedule_hour);
-            setMinute(c.schedule_minute);
-            setIsActive(c.is_active);
-            setStatus(sts.data);
-        });
+        setIsReadonly(localStorage.getItem("user_role") === "readonly");
     }, []);
 
-    const handleSave = async () => {
-        setSaving(true);
-        setMessage("");
-        try {
-            await updateSchedulerConfig({
-                schedule_hour: hour,
-                schedule_minute: minute,
-                timezone: "Asia/Seoul",
-                is_active: isActive,
-            });
-            setMessage("✅ 스케줄이 업데이트되었습니다.");
-            const res = await getSchedulerStatus();
-            setStatus(res.data);
-        } catch {
-            setMessage("❌ 스케줄 업데이트에 실패했습니다.");
-        } finally {
-            setSaving(false);
-        }
+    const flash = (m: string) => {
+        setMessage(m);
+        setTimeout(() => setMessage(""), 4000);
     };
 
-    const handleTrigger = async () => {
-        setTriggering(true);
-        setMessage("");
-        try {
-            await triggerReport();
-            setMessage("✅ 보고서 생성이 시작되었습니다. Slack을 확인하세요.");
-        } catch {
-            setMessage("❌ 실행에 실패했습니다.");
-        } finally {
-            setTriggering(false);
-        }
-    };
+    const { data: config, isLoading: configLoading } = useQuery<ScheduleConfig>({
+        queryKey: ["schedulerConfig"],
+        queryFn:  () => getSchedulerConfig().then((r) => r.data as ScheduleConfig),
+    });
+
+    // 초기값 세팅
+    useEffect(() => {
+        if (!config) return;
+        setHour(config.schedule_hour);
+        setMinute(config.schedule_minute);
+        setIsActive(config.is_active);
+    }, [config]);
+
+    const { data: status, isLoading: statusLoading } = useQuery({
+        queryKey: ["schedulerStatus"],
+        queryFn:  () => getSchedulerStatus().then((r) => r.data),
+    });
+
+    const saveMutation = useMutation({
+        mutationFn: () => updateSchedulerConfig({ schedule_hour: hour, schedule_minute: minute, timezone: "Asia/Seoul", is_active: isActive }),
+        onSuccess:  () => {
+            flash("✅ 스케줄이 업데이트되었습니다.");
+            qc.invalidateQueries({ queryKey: ["schedulerStatus"] });
+        },
+        onError: () => flash("❌ 스케줄 업데이트에 실패했습니다."),
+    });
+
+    const triggerMutation = useMutation({
+        mutationFn: () => triggerReport(),
+        onSuccess:  () => flash("✅ 보고서 생성이 시작되었습니다. Slack을 확인하세요."),
+        onError:    () => flash("❌ 실행에 실패했습니다."),
+    });
+
+    const syncMutation = useMutation({
+        mutationFn: () => apiClient.post("/scm/sheets/sync"),
+        onSuccess:  () => flash("✅ 데이터 동기화가 시작되었습니다."),
+        onError:    () => flash("❌ 동기화 실패"),
+    });
+
+    if (configLoading || statusLoading) return <LoadingSpinner fullPage />;
 
     return (
         <div className="space-y-6 max-w-2xl">
@@ -80,15 +81,14 @@ export default function SchedulerPage() {
             {status && (
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
                     <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                        <Clock size={15} />
-                        스케줄러 상태
+                        <Clock size={15} /> 스케줄러 상태
                     </h3>
                     <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                             <span className="text-gray-500">실행 상태</span>
                             <span className={`font-medium ${status.running ? "text-green-600" : "text-red-500"}`}>
-                {status.running ? "🟢 실행 중" : "🔴 중지"}
-              </span>
+                                {status.running ? "🟢 실행 중" : "🔴 중지"}
+                            </span>
                         </div>
                         {status.jobs?.[0] && (
                             <div className="flex justify-between">
@@ -130,14 +130,13 @@ export default function SchedulerPage() {
                             />
                         </div>
                         <p className="text-sm text-gray-500 pb-2">
-                            → 매일 <strong>{String(hour).padStart(2,"0")}:{String(minute).padStart(2,"0")}</strong> 실행
+                            → 매일 <strong>{String(hour).padStart(2, "0")}:{String(minute).padStart(2, "0")}</strong> 실행
                         </p>
                     </div>
 
                     <div className="flex items-center gap-2">
                         <input
-                            type="checkbox"
-                            id="is_active"
+                            type="checkbox" id="is_active"
                             checked={isActive}
                             onChange={(e) => setIsActive(e.target.checked)}
                             className="w-4 h-4 rounded"
@@ -147,41 +146,32 @@ export default function SchedulerPage() {
 
                     <div className="flex gap-3 pt-2">
                         {!isReadonly && (
-                        <button
-                            onClick={handleSave}
-                            disabled={saving}
-                            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50"
-                        >
-                            <Save size={14} />
-                            {saving ? "저장 중..." : "저장"}
-                        </button>
+                            <button
+                                onClick={() => saveMutation.mutate()}
+                                disabled={saveMutation.isPending}
+                                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                            >
+                                {saveMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                                {saveMutation.isPending ? "저장 중..." : "저장"}
+                            </button>
                         )}
                         {!isReadonly && (
-                        <button
-                            onClick={handleTrigger}
-                            disabled={triggering}
-                            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50"
-                        >
-                            <Play size={14} />
-                            {triggering ? "실행 중..." : "보고서 즉시 생성"}
-                        </button>
+                            <button
+                                onClick={() => triggerMutation.mutate()}
+                                disabled={triggerMutation.isPending}
+                                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                            >
+                                {triggerMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                                {triggerMutation.isPending ? "실행 중..." : "보고서 즉시 생성"}
+                            </button>
                         )}
-
-                        {/* 데이터 동기화만 */}
                         <button
-                            onClick={async () => {
-                                setMessage("");
-                                try {
-                                    await apiClient.post("/scm/sheets/sync");
-                                    setMessage("✅ 데이터 동기화가 시작되었습니다.");
-                                } catch {
-                                    setMessage("❌ 동기화 실패");
-                                }
-                            }}
-                            className="flex items-center gap-2 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+                            onClick={() => syncMutation.mutate()}
+                            disabled={syncMutation.isPending}
+                            className="flex items-center gap-2 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50"
                         >
-                            <RefreshCw size={14} />
-                            데이터만 동기화
+                            <RefreshCw size={14} className={syncMutation.isPending ? "animate-spin" : ""} />
+                            {syncMutation.isPending ? "동기화 중..." : "데이터만 동기화"}
                         </button>
                     </div>
                 </div>
