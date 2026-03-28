@@ -25,7 +25,7 @@ from app.db.repository import (
     create_anomaly_log, update_last_run, get_setting,
 )
 from app.db.models import ReportType, ExecutionStatus, AnomalyType, Severity
-from app.cache.redis_client import cache_get
+from app.cache.redis_client import cache_get, cache_delete
 
 EXCEL_PATH = os.getenv("EXCEL_PATH", "./sample_data.xlsx")
 
@@ -60,7 +60,11 @@ def sync_sheets_only() -> dict:
         write_stock_upsert(df_crawled)
     if os.path.exists(EXCEL_PATH):
         _sync_excel_to_sheets(EXCEL_PATH)
-    logger.info("===== Sheets 동기화 완료 =====")
+    # 크롤 데이터 유무와 무관하게 항상 Redis 캐시 무효화
+    # → Google Sheets에 수동으로 추가한 항목도 다음 조회 시 즉시 반영
+    for sheet_name in ["상품마스터", "일별판매", "재고현황"]:
+        cache_delete(f"sheets:{sheet_name}")
+    logger.info("===== Sheets 동기화 완료 (캐시 무효화 포함) =====")
     return {"crawled": len(df_crawled) if not df_crawled.empty else 0}
 
 

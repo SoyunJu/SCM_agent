@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getSheetsMaster, getSheetsSales, getSheetsStock, updateProductStatus, updateProduct, uploadExcel } from "@/lib/api";
+import { getSheetsMaster, getSheetsSales, getSheetsStock, updateProductStatus, updateProduct, uploadExcel, getSheetCategories, downloadSheetCsv } from "@/lib/api";
 import { getDefaultPageSize } from "@/lib/utils";
-import { RefreshCw, Loader2, ArrowUp, ChevronLeft, ChevronRight, Upload, Pencil, X, Check } from "lucide-react";
+import { RefreshCw, Loader2, ArrowUp, ChevronLeft, ChevronRight, Upload, Pencil, X, Check, Search, Download } from "lucide-react";
 import { ProductStatus } from "@/lib/types";
 
-const TABS = ["상품마스터", "일별판매", "재고현황"] as const;
-type Tab = typeof TABS[number];
+// 일별판매, 재고현황을 앞에 두어 readonly 사용자가 기본 탭에서 403 알럿을 보지 않도록 함
+const ALL_TABS = ["일별판매", "재고현황", "상품마스터"] as const;
+const READONLY_TABS = ["일별판매", "재고현황"] as const;
+type Tab = typeof ALL_TABS[number];
 
 const STATUS_LABEL: Record<ProductStatus, string> = {
     active:   "활성",
@@ -27,7 +29,8 @@ const STATUS_TRANSITIONS: Record<ProductStatus, ProductStatus[]> = {
 };
 
 export default function SheetsPage() {
-    const [tab, setTab]           = useState<Tab>("상품마스터");
+    const [isReadonly, setIsReadonly] = useState(false);
+    const [tab, setTab]           = useState<Tab>("일별판매");
     const [data, setData]         = useState<any[]>([]);
     const [loading, setLoad]      = useState(false);
     const [days, setDays]         = useState(30);
@@ -36,7 +39,10 @@ export default function SheetsPage() {
     const [totalPages, setTotalPages] = useState(1);
     const [total, setTotal]       = useState(0);
     const topRef                  = useRef<HTMLDivElement>(null);
-    const [isReadonly, setIsReadonly] = useState(false);
+    const [search, setSearch]     = useState("");
+    const [category, setCategory] = useState("");
+    const [categories, setCategories] = useState<string[]>([]);
+    const [downloading, setDownloading] = useState(false);
 
     // 상품 상태 변경
     const [statusChanging, setStatusChanging] = useState<string | null>(null);
@@ -57,17 +63,17 @@ export default function SheetsPage() {
         setLoad(true);
         try {
             if (tab === "상품마스터") {
-                const res = await getSheetsMaster(page, pageSize);
+                const res = await getSheetsMaster(page, pageSize, search || undefined, category || undefined);
                 setData(res.data.items ?? []);
                 setTotalPages(res.data.total_pages ?? 1);
                 setTotal(res.data.total ?? 0);
             } else if (tab === "일별판매") {
-                const res = await getSheetsSales(days, page, pageSize);
+                const res = await getSheetsSales(days, page, pageSize, category || undefined);
                 setData(res.data.items ?? []);
                 setTotalPages(res.data.total_pages ?? 1);
                 setTotal(res.data.total ?? 0);
             } else {
-                const res = await getSheetsStock(page, pageSize);
+                const res = await getSheetsStock(page, pageSize, category || undefined);
                 setData(res.data.items ?? []);
                 setTotalPages(res.data.total_pages ?? 1);
                 setTotal(res.data.total ?? 0);
@@ -78,10 +84,17 @@ export default function SheetsPage() {
     };
 
     useEffect(() => {
-        setIsReadonly(localStorage.getItem("user_role") === "readonly");
+        const role = localStorage.getItem("user_role") ?? "";
+        setIsReadonly(role === "readonly");
+        // 카테고리 목록 로드
+        getSheetCategories().then((r) => setCategories(r.data.items ?? [])).catch(() => {});
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
         fetchData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tab, days, page, pageSize]);
+    }, [tab, days, page, pageSize, search, category]);
 
     const scrollToTop = () => topRef.current?.scrollIntoView({ behavior: "smooth" });
 
@@ -119,6 +132,21 @@ export default function SheetsPage() {
         } finally {
             setUploading(false);
             setTimeout(() => setUploadMsg(""), 6000);
+        }
+    };
+
+    const handleDownload = async () => {
+        setDownloading(true);
+        try {
+            const typeMap: Record<Tab, "master" | "sales" | "stock"> = {
+                "상품마스터": "master", "일별판매": "sales", "재고현황": "stock",
+            };
+            const filenames: Record<Tab, string> = {
+                "상품마스터": "master.csv", "일별판매": "sales.csv", "재고현황": "stock.csv",
+            };
+            await downloadSheetCsv(typeMap[tab], { search: search || undefined, category: category || undefined, days: tab === "일별판매" ? days : undefined }, filenames[tab]);
+        } finally {
+            setDownloading(false);
         }
     };
 
@@ -216,11 +244,11 @@ export default function SheetsPage() {
             )}
 
             {/* 탭 */}
-            <div className="flex gap-2 flex-wrap">
-                {TABS.map((t) => (
+            <div className="flex gap-2 flex-wrap items-center">
+                {(isReadonly ? READONLY_TABS : ALL_TABS).map((t) => (
                     <button
                         key={t}
-                        onClick={() => { setTab(t); setPage(1); }}
+                        onClick={() => { setTab(t); setPage(1); setSearch(""); setCategory(""); }}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
                             tab === t ? "bg-blue-600 text-white" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
                         }`}
@@ -232,13 +260,48 @@ export default function SheetsPage() {
                     <select
                         value={days}
                         onChange={(e) => { setDays(Number(e.target.value)); setPage(1); }}
-                        className="ml-2 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
+                        className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
                     >
                         <option value={7}>최근 7일</option>
                         <option value={30}>최근 30일</option>
                         <option value={90}>최근 90일</option>
                     </select>
                 )}
+            </div>
+
+            {/* 검색 / 카테고리 필터 / 다운로드 */}
+            <div className="flex flex-wrap gap-2 items-center">
+                <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-1.5 bg-white flex-1 min-w-48">
+                    <Search size={13} className="text-gray-400 shrink-0" />
+                    <input
+                        type="text"
+                        placeholder={tab === "상품마스터" ? "상품명 / 상품코드 검색" : "검색"}
+                        value={search}
+                        onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                        className="text-sm outline-none w-full"
+                    />
+                    {search && (
+                        <button onClick={() => { setSearch(""); setPage(1); }} className="text-gray-400 hover:text-gray-600"><X size={12} /></button>
+                    )}
+                </div>
+                {categories.length > 0 && (
+                    <select
+                        value={category}
+                        onChange={(e) => { setCategory(e.target.value); setPage(1); }}
+                        className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
+                    >
+                        <option value="">전체 카테고리</option>
+                        {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                )}
+                <button
+                    onClick={handleDownload}
+                    disabled={downloading}
+                    className="flex items-center gap-1.5 border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 px-3 py-1.5 rounded-lg text-sm transition disabled:opacity-50"
+                >
+                    {downloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                    CSV
+                </button>
             </div>
 
             {/* 페이지네이션 (상단) + 총 건수 */}

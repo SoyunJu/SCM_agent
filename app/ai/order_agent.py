@@ -1,11 +1,9 @@
 import math
 from loguru import logger
+from app.utils.severity import norm, SEVERITY_RANK
 
 LEAD_TIME_DAYS   = 14
 SAFETY_STOCK_DAYS = 7
-
-# 심각도 우선순위 맵
-_SEV_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
 def _get_min_severity() -> str:
@@ -14,11 +12,11 @@ def _get_min_severity() -> str:
         from app.db.repository import get_setting
         db = SessionLocal()
         try:
-            return get_setting(db, "AUTO_ORDER_MIN_SEVERITY", "high")
+            return norm(get_setting(db, "AUTO_ORDER_MIN_SEVERITY", "HIGH"))
         finally:
             db.close()
     except Exception:
-        return "high"
+        return "HIGH"
 
 
 def generate_order_proposals(
@@ -30,7 +28,7 @@ def generate_order_proposals(
 
     proposals: list[dict] = []
     min_sev   = _get_min_severity()
-    min_level = _SEV_ORDER.get(min_sev, 2)            # 기본 high=2
+    min_level = SEVERITY_RANK.get(min_sev, 2)         # 기본 HIGH=2
 
     # 상품코드 -> 현재 재고
     stock_map: dict[str, int] = {}
@@ -57,8 +55,8 @@ def generate_order_proposals(
             category_map = dict(zip(df_master["상품코드"].astype(str), df_master[cat_col].fillna("")))
 
     for anomaly in stock_anomalies:
-        severity     = str(anomaly.get("severity", "")).lower()
-        sev_level    = _SEV_ORDER.get(severity, 0)
+        severity     = norm(anomaly.get("severity", ""))
+        sev_level    = SEVERITY_RANK.get(severity, 0)
         if sev_level < min_level:
             continue
 

@@ -15,14 +15,14 @@ import {
 } from "recharts";
 
 const SEVERITY_COLOR: Record<string, string> = {
-    critical: "text-red-600 bg-red-50",
-    high:     "text-orange-500 bg-orange-50",
-    medium:   "text-yellow-500 bg-yellow-50",
-    check:    "text-blue-500 bg-blue-50",
-    low:      "text-green-600 bg-green-50",
+    CRITICAL: "text-red-600 bg-red-50",
+    HIGH:     "text-orange-500 bg-orange-50",
+    MEDIUM:   "text-yellow-500 bg-yellow-50",
+    CHECK:    "text-blue-500 bg-blue-50",
+    LOW:      "text-green-600 bg-green-50",
 };
 const SEVERITY_KOR: Record<string, string> = {
-    critical: "긴급", high: "높음", medium: "보통", check: "확인", low: "낮음",
+    CRITICAL: "긴급", HIGH: "높음", MEDIUM: "보통", CHECK: "확인", LOW: "낮음",
 };
 const ANOMALY_KOR: Record<string, string> = {
     low_stock: "재고 부족", over_stock: "재고 과잉",
@@ -43,6 +43,7 @@ export default function DashboardPage() {
     const [polling, setPolling]       = useState(false);
     const [message, setMessage]       = useState("");
     const [loading, setLoading]       = useState(true);
+    const [isReadonly, setIsReadonly] = useState(false);
     const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
     const pollCountRef = useRef(0);
 
@@ -65,6 +66,7 @@ export default function DashboardPage() {
     };
 
     useEffect(() => {
+        setIsReadonly(localStorage.getItem("user_role") === "readonly");
         fetchAll();
         return () => { if (pollRef.current) clearInterval(pollRef.current); };
     }, []);
@@ -122,17 +124,17 @@ export default function DashboardPage() {
     const lastRun = history[0];
     const severityCards = [
         { label: "미해결 이상 징후", value: stockStats?.total_anomalies ?? anomalies.length, icon: AlertTriangle, color: "text-orange-500" },
-        { label: "긴급",            value: stockStats?.severity_counts?.critical ?? 0,       icon: Package,       color: "text-red-500"    },
-        { label: "높음",            value: stockStats?.severity_counts?.high ?? 0,            icon: TrendingUp,    color: "text-orange-400" },
+        { label: "긴급",            value: stockStats?.severity_counts?.CRITICAL ?? 0,       icon: Package,       color: "text-red-500"    },
+        { label: "높음",            value: stockStats?.severity_counts?.HIGH ?? 0,            icon: TrendingUp,    color: "text-orange-400" },
         { label: "최근 보고서",
             value: lastRun?.status === "success" ? "성공" : lastRun?.status ?? "-",
             icon: FileText, color: "text-blue-500" },
     ];
     const severityBarData = [
-        { name: "긴급", count: stockStats?.severity_counts?.critical ?? 0 },
-        { name: "높음", count: stockStats?.severity_counts?.high ?? 0 },
-        { name: "보통", count: stockStats?.severity_counts?.medium ?? 0 },
-        { name: "낮음", count: stockStats?.severity_counts?.low ?? 0 },
+        { name: "긴급", count: stockStats?.severity_counts?.CRITICAL ?? 0 },
+        { name: "높음", count: stockStats?.severity_counts?.HIGH ?? 0 },
+        { name: "보통", count: stockStats?.severity_counts?.MEDIUM ?? 0 },
+        { name: "낮음", count: stockStats?.severity_counts?.LOW ?? 0 },
     ];
 
     return (
@@ -146,6 +148,7 @@ export default function DashboardPage() {
                     <button onClick={fetchAll} disabled={loading} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition disabled:opacity-50">
                         <RefreshCw size={15} className={`text-gray-500 ${loading ? "animate-spin" : ""}`} />
                     </button>
+                    {!isReadonly && (
                     <button
                         onClick={handleTrigger}
                         disabled={triggering || polling}
@@ -154,6 +157,7 @@ export default function DashboardPage() {
                         {polling ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                         {polling ? "생성 중..." : triggering ? "요청 중..." : "보고서 즉시 생성"}
                     </button>
+                    )}
                 </div>
             </div>
 

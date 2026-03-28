@@ -88,11 +88,11 @@ def send_daily_report_notification(
 
     # 위험도별 이모지
     risk_emoji = {
-        "low":      "🟢",
-        "medium":   "🟡",
-        "high":     "🟠",
-        "critical": "🔴",
-    }.get(risk_level, "⚪")
+        "LOW":      "🟢",
+        "MEDIUM":   "🟡",
+        "HIGH":     "🟠",
+        "CRITICAL": "🔴",
+    }.get(risk_level.upper() if risk_level else "", "⚪")
 
     blocks = [
         {

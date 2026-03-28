@@ -191,7 +191,8 @@ export default function SettingsPage() {
                                             <select
                                                 value={values[key] ?? item.value}
                                                 onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))}
-                                                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                                disabled={isReadonly}
+                                                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
                                             >
                                                 {SELECT_OPTIONS[key].map((opt) => (
                                                     <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -202,7 +203,8 @@ export default function SettingsPage() {
                                                 type="number"
                                                 value={values[key] ?? item.value}
                                                 onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))}
-                                                className="w-24 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                                disabled={isReadonly}
+                                                className="w-24 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
                                             />
                                         )}
                                         {isChanged && (

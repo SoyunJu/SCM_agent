@@ -76,11 +76,11 @@ def send_daily_report_email(
 ) -> bool:
 
     risk_color = {
-        "low":      "#22c55e",
-        "medium":   "#eab308",
-        "high":     "#f97316",
-        "critical": "#ef4444",
-    }.get(risk_level, "#6b7280")
+        "LOW":      "#22c55e",
+        "MEDIUM":   "#eab308",
+        "HIGH":     "#f97316",
+        "CRITICAL": "#ef4444",
+    }.get(risk_level.upper() if risk_level else "", "#6b7280")
 
     body = f"""
     <html><body style="font-family:sans-serif;color:#374151;padding:24px;">
@@ -124,11 +124,11 @@ def send_alert_email(
 ) -> bool:
 
     severity_color = {
-        "critical": "#ef4444",
-        "high":     "#f97316",
-        "medium":   "#eab308",
-        "low":      "#22c55e",
-    }.get(severity, "#6b7280")
+        "CRITICAL": "#ef4444",
+        "HIGH":     "#f97316",
+        "MEDIUM":   "#eab308",
+        "LOW":      "#22c55e",
+    }.get(severity.upper() if severity else "", "#6b7280")
 
     body = f"""
     <html><body style="font-family:sans-serif;color:#374151;padding:24px;">

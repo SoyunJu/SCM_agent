@@ -218,7 +218,10 @@ function ProposalsTab() {
     useEffect(() => {
         const role = localStorage.getItem("user_role") ?? "";
         setIsReadonly(role === "readonly");
-        fetchProposals(); }, [statusFilter]);
+        if (role !== "readonly") {
+            fetchProposals();
+        }
+    }, [statusFilter]);
 
 
     const handleGenerate = async () => {
@@ -260,6 +263,12 @@ function ProposalsTab() {
         fetchProposals();
     };
 
+    if (isReadonly) return (
+        <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+            <p className="text-sm">발주제안 관리는 관리자 이상 권한이 필요합니다.</p>
+        </div>
+    );
+
     return (
         <div className="space-y-4">
             {/* 헤더 */}
@@ -272,10 +281,10 @@ function ProposalsTab() {
                         className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
                     >
                         <option value="">설정값 사용</option>
-                        <option value="low">낮음 이상</option>
-                        <option value="medium">보통 이상</option>
-                        <option value="high">높음 이상</option>
-                        <option value="critical">긴급만</option>
+                        <option value="LOW">낮음 이상</option>
+                        <option value="MEDIUM">보통 이상</option>
+                        <option value="HIGH">높음 이상</option>
+                        <option value="CRITICAL">긴급만</option>
                     </select>
                     <button
                         onClick={handleGenerate}

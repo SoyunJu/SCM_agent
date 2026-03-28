@@ -79,8 +79,8 @@ async def get_unread_count(
         finally:
             db.close()
 
-        critical = sum(1 for r in records if r.severity.value.lower() == "critical")
-        high     = sum(1 for r in records if r.severity.value.lower() == "high")
+        critical = sum(1 for r in records if r.severity.value == "CRITICAL")
+        high     = sum(1 for r in records if r.severity.value == "HIGH")
         return {"critical": critical, "high": high, "total": critical + high}
     except Exception as e:
         return {"critical": 0, "high": 0, "total": 0, "error": str(e)}

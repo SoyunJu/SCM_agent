@@ -252,7 +252,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                     ) : (
                                         alerts.map((a, i) => (
                                             <div key={i} className={`px-4 py-3 border-b border-gray-50 text-sm ${
-                                                a.severity === "critical" ? "bg-red-50" : "bg-orange-50"
+                                                a.severity === "CRITICAL" ? "bg-red-50" : "bg-orange-50"
                                             }`}>
                                                 <p className="font-medium text-gray-700">{a.message}</p>
                                                 <p className="text-xs text-gray-400 mt-0.5">

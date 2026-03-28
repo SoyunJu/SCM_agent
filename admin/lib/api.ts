@@ -16,6 +16,9 @@ apiClient.interceptors.request.use((config) => {
     return config;
 });
 
+// 403 알럿 중복 방지 (5초 쿨다운)
+let _403lastShown = 0;
+
 apiClient.interceptors.response.use(
     (res) => res,
     (err) => {
@@ -24,7 +27,11 @@ apiClient.interceptors.response.use(
             window.location.href = "/login";
         }
         if (err.response?.status === 403) {
-            alert("권한이 없습니다.");
+            const now = Date.now();
+            if (now - _403lastShown > 5000) {
+                _403lastShown = now;
+                console.warn("[SCM] 권한이 없습니다.");
+            }
         }
         return Promise.reject(err);
     }
@@ -121,9 +128,13 @@ export const getSchedulerStatus = () =>
     apiClient.get("/scm/scheduler/status");
 
 // --- Sheets ---
-export const getSheetsMaster = (page = 1, pageSize = 50, search?: string) => {
+export const getSheetCategories = () =>
+    apiClient.get("/scm/sheets/categories");
+
+export const getSheetsMaster = (page = 1, pageSize = 50, search?: string, category?: string) => {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-    if (search) params.append("search", search);
+    if (search)   params.append("search", search);
+    if (category) params.append("category", category);
     return apiClient.get(`/scm/sheets/master?${params}`);
 };
 
@@ -137,6 +148,25 @@ export const getSheetsStock = (page = 1, pageSize = 50, category?: string) => {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (category) params.append("category", category);
     return apiClient.get(`/scm/sheets/stock?${params}`);
+};
+
+/** 현재 필터 기준 CSV blob 다운로드 */
+export const downloadSheetCsv = async (
+    type: "master" | "sales" | "stock",
+    filters: { search?: string; category?: string; days?: number },
+    filename: string,
+) => {
+    const params = new URLSearchParams({ download: "true" });
+    if (filters.search)   params.append("search", filters.search);
+    if (filters.category) params.append("category", filters.category);
+    if (filters.days)     params.append("days", String(filters.days));
+    const res = await apiClient.get(`/scm/sheets/${type}?${params}`, { responseType: "blob" });
+    const url = URL.createObjectURL(new Blob([res.data], { type: "text/csv;charset=utf-8-sig" }));
+    const a   = document.createElement("a");
+    a.href    = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
 };
 
 export const getSalesStats = (period: "daily" | "weekly" | "monthly") =>

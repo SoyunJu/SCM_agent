@@ -59,16 +59,34 @@ async def update_product(
     }
 
 
+@router.get("/categories")
+async def get_categories(
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+):
+    """상품마스터의 고유 카테고리 목록 반환."""
+    try:
+        df = read_product_master()
+        col = next((c for c in ["카테고리", "category"] if c in df.columns), None)
+        if col is None:
+            return {"items": []}
+        cats = sorted(df[col].dropna().unique().tolist())
+        return {"items": [c for c in cats if c]}
+    except Exception as e:
+        logger.error(f"카테고리 목록 조회 실패: {e}")
+        return {"items": []}
+
+
 @router.get("/master")
 async def get_master(
         current_user: Annotated[TokenData, Depends(require_admin)],
         page: int = 1,
         page_size: int = 50,
         search: str | None = None,
+        category: str | None = None,
+        download: bool = False,
 ):
 
     try:
-        page_size = min(page_size, 200)   # 최대 200건 제한
         df = read_product_master()
 
         # 검색 필터
@@ -79,6 +97,24 @@ async def get_master(
             )
             df = df[mask]
 
+        # 카테고리 필터
+        if category:
+            col = next((c for c in ["카테고리", "category"] if c in df.columns), None)
+            if col:
+                df = df[df[col] == category]
+
+        # 다운로드 요청: CSV 반환
+        if download:
+            import io
+            buf = io.StringIO()
+            df.to_csv(buf, index=False, encoding="utf-8-sig")
+            return StreamingResponse(
+                iter([buf.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": 'attachment; filename="master.csv"'},
+            )
+
+        page_size = min(page_size, 200)   # 최대 200건 제한
         total = len(df)
         total_pages = max(1, (total + page_size - 1) // page_size)
 
@@ -107,11 +143,11 @@ async def get_sales(
         page: int = 1,
         page_size: int = 50,
         category: str | None = None,
+        download: bool = False,
 ):
 
     try:
         import pandas as pd
-        page_size = min(page_size, 200)
         df = read_sales()
         df["날짜"] = pd.to_datetime(df["날짜"])
         cutoff = df["날짜"].max() - pd.Timedelta(days=days)
@@ -122,6 +158,17 @@ async def get_sales(
 
         df["날짜"] = df["날짜"].dt.strftime("%Y-%m-%d")
 
+        if download:
+            import io
+            buf = io.StringIO()
+            df.to_csv(buf, index=False, encoding="utf-8-sig")
+            return StreamingResponse(
+                iter([buf.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": 'attachment; filename="sales.csv"'},
+            )
+
+        page_size   = min(page_size, 200)
         total       = len(df)
         total_pages = max(1, (total + page_size - 1) // page_size)
         start       = (page - 1) * page_size
@@ -144,15 +191,26 @@ async def get_stock(
         page: int = 1,
         page_size: int = 50,
         category: str | None = None,
+        download: bool = False,
 ):
 
     try:
-        page_size = min(page_size, 200)
         df = read_stock()
 
         if category and "카테고리" in df.columns:
             df = df[df["카테고리"] == category]
 
+        if download:
+            import io
+            buf = io.StringIO()
+            df.to_csv(buf, index=False, encoding="utf-8-sig")
+            return StreamingResponse(
+                iter([buf.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": 'attachment; filename="stock.csv"'},
+            )
+
+        page_size   = min(page_size, 200)
         total       = len(df)
         total_pages = max(1, (total + page_size - 1) // page_size)
         start       = (page - 1) * page_size
@@ -259,9 +317,9 @@ async def get_stock_stats(
         finally:
             db.close()
 
-        severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "CHECK": 0}
         for r in records:
-            sev = r.severity.value.lower()
+            sev = r.severity.value   # already uppercase from UpperCaseEnum
             if sev in severity_counts:
                 severity_counts[sev] += 1
 
