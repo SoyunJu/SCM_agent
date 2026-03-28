@@ -94,8 +94,9 @@ def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
     _main_loop = loop
 
 
-def sync_broadcast_alert(alert: dict) -> None:
-    if _main_loop and _main_loop.is_running():
-        asyncio.run_coroutine_threadsafe(broadcast_alert(alert), _main_loop)
-    else:
-        logger.warning("메인 루프 미등록 또는 미실행 — SSE 알림 스킵")
+async def broadcast_alert(alert: dict) -> None:
+    if "severity" in alert:
+        alert = {**alert, "severity": str(alert["severity"]).upper()}
+    for q in _alert_queues:
+        await q.put(alert)
+    logger.info(f"SSE 알림: {alert.get('type')} - {alert.get('message')}")

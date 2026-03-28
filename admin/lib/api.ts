@@ -152,24 +152,31 @@ export const getSheetsStock = (page = 1, pageSize = 50, category?: string, searc
     return apiClient.get(`/scm/sheets/stock?${params}`);
 };
 
-/** 현재 필터 기준 CSV blob 다운로드 */
+
+// 현재 필터 기준 CSV blob 다운로드
 export const downloadSheetCsv = async (
     type: "master" | "sales" | "stock",
     filters: { search?: string; category?: string; days?: number },
     filename: string,
 ) => {
+    const typeMap = { master: "master", sales: "sales", stock: "stock" };
     const params = new URLSearchParams({ download: "true" });
-    if (filters.search)   params.append("search", filters.search);
+    if (filters.search)   params.append("search",   filters.search);
     if (filters.category) params.append("category", filters.category);
-    if (filters.days)     params.append("days", String(filters.days));
-    const res = await apiClient.get(`/scm/sheets/${type}?${params}`, { responseType: "blob" });
-    const url = URL.createObjectURL(new Blob([res.data], { type: "text/csv;charset=utf-8-sig" }));
-    const a   = document.createElement("a");
-    a.href    = url;
+    if (filters.days)     params.append("days",     String(filters.days));
+
+    const res = await apiClient.get(`/scm/sheets/${typeMap[type]}?${params}`, {
+        responseType: "blob",
+    });
+    const blob = new Blob([res.data], { type: "text/csv;charset=utf-8-sig;" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
 };
+
 
 export const getSalesStats = (period: "daily" | "weekly" | "monthly") =>
     apiClient.get(`/scm/sheets/stats/sales?period=${period}`);

@@ -337,9 +337,14 @@ async def get_stock_stats(
         finally:
             db.close()
 
+        from app.utils.severity import norm
         severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "CHECK": 0}
         for r in records:
-            sev = r.severity.value   # already uppercase from UpperCaseEnum
+
+            raw_sev = r.severity if isinstance(r.severity, str) else (
+                r.severity.value if hasattr(r.severity, "value") else str(r.severity)
+            )
+            sev = norm(raw_sev)
             if sev in severity_counts:
                 severity_counts[sev] += 1
 
@@ -354,19 +359,16 @@ async def get_stock_stats(
 
 
 
-
-
 @router.post("/sync")
 async def sync_sheets(
         current_user: Annotated[TokenData, Depends(require_admin)],
 ):
-
     import asyncio
-    from app.scheduler.jobs import sync_sheets_only
+    from app.scheduler.jobs import sync_sheets_to_db_incremental
 
-    asyncio.create_task(asyncio.to_thread(sync_sheets_only))
-    logger.info(f"Sheets 동기화 트리거: {current_user.username}")
-    return {"status": "triggered", "message": "데이터 동기화가 시작되었습니다."}
+    asyncio.create_task(asyncio.to_thread(sync_sheets_to_db_incremental))
+    logger.info(f"Sheets→DB 동기화 트리거: {current_user.username}")
+    return {"status": "triggered", "message": "DB 동기화가 시작되었습니다."}
 
 
 

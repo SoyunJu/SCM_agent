@@ -220,27 +220,38 @@ async def generate_proposals(
         except Exception as e:
             logger.warning(f"Slack 헤더 전송 실패(스킵): {e}")
 
-        # --- 제안별 개별 메시지 전송 ---------------------------------------------------------------
         for p_data in proposals_data:
             obj = OrderProposal(**p_data)
             db.add(obj)
-            db.flush()  # id 확보
-
-            # Slack 메시지 전송 (ts 저장용)
-            try:
-                resp = slack_client.chat_postMessage(
-                    channel=channel,
-                    text=f"발주제안 #{obj.id} | {obj.product_code} {obj.product_name} {obj.proposed_qty:,}개",
-                    blocks=_build_proposal_blocks(obj),
-                )
-                obj.slack_ts      = resp["ts"]
-                obj.slack_channel = channel
-            except Exception as e:
-                logger.warning(f"Slack 제안 메시지 전송 실패(스킵): {e}")
-
-            created += 1
-
+        db.flush()  # id 일괄 확보
         db.commit()
+        created = len(proposals_data)
+
+        # Slack 묶음 메시지 (1개로 통합)
+        try:
+            summary_rows = "\n".join([
+                f"• {obj.product_name} ({obj.product_code}) — {obj.proposed_qty:,}개 / {int(obj.unit_price):,}원"
+                for obj in db.query(OrderProposal)
+                .filter(OrderProposal.status == ProposalStatus.PENDING)
+                .order_by(OrderProposal.created_at.desc())
+                .limit(created).all()
+            ])
+            slack_client.chat_postMessage(
+                channel=channel,
+                text=f"[SCM Agent] 발주 제안 {created}건 생성",
+                blocks=[
+                    {"type": "header", "text": {"type": "plain_text", "text": "📦 SCM Agent | 발주 제안 생성"}},
+                    {"type": "section", "text": {"type": "mrkdwn",
+                                                 "text": f"이상징후 분석 결과 *{created}건*의 발주 제안이 생성되었습니다.\n임계값: *{threshold.upper()}*"}},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": summary_rows}},
+                    {"type": "divider"},
+                    {"type": "section", "text": {"type": "mrkdwn",
+                                                 "text": "👉 <http://localhost:3001/dashboard/orders|관리자 UI에서 승인/거절>"}},
+                ],
+            )
+        except Exception as e:
+            logger.warning(f"Slack 묶음 메시지 전송 실패(스킵): {e}")
+
         return {"created": created, "message": f"{created}건 발주 제안 생성 완료"}
 
     except Exception as e:

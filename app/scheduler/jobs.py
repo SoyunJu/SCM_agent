@@ -325,6 +325,7 @@ def run_daily_job(
             i for i in all_anomalies
             if str(i.get("severity", "")).upper() in ("CRITICAL", "HIGH")
         ]
+
         if critical_items:
             from app.api.alert_router import sync_broadcast_alert
             for item in critical_items:

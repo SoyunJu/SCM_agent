@@ -22,7 +22,7 @@ export function useAlerts() {
                 if (data.type === "connected") return;
 
                 setAlerts((prev) => [data, ...prev].slice(0, 20));
-                if (["critical", "high"].includes(data.severity)) {
+                if (["CRITICAL", "HIGH"].includes(data.severity?.toUpperCase() ?? "")) {
                     setUnread((n) => n + 1);
 
                     // 브라우저 푸시 알림

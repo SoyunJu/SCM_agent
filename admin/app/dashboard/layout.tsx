@@ -107,7 +107,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         localStorage.removeItem("access_token");
         localStorage.removeItem("user_role");
         localStorage.removeItem("username");
-        router.push("/login");
+        window.location.href = "/login";
     };
 
     const toggleAlerts = () => {
