@@ -52,6 +52,67 @@ def _get_crawled_df() -> pd.DataFrame:
     return crawl_all_sites(books_pages=3, webscraper_pages=2, scrapingcourse_pages=2)
 
 
+def _sync_sheets_to_db() -> None:
+    """Google Sheets 데이터를 MariaDB에 동기화 (products, daily_sales, stock_levels)."""
+    from app.db.sync import bulk_upsert_products, bulk_upsert_daily_sales, bulk_upsert_stock_levels
+
+    db = SessionLocal()
+    try:
+        df_master = read_product_master()
+        df_sales  = read_sales()
+        df_stock  = read_stock()
+
+        # 상품마스터 → products 테이블
+        if not df_master.empty:
+            products = [
+                {
+                    "code":         str(r.get("상품코드", "")),
+                    "name":         str(r.get("상품명", "")),
+                    "category":     r.get("카테고리"),
+                    "safety_stock": int(r.get("안전재고기준", 0) or 0),
+                    "source":       "sheets",
+                }
+                for r in df_master.to_dict("records")
+                if r.get("상품코드")
+            ]
+            res = bulk_upsert_products(db, products)
+            logger.info(f"DB 상품 동기화: {res}")
+
+        # 일별판매 → daily_sales 테이블
+        if not df_sales.empty:
+            sales = [
+                {
+                    "date":         str(r.get("날짜", "")),
+                    "product_code": str(r.get("상품코드", "")),
+                    "qty":          int(r.get("판매수량", 0) or 0),
+                    "revenue":      float(r.get("매출액", 0) or 0),
+                }
+                for r in df_sales.to_dict("records")
+                if r.get("상품코드") and r.get("날짜")
+            ]
+            res = bulk_upsert_daily_sales(db, sales)
+            logger.info(f"DB 일별매출 동기화: {res}")
+
+        # 재고현황 → stock_levels 테이블
+        if not df_stock.empty:
+            stock = [
+                {
+                    "product_code":  str(r.get("상품코드", "")),
+                    "current_stock": int(r.get("현재재고", 0) or 0),
+                    "restock_date":  r.get("입고예정일") or None,
+                    "restock_qty":   r.get("입고예정수량"),
+                }
+                for r in df_stock.to_dict("records")
+                if r.get("상품코드")
+            ]
+            res = bulk_upsert_stock_levels(db, stock)
+            logger.info(f"DB 재고 동기화: {res}")
+    except Exception as e:
+        logger.error(f"DB 동기화 실패: {e}")
+    finally:
+        db.close()
+
+
 def sync_sheets_only() -> dict:
     logger.info("===== Sheets 동기화 시작 =====")
     df_crawled = _get_crawled_df()
@@ -61,10 +122,11 @@ def sync_sheets_only() -> dict:
     if os.path.exists(EXCEL_PATH):
         _sync_excel_to_sheets(EXCEL_PATH)
     # 크롤 데이터 유무와 무관하게 항상 Redis 캐시 무효화
-    # → Google Sheets에 수동으로 추가한 항목도 다음 조회 시 즉시 반영
     for sheet_name in ["상품마스터", "일별판매", "재고현황"]:
         cache_delete(f"sheets:{sheet_name}")
-    logger.info("===== Sheets 동기화 완료 (캐시 무효화 포함) =====")
+    # Google Sheets → MariaDB 동기화
+    _sync_sheets_to_db()
+    logger.info("===== Sheets 동기화 완료 =====")
     return {"crawled": len(df_crawled) if not df_crawled.empty else 0}
 
 
