@@ -9,10 +9,11 @@ const SEVERITY_COLOR: Record<string, string> = {
     critical: "text-red-600 bg-red-50 border-red-200",
     high:     "text-orange-500 bg-orange-50 border-orange-200",
     medium:   "text-yellow-600 bg-yellow-50 border-yellow-200",
+    check:    "text-blue-500 bg-blue-50 border-blue-200",
     low:      "text-green-600 bg-green-50 border-green-200",
 };
 const SEVERITY_KOR: Record<string, string> = {
-    critical: "긴급", high: "높음", medium: "보통", low: "낮음",
+    critical: "긴급", high: "높음", medium: "보통", check: "확인", low: "낮음",
 };
 const ANOMALY_KOR: Record<string, string> = {
     low_stock: "재고 부족", over_stock: "재고 과잉",
@@ -102,6 +103,7 @@ export default function AnomaliesPage() {
                     <option value="critical">긴급</option>
                     <option value="high">높음</option>
                     <option value="medium">보통</option>
+                    <option value="check">확인</option>
                     <option value="low">낮음</option>
                 </select>
 
