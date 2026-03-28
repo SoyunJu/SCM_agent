@@ -7,7 +7,6 @@ import { getDefaultPageSize } from "@/lib/utils";
 import { RefreshCw, Loader2, ArrowUp, ChevronLeft, ChevronRight, Upload, Pencil, X, Check, Search, Download } from "lucide-react";
 import { ProductStatus } from "@/lib/types";
 
-// 일별판매, 재고현황을 앞에 두어 readonly 사용자가 기본 탭에서 403 알럿을 보지 않도록 함
 const ALL_TABS = ["일별판매", "재고현황", "상품마스터"] as const;
 const READONLY_TABS = ["일별판매", "재고현황"] as const;
 type Tab = typeof ALL_TABS[number];
@@ -28,6 +27,14 @@ const STATUS_TRANSITIONS: Record<ProductStatus, ProductStatus[]> = {
     inactive: ["active"],
     sample:   ["active"],
 };
+
+// Sheets API 공통 응답 타입 — 컴포넌트 바깥에 선언해야 타입 추론이 정상 동작
+interface SheetsResponse {
+    items: Record<string, unknown>[];
+    total: number;
+    total_pages: number;
+    page: number;
+}
 
 export default function SheetsPage() {
     const qc = useQueryClient();
@@ -59,7 +66,7 @@ export default function SheetsPage() {
 
     const queryKey = ["sheets", tab, page, pageSize, days, search, category];
 
-    const fetchFn = useCallback(async () => {
+    const fetchFn = useCallback(async (): Promise<SheetsResponse> => {
         if (tab === "상품마스터") {
             return getSheetsMaster(page, pageSize, search || undefined, category || undefined).then(r => r.data);
         } else if (tab === "일별판매") {
@@ -69,15 +76,15 @@ export default function SheetsPage() {
         }
     }, [tab, page, pageSize, days, search, category]);
 
-    const { data: queryData, isLoading: loading, refetch: fetchData } = useQuery({
+    const { data: queryData, isLoading: loading, refetch: fetchData } = useQuery<SheetsResponse>({
         queryKey,
         queryFn: fetchFn,
         staleTime: 30_000,
-        keepPreviousData: true,
-    } as any);
+        placeholderData: (prev) => prev,   // React Query v5: keepPreviousData 대체
+    });
 
-    const data  = queryData?.items ?? [];
-    const total = queryData?.total ?? 0;
+    const data       = queryData?.items ?? [];
+    const total      = queryData?.total ?? 0;
     const totalPages = queryData?.total_pages ?? 1;
 
     useEffect(() => {
@@ -176,7 +183,7 @@ export default function SheetsPage() {
                     <p className="text-gray-400 text-sm mt-1">Google Sheets 원본 데이터</p>
                 </div>
                 {!isReadonly && (
-                    <button onClick={fetchData} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition">
+                    <button onClick={() => fetchData()} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition">
                         <RefreshCw size={15} className={`text-gray-500 ${loading ? "animate-spin" : ""}`} />
                     </button>
                 )}
@@ -362,7 +369,7 @@ export default function SheetsPage() {
                         </thead>
                         <tbody className="divide-y divide-gray-50">
                         {data.map((row, i) => {
-                            const productCode: string = row["상품코드"] ?? row["product_code"] ?? "";
+                            const productCode: string = (row["상품코드"] ?? row["product_code"] ?? "") as string;
                             const currentStatus: ProductStatus = (row["status"] as ProductStatus) ?? "active";
                             return (
                                 <tr key={i} className="hover:bg-gray-50 transition">

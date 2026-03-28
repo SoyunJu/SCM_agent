@@ -117,14 +117,12 @@ async def scheduler_status(
         return {"running": False, "jobs": [], "error": str(e)}
 
 
-
+# 1분 간격 스케줄러
 
 import asyncio
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.interval import IntervalTrigger
+from typing import Any
 
-
-_sync_scheduler: BackgroundScheduler | None = None
+_sync_scheduler: Any = None
 
 class SyncScheduleRequest(BaseModel):
     interval_seconds: int = 60   # 기본 1분
@@ -152,6 +150,8 @@ async def start_sync_schedule(
 ):
     global _sync_scheduler
     from app.scheduler.jobs import sync_sheets_to_db_incremental
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from apscheduler.triggers.interval import IntervalTrigger
 
     if _sync_scheduler and _sync_scheduler.running:
         _sync_scheduler.shutdown(wait=False)
@@ -159,7 +159,7 @@ async def start_sync_schedule(
     _sync_scheduler = BackgroundScheduler(timezone="Asia/Seoul")
     _sync_scheduler.add_job(
         func=sync_sheets_to_db_incremental,
-        trigger=IntervalTrigger(seconds=max(30, req.interval_seconds)),  # 최소 30초
+        trigger=IntervalTrigger(seconds=max(30, req.interval_seconds)),
         id="sheets_to_db_sync",
         replace_existing=True,
     )
@@ -174,9 +174,13 @@ async def stop_sync_schedule(
         current_user: Annotated[TokenData, Depends(require_admin)],
 ):
     global _sync_scheduler
-    if _sync_scheduler and _sync_scheduler.running:
-        _sync_scheduler.shutdown(wait=False)
+    try:
+        if _sync_scheduler and getattr(_sync_scheduler, "running", False):
+            _sync_scheduler.shutdown(wait=False)
+            _sync_scheduler = None
+            logger.info("Sheets→DB 주기 동기화 중지")
+            return {"status": "stopped"}
+    except Exception as e:
+        logger.warning(f"스케줄러 중지 실패(무시): {e}")
         _sync_scheduler = None
-        logger.info("Sheets→DB 주기 동기화 중지")
-        return {"status": "stopped"}
     return {"status": "already_stopped"}
