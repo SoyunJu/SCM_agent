@@ -25,15 +25,10 @@ export default function SchedulerPage() {
         setTimeout(() => setMessage(""), 4000);
     };
 
-    const { data: config, isLoading: configLoading } = useQuery({
+    const { data: config, isLoading: configLoading } = useQuery<ScheduleConfig>({
         queryKey: ["schedulerConfig"],
         queryFn:  () => getSchedulerConfig().then((r) => r.data as ScheduleConfig),
-        onSuccess: (c: ScheduleConfig) => {
-            setHour(c.schedule_hour);
-            setMinute(c.schedule_minute);
-            setIsActive(c.is_active);
-        },
-    } as any);
+    });
 
     // 초기값 세팅
     useEffect(() => {

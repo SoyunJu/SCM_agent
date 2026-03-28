@@ -1,4 +1,5 @@
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 from pydantic import ConfigDict
 from loguru import logger
