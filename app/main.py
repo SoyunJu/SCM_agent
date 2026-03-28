@@ -22,27 +22,10 @@ from app.api.product_router import router as product_router
 from app.api.task_router    import router as task_router
 
 
-# scheduler = AsyncIOScheduler(timezone=settings.timezone)
 
 # 노이즈 쿼리 제거
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
-""" def _setup_scheduler() -> None:
-    scheduler.add_job(
-        func=run_daily_job,
-        trigger=CronTrigger(
-            hour=settings.schedule_hour,
-            minute=settings.schedule_minute,
-            timezone=pytz.timezone(settings.timezone),
-        ),
-        id="daily_report",
-        name="일일 현황 보고서 자동 생성",
-        replace_existing=True,
-        misfire_grace_time=3600,
-        coalesce=True,
-    )
-    logger.info(f"스케줄 등록: 매일 {settings.schedule_hour:02d}:{settings.schedule_minute:02d} ({settings.timezone})")
-"""
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -50,7 +33,6 @@ async def lifespan(app: FastAPI):
     check_db_connection()
     init_db()
     _seed_superadmin()
-    _seed_test_user()
 
     loop = asyncio.get_running_loop()
     from app.api.alert_router import set_main_loop
@@ -93,41 +75,6 @@ def _seed_superadmin() -> None:
             logger.info(f"슈퍼어드민 이미 존재: {settings.admin_username}")
     except Exception as e:
         logger.warning(f"슈퍼어드민 seed 실패(무시): {e}")
-    finally:
-        db.close()
-
-
-
-
-def _seed_test_user() -> None:
-    """test/test 계정이 구버전 bcrypt(plain) 해시로 생성된 경우 sha256+bcrypt로 자동 업그레이드."""
-    import hashlib
-    from app.db.connection import SessionLocal
-    from app.db.repository import get_admin_user_by_username, create_admin_user
-    from app.db.models import AdminRole
-    from passlib.context import CryptContext
-
-    db = SessionLocal()
-    try:
-        ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
-        sha256_pw = hashlib.sha256("test".encode()).hexdigest()
-        user = get_admin_user_by_username(db, "test")
-        if not user:
-            create_admin_user(
-                db,
-                username="test",
-                hashed_password=ctx.hash(sha256_pw),
-                role=AdminRole.ADMIN,
-            )
-            logger.info("test 계정 자동 생성 (admin 역할)")
-        elif not ctx.verify(sha256_pw, user.hashed_password):
-            user.hashed_password = ctx.hash(sha256_pw)
-            db.commit()
-            logger.info("test 계정 패스워드 해시를 sha256+bcrypt로 업그레이드")
-        else:
-            logger.info("test 계정 이미 정상 (sha256+bcrypt)")
-    except Exception as e:
-        logger.warning(f"test 계정 seed 실패(무시): {e}")
     finally:
         db.close()
 
@@ -177,13 +124,3 @@ app.include_router(product_router)
 async def health_check():
     return {"status": "ok"}
 
-
-"""
-@app.get("/scm/scheduler/status")
-async def scheduler_status():
-    jobs = scheduler.get_jobs()
-    return {
-        "running": scheduler.running,
-        "jobs": [{"id": j.id, "name": j.name, "next_run": str(j.next_run_time)} for j in jobs],
-    }
-"""
