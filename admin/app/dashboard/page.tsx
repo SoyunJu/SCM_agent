@@ -18,10 +18,11 @@ const SEVERITY_COLOR: Record<string, string> = {
     critical: "text-red-600 bg-red-50",
     high:     "text-orange-500 bg-orange-50",
     medium:   "text-yellow-500 bg-yellow-50",
+    check:    "text-blue-500 bg-blue-50",
     low:      "text-green-600 bg-green-50",
 };
 const SEVERITY_KOR: Record<string, string> = {
-    critical: "긴급", high: "높음", medium: "보통", low: "낮음",
+    critical: "긴급", high: "높음", medium: "보통", check: "확인", low: "낮음",
 };
 const ANOMALY_KOR: Record<string, string> = {
     low_stock: "재고 부족", over_stock: "재고 과잉",

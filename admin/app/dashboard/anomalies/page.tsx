@@ -31,7 +31,7 @@ export default function AnomaliesPage() {
 
     const { data, isLoading } = useQuery({
         queryKey: ["anomalies", statusFilter, page, pageSize],
-        queryFn:  () => getAnomalies(isResolved, pageSize, page, pageSize).then((r) => r.data as {
+        queryFn:  () => getAnomalies(isResolved, pageSize, page).then((r) => r.data as {
             items: AnomalyLog[];
             total: number;
             total_pages: number;

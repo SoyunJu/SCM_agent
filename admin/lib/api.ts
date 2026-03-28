@@ -41,7 +41,7 @@ export const login = async (username: string, password: string) => {
         const meRes = await apiClient.get("/scm/auth/me", {
             headers: { Authorization: `Bearer ${res.data.access_token}` },
         });
-        localStorage.setItem("user_role", meRes.data.role ?? "admin");
+        localStorage.setItem("user_role", (meRes.data.role ?? "admin").toLowerCase());
         localStorage.setItem("username", meRes.data.username ?? username);
     }
     return res.data;
@@ -55,7 +55,7 @@ export const triggerReport = (filters?: { severity_filter?: string[] | null; cat
 export const getReportHistory = (limit = 5, offset = 0) =>
     apiClient.get(`/scm/report/history?limit=${limit}&offset=${offset}`);
 
-export const getAnomalies = (isResolved?: boolean, limit = 50, page = 1, pageSize = 50) => {
+export const getAnomalies = (isResolved?: boolean, pageSize = 50, page = 1) => {
     const params = new URLSearchParams();
     if (isResolved !== undefined) params.append("is_resolved", String(isResolved));
     params.append("page", String(page));

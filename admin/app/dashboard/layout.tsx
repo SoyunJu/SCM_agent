@@ -64,9 +64,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         // JWT payload에서 role/username 직접 추출 (API 호출 불필요)
         const decoded = decodeJwtPayload(token);
         if (decoded && decoded.role) {
-            setUserRole(decoded.role);
+            const role = decoded.role.toLowerCase();
+            setUserRole(role);
             setUsername(decoded.username);
-            localStorage.setItem("user_role", decoded.role);
+            localStorage.setItem("user_role", role);
             localStorage.setItem("username", decoded.username);
         } else {
             // JWT 디코딩 실패 시 localStorage fallback
