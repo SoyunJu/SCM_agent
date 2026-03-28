@@ -37,7 +37,7 @@ transformers==4.41.1
 torch==2.3.0+cpu
 
 # Scheduler
-apscheduler==3.10.4
+# apscheduler==3.10.4
 
 # Slack
 slack-sdk==3.27.2
@@ -57,3 +57,8 @@ loguru==0.7.2
 # Utils
 python-multipart==0.0.9
 pydantic-settings==2.3.0
+
+# Celery
+celery[amqp]==5.3.6
+aiohttp==3.9.5
+kombu==5.3.4

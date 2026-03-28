@@ -42,55 +42,44 @@ def write_product_master(df_crawled: pd.DataFrame) -> None:
             raise
 
 
-<<<<<<< Updated upstream
-def upsert_master_from_excel(df_sales: pd.DataFrame) -> None:
-    with _get_lock("상품마스터"):
+
+
+def upsert_master_from_excel(df_source: pd.DataFrame) -> None:
+    with _get_lock("상품마스터"):   # ← Bug 4 수정: 락 추가
         try:
             spreadsheet = get_spreadsheet()
             ws = spreadsheet.worksheet("상품마스터")
             existing = ws.get_all_records()
-            existing_codes = {r["상품코드"] for r in existing} if existing else set()
+            existing_codes = {str(r["상품코드"]) for r in existing} if existing else set()
 
-        df = df_source.copy()
-        df["상품코드"] = df["상품코드"].astype(str)
+            df = df_source.copy()
+            df["상품코드"] = df["상품코드"].astype(str)
 
-=======
-def upsert_master_from_excel(df_source: pd.DataFrame) -> None:
+            if "상품명" not in df.columns:
+                df["상품명"] = "데이터 없음"
+            else:
+                df["상품명"] = df["상품명"].apply(
+                    lambda v: "데이터 없음" if str(v).strip() in ("", "nan", "None", "NaN") else str(v)
+                )
 
-    try:
-        spreadsheet = get_spreadsheet()
-        ws = spreadsheet.worksheet("상품마스터")
-        existing = ws.get_all_records()
-        existing_codes = {str(r["상품코드"]) for r in existing} if existing else set()
-
-        df = df_source.copy()
-        df["상품코드"] = df["상품코드"].astype(str)
-
->>>>>>> Stashed changes
-        if "상품명" not in df.columns:
-            df["상품명"] = "데이터 없음"
-        else:
-            df["상품명"] = df["상품명"].apply(
-                lambda v: "데이터 없음" if str(v).strip() in ("", "nan", "None", "NaN") else str(v)
+            new_products = (
+                df[~df["상품코드"].isin(existing_codes)]
+                [["상품코드", "상품명"]]
+                .drop_duplicates("상품코드")
             )
+            if new_products.empty:
+                return
 
-        new_products = (
-            df[~df["상품코드"].isin(existing_codes)]
-            [["상품코드", "상품명"]]
-            .drop_duplicates("상품코드")
-        )
-        if new_products.empty:
-            return
+            new_products = new_products.copy()
+            new_products["카테고리"] = "Default"
+            new_products["안전재고기준"] = 10
+            rows = new_products[["상품코드", "상품명", "카테고리", "안전재고기준"]].values.tolist()
+            ws.append_rows(rows, value_input_option="USER_ENTERED")
+            _invalidate("상품마스터")
+            logger.info(f"상품마스터 신규 추가: {len(rows)}건")
+        except Exception as e:
+            logger.error(f"상품마스터 upsert 실패: {e}")
 
-        new_products = new_products.copy()
-        new_products["카테고리"] = "Default"
-        new_products["안전재고기준"] = 10
-        rows = new_products[["상품코드", "상품명", "카테고리", "안전재고기준"]].values.tolist()
-        ws.append_rows(rows, value_input_option="USER_ENTERED")
-        _invalidate("상품마스터")
-        logger.info(f"상품마스터 신규 추가: {len(rows)}건")
-    except Exception as e:
-        logger.error(f"상품마스터 upsert 실패: {e}")
 
 
 def write_stock_upsert(df_crawled: pd.DataFrame) -> None:

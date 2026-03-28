@@ -1,7 +1,4 @@
-from sqlalchemy import (
-    Column, Integer, String, Text, Boolean,
-    DateTime, Float, Enum
-)
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Float, Enum, Date, UniqueConstraint, Index
 from sqlalchemy.sql import func
 from app.db.connection import Base
 import enum
@@ -157,3 +154,71 @@ class Severity(str, enum.Enum):
     HIGH     = "high"
     CRITICAL = "critical"
 
+
+class ProductStatus(str, enum.Enum):
+    ACTIVE   = "active"
+    INACTIVE = "inactive"
+    SAMPLE   = "sample"
+
+
+class Product(Base):
+    """상품 마스터 미러 (100k+ 지원)"""
+    __tablename__ = "products"
+
+    code          = Column(String(20),  primary_key=True)
+    name          = Column(String(200), nullable=False)
+    category      = Column(String(100), nullable=True)
+    safety_stock  = Column(Integer,     nullable=False, default=0)
+    status        = Column(Enum(ProductStatus), nullable=False, default=ProductStatus.ACTIVE)
+    source        = Column(String(50),  nullable=True)   # "sheets" | "excel"
+    updated_at    = Column(DateTime,    nullable=False,
+                           default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_products_category", "category"),
+        Index("ix_products_status",   "status"),
+    )
+
+
+class DailySales(Base):
+    """일별 매출 미러"""
+    __tablename__ = "daily_sales"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    date          = Column(Date,        nullable=False)
+    product_code  = Column(String(20),  nullable=False)
+    qty           = Column(Integer,     nullable=False, default=0)
+    revenue       = Column(Float,       nullable=False, default=0.0)
+
+    __table_args__ = (
+        UniqueConstraint("date", "product_code", name="uq_daily_sales_date_code"),
+        Index("ix_daily_sales_date",         "date"),
+        Index("ix_daily_sales_product_code", "product_code"),
+    )
+
+
+class StockLevel(Base):
+    """재고 스냅샷 (상품별 최신 1건)"""
+    __tablename__ = "stock_levels"
+
+    product_code  = Column(String(20), primary_key=True)
+    current_stock = Column(Integer,    nullable=False, default=0)
+    restock_date  = Column(Date,       nullable=True)
+    restock_qty   = Column(Integer,    nullable=True)
+    updated_at    = Column(DateTime,   nullable=False,
+                           default=func.now(), onupdate=func.now())
+
+
+class AnalysisCache(Base):
+    """분석 결과 캐시 (중복 계산 방지)"""
+    __tablename__ = "analysis_cache"
+
+    id            = Column(Integer,     primary_key=True, autoincrement=True)
+    analysis_type = Column(String(50),  nullable=False)
+    params_hash   = Column(String(64),  nullable=False)   # SHA256(params)
+    result_json   = Column(Text,        nullable=False)
+    created_at    = Column(DateTime,    nullable=False, default=func.now())
+
+    __table_args__ = (
+        Index("ix_analysis_cache_type_hash", "analysis_type", "params_hash"),
+    )

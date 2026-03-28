@@ -86,5 +86,53 @@ services:
       retries: 5
     restart: unless-stopped
 
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: scm_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # 관리 UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  celery-worker:
+    build: .
+    container_name: scm_celery_worker
+    command: celery -A app.celery_app.celery worker --loglevel=info --concurrency=2
+    env_file:
+      - .env
+    volumes:
+      - ./credentials:/app/credentials:ro
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celery-beat:
+    build: .
+    container_name: scm_celery_beat
+    command: celery -A app.celery_app.celery beat --loglevel=info
+    env_file:
+      - .env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   mariadb_data:

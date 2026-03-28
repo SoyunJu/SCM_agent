@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     db_password: str = ""
     db_root_password: str = ""
 
+    # Redis
+    redis_host: str = "redis"
+    redis_port: int = 6379
+
+    # RabbitMQ (Phase 5)
+    rabbitmq_url: str = Field(
+        default="amqp://guest:guest@rabbitmq:5672//",
+        env="RABBITMQ_URL"
+    )
+
     # JWT
     jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
@@ -48,7 +58,6 @@ class Settings(BaseSettings):
     smtp_from:     str  = "SCM Agent <scmagent@test.com>"      # 발신자 표시명+주소 예: "SCM Agent <noreply@example.com>"
     alert_email_to: str = ""      # 수신자 (쉼표 구분 다중 지원)
     smtp_tls:      bool = True
-
 
     # Scheduler (메인 보고서)
     schedule_hour: int = 0
@@ -69,6 +78,10 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+
+
+
+
 settings = Settings()
 
 # Logger
@@ -85,3 +98,4 @@ logger.add(
     level=settings.log_level,
     encoding="utf-8"
 )
+
