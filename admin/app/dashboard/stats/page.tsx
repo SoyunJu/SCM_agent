@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getSalesStats, getStockStats, getAbcStats, getDemandForecast, getTurnoverStats } from "@/lib/api";
+import { getSalesStats, getStockStats, getAbcStats, getDemandForecast, getTurnoverStats, getTaskStatus } from "@/lib/api";
 import { SalesStatItem, StockItem } from "@/lib/types";
 import {
     LineChart, Line, BarChart, Bar,
@@ -46,6 +46,19 @@ function TrendIcon({ trend }: { trend: string }) {
     return <Minus size={14} className="text-gray-400" />;
 }
 
+// 태스크 폴링 헬퍼: task_id 응답이면 SUCCESS 까지 폴링 후 result 반환
+async function resolveAnalysis(apiRes: any): Promise<any> {
+    if (!apiRes.data?.task_id) return apiRes.data;
+    let data = apiRes.data;
+    while (data.state !== "SUCCESS" && data.state !== "FAILURE") {
+        await new Promise((r) => setTimeout(r, 1500));
+        const poll = await getTaskStatus(data.task_id);
+        data = poll.data;
+    }
+    if (data.state === "FAILURE") throw new Error(data.error ?? "분석 태스크 실패");
+    return data.result;
+}
+
 type TabType = "sales" | "stock" | "abc" | "demand" | "turnover";
 
 const TAB_LABELS: Record<TabType, string> = {
@@ -77,6 +90,7 @@ export default function StatsPage() {
     const [turnoverCategories, setTurnoverCategories] = useState<string[]>([]);
 
     const [loading, setLoading]     = useState(false);
+    const [taskMsg, setTaskMsg]     = useState("");
 
     // 판매 통계
     useEffect(() => {
@@ -94,35 +108,55 @@ export default function StatsPage() {
     useEffect(() => {
         if (tab !== "abc" || abcData.length) return;
         setLoading(true);
-        getAbcStats().then((res) => setAbcData(res.data.items ?? [])).finally(() => setLoading(false));
+        setTaskMsg("");
+        getAbcStats()
+            .then((res) => {
+                if (res.data?.task_id) setTaskMsg("분석 태스크 처리 중...");
+                return resolveAnalysis(res);
+            })
+            .then((data) => setAbcData(data?.items ?? []))
+            .catch(() => setAbcData([]))
+            .finally(() => { setLoading(false); setTaskMsg(""); });
     }, [tab]);
 
     // 수요 예측
     useEffect(() => {
         if (tab !== "demand") return;
         setLoading(true);
+        setTaskMsg("");
         getDemandForecast(14, demandPage, 50, demandCategory || undefined)
             .then((res) => {
-                setDemandData(res.data.items ?? []);
-                setDemandTotalPages(res.data.total_pages ?? 1);
-                setDemandTotal(res.data.total ?? 0);
-                if (res.data.categories?.length) setDemandCategories(res.data.categories);
+                if (res.data?.task_id) setTaskMsg("수요 예측 태스크 처리 중...");
+                return resolveAnalysis(res);
             })
-            .finally(() => setLoading(false));
+            .then((data) => {
+                setDemandData(data?.items ?? []);
+                setDemandTotalPages(data?.total_pages ?? 1);
+                setDemandTotal(data?.total ?? 0);
+                if (data?.categories?.length) setDemandCategories(data.categories);
+            })
+            .catch(() => setDemandData([]))
+            .finally(() => { setLoading(false); setTaskMsg(""); });
     }, [tab, demandPage, demandCategory]);
 
     // 재고 회전율
     useEffect(() => {
         if (tab !== "turnover") return;
         setLoading(true);
+        setTaskMsg("");
         getTurnoverStats(30, turnoverPage, 50, turnoverCategory || undefined)
             .then((res) => {
-                setTurnoverData(res.data.items ?? []);
-                setTurnoverTotalPages(res.data.total_pages ?? 1);
-                setTurnoverTotal(res.data.total ?? 0);
-                if (res.data.categories?.length) setTurnoverCategories(res.data.categories);
+                if (res.data?.task_id) setTaskMsg("재고 회전율 태스크 처리 중...");
+                return resolveAnalysis(res);
             })
-            .finally(() => setLoading(false));
+            .then((data) => {
+                setTurnoverData(data?.items ?? []);
+                setTurnoverTotalPages(data?.total_pages ?? 1);
+                setTurnoverTotal(data?.total ?? 0);
+                if (data?.categories?.length) setTurnoverCategories(data.categories);
+            })
+            .catch(() => setTurnoverData([]))
+            .finally(() => { setLoading(false); setTaskMsg(""); });
     }, [tab, turnoverPage, turnoverCategory]);
 
     const pieData = stockStats
@@ -160,6 +194,14 @@ export default function StatsPage() {
                     </button>
                 ))}
             </div>
+
+            {/* 태스크 처리 중 메시지 */}
+            {taskMsg && (
+                <div className="flex items-center gap-2 text-sm text-blue-600 bg-blue-50 px-4 py-2 rounded-lg">
+                    <Loader2 size={14} className="animate-spin" />
+                    {taskMsg}
+                </div>
+            )}
 
             {/* ── 판매 통계 ── */}
             {tab === "sales" && (

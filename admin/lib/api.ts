@@ -223,3 +223,21 @@ export const getTurnoverStats = (days = 30, page = 1, pageSize = 50, category?: 
     if (category) params.append("category", category);
     return apiClient.get(`/scm/sheets/stats/turnover?${params}`);
 };
+
+// --- Task Polling ---
+export const getTaskStatus = (taskId: string) =>
+    apiClient.get(`/scm/tasks/${taskId}/status`);
+
+// --- Product Status ---
+export const updateProductStatus = (code: string, status: string) =>
+    apiClient.patch(`/scm/products/${code}/status`, { status });
+
+// --- Excel Upload ---
+export const uploadExcel = (file: File, sheetType: "master" | "sales" | "stock") => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("sheet_type", sheetType);
+    return apiClient.post("/scm/sheets/upload-excel", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+    });
+};

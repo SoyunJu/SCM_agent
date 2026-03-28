@@ -19,7 +19,7 @@ export interface AnomalyLog {
     current_stock: number | null;
     daily_avg_sales: number | null;
     days_until_stockout: number | null;
-    severity: "low" | "medium" | "high" | "critical";
+    severity: "low" | "check" | "medium" | "high" | "critical";
     is_resolved: boolean;
 }
 
@@ -96,6 +96,24 @@ export interface OrderProposal {
     approved_by: string | null;
 }
 
+
+export interface TaskStatusResponse {
+    task_id: string;
+    state: "PENDING" | "STARTED" | "SUCCESS" | "FAILURE" | "REVOKED";
+    message: string;
+    result?: { items: any[]; from_cache: boolean; total?: number; total_pages?: number };
+    error?: string;
+    progress?: string;
+}
+
+export type ProductStatus = "active" | "inactive" | "sample";
+
+export interface Product {
+    product_code: string;
+    product_name: string;
+    category: string;
+    status: ProductStatus;
+}
 
 export interface AdminUser {
     id:            number;

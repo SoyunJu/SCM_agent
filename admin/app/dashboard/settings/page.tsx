@@ -24,6 +24,9 @@ const LABELS: Record<string, string> = {
     ALERT_CHANNEL:            "알림 채널",
     ALERT_MIN_SEVERITY:       "알림 최소 심각도",
     AUTO_ORDER_MIN_SEVERITY:  "자동발주 에이전트 최소 심각도",
+    DATA_RETENTION_SALES_DAYS:     "매출 데이터 보존 기간 (일)",
+    DATA_RETENTION_STOCK_DAYS:     "재고 스냅샷 보존 기간 (일)",
+    DATA_RETENTION_ANALYSIS_HOURS: "분석 캐시 보존 기간 (시간)",
 };
 
 // select로 렌더링할 키 정의
@@ -70,6 +73,14 @@ const GROUPS = [
     {
         title: "시스템 설정",
         keys: ["CHAT_HISTORY_DAYS", "SHEETS_CACHE_TTL"],
+    },
+    {
+        title: "데이터 보존 설정",
+        keys: [
+            "DATA_RETENTION_SALES_DAYS",
+            "DATA_RETENTION_STOCK_DAYS",
+            "DATA_RETENTION_ANALYSIS_HOURS",
+        ],
     },
 ];
 
