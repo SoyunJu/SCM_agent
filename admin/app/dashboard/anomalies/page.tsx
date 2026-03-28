@@ -1,20 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getAnomalies, resolveAnomaly } from "@/lib/api";
 import { AnomalyLog } from "@/lib/types";
-import { CheckCircle, Search, Loader2 } from "lucide-react";
+import { CheckCircle, Search } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 
-const SEVERITY_COLOR: Record<string, string> = {
-    critical: "text-red-600 bg-red-50 border-red-200",
-    high:     "text-orange-500 bg-orange-50 border-orange-200",
-    medium:   "text-yellow-600 bg-yellow-50 border-yellow-200",
-    check:    "text-blue-500 bg-blue-50 border-blue-200",
-    low:      "text-green-600 bg-green-50 border-green-200",
-};
-const SEVERITY_KOR: Record<string, string> = {
-    critical: "긴급", high: "높음", medium: "보통", check: "확인", low: "낮음",
-};
 const ANOMALY_KOR: Record<string, string> = {
     low_stock: "재고 부족", over_stock: "재고 과잉",
     sales_surge: "판매 급등", sales_drop: "판매 급락",
@@ -22,46 +15,38 @@ const ANOMALY_KOR: Record<string, string> = {
 };
 
 export default function AnomaliesPage() {
-    const [anomalies, setAnomalies]     = useState<AnomalyLog[]>([]);
-    const [filtered, setFiltered]       = useState<AnomalyLog[]>([]);
+    const qc = useQueryClient();
+
     const [statusFilter, setStatus]     = useState<"unresolved" | "resolved" | "all">("unresolved");
     const [severityFilter, setSeverity] = useState("");
     const [typeFilter, setType]         = useState("");
     const [search, setSearch]           = useState("");
-    const [resolving, setResolving]     = useState<number | null>(null);
-    const [loading, setLoading]         = useState(false);
 
-    const fetchData = () => {
-        const isResolved =
-            statusFilter === "unresolved" ? false :
-                statusFilter === "resolved"   ? true  : undefined;
-        setLoading(true);
-        getAnomalies(isResolved, 100)
-            .then((res) => setAnomalies(res.data.items))
-            .finally(() => setLoading(false));
-    };
+    const isResolved =
+        statusFilter === "unresolved" ? false :
+        statusFilter === "resolved"   ? true  : undefined;
 
-    useEffect(() => { fetchData(); }, [statusFilter]);
+    const { data, isLoading } = useQuery({
+        queryKey: ["anomalies", statusFilter],
+        queryFn:  () => getAnomalies(isResolved, 100).then((r) => r.data.items as AnomalyLog[]),
+    });
 
-    useEffect(() => {
-        let data = [...anomalies];
-        if (severityFilter) data = data.filter((a) => a.severity === severityFilter);
-        if (typeFilter)     data = data.filter((a) => a.anomaly_type === typeFilter);
-        if (search)         data = data.filter((a) =>
+    const anomalies = data ?? [];
+
+    const filtered = useMemo(() => {
+        let d = anomalies;
+        if (severityFilter) d = d.filter((a) => a.severity === severityFilter);
+        if (typeFilter)     d = d.filter((a) => a.anomaly_type === typeFilter);
+        if (search)         d = d.filter((a) =>
             a.product_name.includes(search) || a.product_code.includes(search)
         );
-        setFiltered(data);
+        return d;
     }, [anomalies, severityFilter, typeFilter, search]);
 
-    const handleResolve = async (id: number) => {
-        setResolving(id);
-        try {
-            await resolveAnomaly(id);
-            fetchData();
-        } finally {
-            setResolving(null);
-        }
-    };
+    const resolveMutation = useMutation({
+        mutationFn: (id: number) => resolveAnomaly(id),
+        onSuccess:  () => qc.invalidateQueries({ queryKey: ["anomalies"] }),
+    });
 
     return (
         <div className="space-y-6">
@@ -83,10 +68,9 @@ export default function AnomaliesPage() {
                     />
                 </div>
 
-                {/* 상태 필터 — 이슈 8: 해결 옵션 추가 */}
                 <select
                     value={statusFilter}
-                    onChange={(e) => setStatus(e.target.value as "unresolved" | "resolved" | "all")}
+                    onChange={(e) => setStatus(e.target.value as typeof statusFilter)}
                     className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 outline-none"
                 >
                     <option value="unresolved">미해결</option>
@@ -125,10 +109,8 @@ export default function AnomaliesPage() {
 
             {/* 테이블 */}
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-x-auto">
-                {loading ? (
-                    <div className="flex items-center justify-center py-16">
-                        <Loader2 size={28} className="animate-spin text-blue-500" />
-                    </div>
+                {isLoading ? (
+                    <LoadingSpinner />
                 ) : (
                     <table className="w-full text-sm">
                         <thead>
@@ -162,9 +144,7 @@ export default function AnomaliesPage() {
                                         {a.days_until_stockout && a.days_until_stockout < 999 ? `${a.days_until_stockout}일` : "-"}
                                     </td>
                                     <td className="px-6 py-3">
-                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${SEVERITY_COLOR[a.severity]}`}>
-                                            {SEVERITY_KOR[a.severity]}
-                                        </span>
+                                        <StatusBadge value={a.severity} variant="severity" />
                                     </td>
                                     <td className="px-6 py-3">
                                         <span className={`text-xs font-medium ${a.is_resolved ? "text-green-600" : "text-red-500"}`}>
@@ -175,12 +155,12 @@ export default function AnomaliesPage() {
                                     <td className="px-6 py-3">
                                         {!a.is_resolved && (
                                             <button
-                                                onClick={() => handleResolve(a.id)}
-                                                disabled={resolving === a.id}
+                                                onClick={() => resolveMutation.mutate(a.id)}
+                                                disabled={resolveMutation.isPending}
                                                 className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700 font-medium disabled:opacity-50"
                                             >
                                                 <CheckCircle size={13} />
-                                                {resolving === a.id ? "처리 중..." : "해결"}
+                                                {resolveMutation.isPending ? "처리 중..." : "해결"}
                                             </button>
                                         )}
                                     </td>

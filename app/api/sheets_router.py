@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-import json
+import os
 from datetime import date, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+import pandas as pd
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from loguru import logger
-
-from app.api.auth_router import TokenData, get_current_user, require_admin
-from app.cache.redis_client import cache_get
-from app.db.connection import SessionLocal, get_db
-from app.db.sync import make_params_hash
 from sqlalchemy.orm import Session
+
+from app.api.auth_router import get_current_user, require_admin, TokenData
+from app.db.connection import get_db
+from app.db.repository import get_setting
+from app.sheets.reader import read_product_master, read_sales, read_stock
+from app.sheets.writer import upsert_master_from_excel, write_sales, upsert_stock_from_excel
 
 router = APIRouter(prefix="/scm/sheets", tags=["sheets"])
 
@@ -540,3 +543,102 @@ async def upload_excel(
                 os.unlink(tmp_path)
             except Exception as clean_exc:
                 logger.warning(f"[Excel업로드] 임시 파일 삭제 실패 : {clean_exc}")
+
+        total       = len(items)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        start       = (page - 1) * page_size
+        page_items  = items[start:start + page_size]
+
+        return {
+            "days": days,
+            "categories": categories,
+            "total": total, "page": page, "page_size": page_size,
+            "total_pages": total_pages,
+            "items": page_items,
+        }
+    except Exception as e:
+        logger.error(f"재고 회전율 조회 실패: {e}")
+        return {"days": days, "categories": [], "total": 0,
+                "page": 1, "page_size": page_size, "total_pages": 0,
+                "items": [], "error": str(e)}
+
+
+# --- 엑셀 업로드 ---
+
+_REQUIRED_COLS: dict[str, list[str]] = {
+    "master": ["상품코드"],
+    "sales":  ["상품코드", "날짜", "판매수량"],
+    "stock":  ["상품코드", "현재재고"],
+}
+
+
+@router.post("/upload-excel")
+async def upload_excel(
+        current_user: Annotated[TokenData, Depends(require_admin)],
+        file: UploadFile = File(...),
+        sheet_type: str  = Form(...),
+        db: Session      = Depends(get_db),
+):
+
+    # 1. sheet_type 검증
+    if sheet_type not in _REQUIRED_COLS:
+        raise HTTPException(400, "sheet_type은 master | sales | stock 중 하나여야 합니다.")
+
+    # 2. 확장자 검증
+    fname = (file.filename or "").lower()
+    if not (fname.endswith(".xlsx") or fname.endswith(".xls")):
+        raise HTTPException(400, "xlsx 또는 xls 파일만 허용됩니다.")
+
+    # 3. 파일 읽기 + 크기 검증
+    contents = await file.read()
+    max_mb   = int(get_setting(db, "EXCEL_MAX_SIZE_MB", "50"))
+    if len(contents) > max_mb * 1024 * 1024:
+        raise HTTPException(400, f"파일 크기가 {max_mb} MB를 초과합니다. (현재: {len(contents) / 1024 / 1024:.1f} MB)")
+
+    # 4. 임시 파일 파싱
+    suffix = ".xlsx" if fname.endswith(".xlsx") else ".xls"
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(contents)
+            tmp_path = tmp.name
+
+        df = pd.read_excel(tmp_path, dtype={"상품코드": str})
+        df.columns = df.columns.str.strip()
+
+        # 5. 필수 컬럼 검증
+        missing = [c for c in _REQUIRED_COLS[sheet_type] if c not in df.columns]
+        if missing:
+            raise HTTPException(422, f"필수 컬럼 누락: {missing}")
+
+        total = len(df)
+        if total == 0:
+            raise HTTPException(422, "파일에 데이터 행이 없습니다.")
+
+        # 6. Google Sheets 반영
+        if sheet_type == "master":
+            upsert_master_from_excel(df)
+        elif sheet_type == "sales":
+            if "날짜" in df.columns:
+                df["날짜"] = pd.to_datetime(df["날짜"], errors="coerce").dt.strftime("%Y-%m-%d")
+            write_sales(df)
+        else:  # stock
+            upsert_stock_from_excel(df)
+
+        logger.info(f"엑셀 업로드 완료: sheet_type={sheet_type}, rows={total}, user={current_user.username}")
+        return {
+            "sheet_type": sheet_type,
+            "total":      total,
+            "inserted":   total,
+            "updated":    0,
+            "message":    f"{sheet_type} {total}건 처리 완료",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"엑셀 업로드 처리 실패: {e}")
+        raise HTTPException(500, f"업로드 처리 중 오류: {e}")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)

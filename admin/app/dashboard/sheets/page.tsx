@@ -31,6 +31,7 @@ export default function SheetsPage() {
     const [loading, setLoad]      = useState(false);
     const [days, setDays]         = useState(30);
     const [page, setPage]         = useState(1);
+    const [pageSize, setPageSize] = useState(50);
     const [totalPages, setTotalPages] = useState(1);
     const [total, setTotal]       = useState(0);
     const topRef                  = useRef<HTMLDivElement>(null);
@@ -50,17 +51,17 @@ export default function SheetsPage() {
         setLoad(true);
         try {
             if (tab === "상품마스터") {
-                const res = await getSheetsMaster(page, 50);
+                const res = await getSheetsMaster(page, pageSize);
                 setData(res.data.items ?? []);
                 setTotalPages(res.data.total_pages ?? 1);
                 setTotal(res.data.total ?? 0);
             } else if (tab === "일별판매") {
-                const res = await getSheetsSales(days, page, 50);
+                const res = await getSheetsSales(days, page, pageSize);
                 setData(res.data.items ?? []);
                 setTotalPages(res.data.total_pages ?? 1);
                 setTotal(res.data.total ?? 0);
             } else {
-                const res = await getSheetsStock(page, 50);
+                const res = await getSheetsStock(page, pageSize);
                 setData(res.data.items ?? []);
                 setTotalPages(res.data.total_pages ?? 1);
                 setTotal(res.data.total ?? 0);
@@ -74,13 +75,13 @@ export default function SheetsPage() {
         const role = localStorage.getItem("user_role") ?? "";
         setIsReadonly(role === "readonly");
         setPage(1);
-    }, [tab, days]);
+    }, [tab, days, pageSize]);
 
     useEffect(() => {
         const role = localStorage.getItem("user_role") ?? "";
         setIsReadonly(role === "readonly");
         fetchData();
-    }, [tab, days, page]);
+    }, [tab, days, page, pageSize]);
 
     const scrollToTop = () => topRef.current?.scrollIntoView({ behavior: "smooth" });
 
@@ -208,7 +209,18 @@ export default function SheetsPage() {
 
             {/* 페이지네이션 (상단) + 총 건수 */}
             <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-400">총 {total}건</span>
+                <div className="flex items-center gap-3">
+                    <span className="text-xs text-gray-400">총 {total}건</span>
+                    <select
+                        value={pageSize}
+                        onChange={(e) => setPageSize(Number(e.target.value))}
+                        className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none"
+                    >
+                        {[10, 25, 50, 100].map((n) => (
+                            <option key={n} value={n}>{n}건</option>
+                        ))}
+                    </select>
+                </div>
                 {totalPages > 1 && (
                     <div className="flex items-center gap-1">
                         <button
