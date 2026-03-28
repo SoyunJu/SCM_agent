@@ -73,7 +73,7 @@ async def get_report_status(
     # in_progress 상태가 10분 이상 지속되면 자동 실패 처리
     effective_status = record.status
     if record.status == ExecutionStatus.IN_PROGRESS and record.created_at:
-        elapsed = (datetime.now() - record.created_at).total_seconds()
+        elapsed = (datetime.utcnow() - record.created_at).total_seconds()
         if elapsed > 600:
             update_report_execution(
                 db=db,
@@ -164,16 +164,20 @@ async def get_anomalies(
         is_resolved: bool | None = None,
         anomaly_type: str | None = None,
         severity: str | None = None,
-        limit: int = 50,
+        page: int = 1,
+        page_size: int = 50,
         db: Session = Depends(get_db),
 ):
-    records = get_anomaly_logs(db, is_resolved=is_resolved, limit=limit)
-    if anomaly_type:
-        records = [r for r in records if r.anomaly_type.value == anomaly_type]
-    if severity:
-        records = [r for r in records if r.severity.value == severity]
+    result = get_anomaly_logs(
+        db, is_resolved=is_resolved,
+        anomaly_type=anomaly_type, severity=severity,
+        page=page, page_size=page_size,
+    )
     return {
-        "total": len(records),
+        "total": result["total"],
+        "page": result["page"],
+        "page_size": result["page_size"],
+        "total_pages": result["total_pages"],
         "items": [
             {
                 "id": r.id, "detected_at": str(r.detected_at),
@@ -183,7 +187,7 @@ async def get_anomalies(
                 "daily_avg_sales": r.daily_avg_sales, "days_until_stockout": r.days_until_stockout,
                 "severity": r.severity, "is_resolved": r.is_resolved,
             }
-            for r in records
+            for r in result["items"]
         ],
     }
 

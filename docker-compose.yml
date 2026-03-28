@@ -59,6 +59,7 @@ services:
     ports:
       - "3307:3306"
     environment:
+      TZ: Asia/Seoul
       MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MARIADB_DATABASE: ${DB_NAME}
       MARIADB_USER: ${DB_USER}

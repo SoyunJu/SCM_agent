@@ -23,6 +23,9 @@ apiClient.interceptors.response.use(
             localStorage.removeItem("access_token");
             window.location.href = "/login";
         }
+        if (err.response?.status === 403) {
+            alert("권한이 없습니다.");
+        }
         return Promise.reject(err);
     }
 );
@@ -52,10 +55,11 @@ export const triggerReport = (filters?: { severity_filter?: string[] | null; cat
 export const getReportHistory = (limit = 5, offset = 0) =>
     apiClient.get(`/scm/report/history?limit=${limit}&offset=${offset}`);
 
-export const getAnomalies = (isResolved?: boolean, limit = 50) => {
+export const getAnomalies = (isResolved?: boolean, limit = 50, page = 1, pageSize = 50) => {
     const params = new URLSearchParams();
     if (isResolved !== undefined) params.append("is_resolved", String(isResolved));
-    params.append("limit", String(limit));
+    params.append("page", String(page));
+    params.append("page_size", String(pageSize));
     return apiClient.get(`/scm/report/anomalies?${params}`);
 };
 

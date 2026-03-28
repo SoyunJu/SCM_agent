@@ -7,6 +7,7 @@ import { AnomalyLog } from "@/lib/types";
 import { CheckCircle, Search } from "lucide-react";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { Pagination } from "@/components/ui/Pagination";
 
 const ANOMALY_KOR: Record<string, string> = {
     low_stock: "재고 부족", over_stock: "재고 과잉",
@@ -21,18 +22,28 @@ export default function AnomaliesPage() {
     const [severityFilter, setSeverity] = useState("");
     const [typeFilter, setType]         = useState("");
     const [search, setSearch]           = useState("");
+    const [page, setPage]               = useState(1);
+    const [pageSize, setPageSize]       = useState(50);
 
     const isResolved =
         statusFilter === "unresolved" ? false :
         statusFilter === "resolved"   ? true  : undefined;
 
     const { data, isLoading } = useQuery({
-        queryKey: ["anomalies", statusFilter],
-        queryFn:  () => getAnomalies(isResolved, 100).then((r) => r.data.items as AnomalyLog[]),
+        queryKey: ["anomalies", statusFilter, page, pageSize],
+        queryFn:  () => getAnomalies(isResolved, pageSize, page, pageSize).then((r) => r.data as {
+            items: AnomalyLog[];
+            total: number;
+            total_pages: number;
+            page: number;
+        }),
     });
 
-    const anomalies = data ?? [];
+    const anomalies  = data?.items ?? [];
+    const total      = data?.total ?? 0;
+    const totalPages = data?.total_pages ?? 1;
 
+    // 클라이언트 사이드 필터 (심각도, 유형, 검색)
     const filtered = useMemo(() => {
         let d = anomalies;
         if (severityFilter) d = d.filter((a) => a.severity === severityFilter);
@@ -52,7 +63,7 @@ export default function AnomaliesPage() {
         <div className="space-y-6">
             <div>
                 <h2 className="text-2xl font-bold text-gray-800">이상 징후</h2>
-                <p className="text-gray-400 text-sm mt-1">감지된 재고·판매 이상 징후 관리</p>
+                <p className="text-gray-400 text-sm mt-1">감지된 재고/판매 이상 징후 관리</p>
             </div>
 
             {/* 필터 바 */}
@@ -70,7 +81,7 @@ export default function AnomaliesPage() {
 
                 <select
                     value={statusFilter}
-                    onChange={(e) => setStatus(e.target.value as typeof statusFilter)}
+                    onChange={(e) => { setStatus(e.target.value as typeof statusFilter); setPage(1); }}
                     className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 outline-none"
                 >
                     <option value="unresolved">미해결</option>
@@ -103,8 +114,23 @@ export default function AnomaliesPage() {
                     <option value="sales_drop">판매 급락</option>
                     <option value="long_term_stock">장기 재고</option>
                 </select>
+            </div>
 
-                <span className="flex items-center text-sm text-gray-400">총 {filtered.length}건</span>
+            {/* 페이지네이션 (상단) + 총 건수 */}
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <span className="text-xs text-gray-400">총 {total}건</span>
+                    <select
+                        value={pageSize}
+                        onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                        className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none"
+                    >
+                        {[10, 25, 50, 100].map((n) => (
+                            <option key={n} value={n}>{n}건</option>
+                        ))}
+                    </select>
+                </div>
+                <Pagination page={page} totalPages={totalPages} onPageChange={setPage} disabled={isLoading} />
             </div>
 
             {/* 테이블 */}
@@ -148,7 +174,7 @@ export default function AnomaliesPage() {
                                     </td>
                                     <td className="px-6 py-3">
                                         <span className={`text-xs font-medium ${a.is_resolved ? "text-green-600" : "text-red-500"}`}>
-                                            {a.is_resolved ? "✅ 해결" : "🔴 미해결"}
+                                            {a.is_resolved ? "해결" : "미해결"}
                                         </span>
                                     </td>
                                     <td className="px-6 py-3 text-gray-400 text-xs">{a.detected_at.slice(0, 16)}</td>
@@ -170,6 +196,11 @@ export default function AnomaliesPage() {
                         </tbody>
                     </table>
                 )}
+            </div>
+
+            {/* 페이지네이션 (하단) */}
+            <div className="flex justify-end">
+                <Pagination page={page} totalPages={totalPages} onPageChange={setPage} disabled={isLoading} />
             </div>
         </div>
     );
