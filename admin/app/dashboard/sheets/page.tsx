@@ -27,14 +27,14 @@ export default function SheetsPage() {
                 setTotalPages(res.data.total_pages ?? 1);
                 setTotal(res.data.total ?? 0);
             } else if (tab === "일별판매") {
-                const res = await getSheetsSales(days);
+                const res = await getSheetsSales(days, page, 50);
                 setData(res.data.items ?? []);
-                setTotalPages(1);
+                setTotalPages(res.data.total_pages ?? 1);
                 setTotal(res.data.total ?? 0);
             } else {
-                const res = await getSheetsStock();
+                const res = await getSheetsStock(page, 50);
                 setData(res.data.items ?? []);
-                setTotalPages(1);
+                setTotalPages(res.data.total_pages ?? 1);
                 setTotal(res.data.total ?? 0);
             }
         } finally {

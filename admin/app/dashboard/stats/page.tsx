@@ -8,7 +8,7 @@ import {
     XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from "recharts";
-import { Loader2, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, Minus, ChevronLeft, ChevronRight } from "lucide-react";
 
 const PERIOD_LABELS = { daily: "일별", weekly: "주별", monthly: "월별" };
 const PIE_COLORS    = ["#ef4444", "#f97316", "#eab308", "#22c55e"];
@@ -63,7 +63,19 @@ export default function StatsPage() {
     const [stockStats, setStockStats] = useState<any>(null);
     const [abcData, setAbcData]     = useState<any[]>([]);
     const [demandData, setDemandData] = useState<any[]>([]);
+    const [demandPage, setDemandPage]           = useState(1);
+    const [demandTotalPages, setDemandTotalPages] = useState(1);
+    const [demandTotal, setDemandTotal]         = useState(0);
+    const [demandCategory, setDemandCategory]   = useState<string>("");
+    const [demandCategories, setDemandCategories] = useState<string[]>([]);
+
     const [turnoverData, setTurnoverData] = useState<any[]>([]);
+    const [turnoverPage, setTurnoverPage]           = useState(1);
+    const [turnoverTotalPages, setTurnoverTotalPages] = useState(1);
+    const [turnoverTotal, setTurnoverTotal]         = useState(0);
+    const [turnoverCategory, setTurnoverCategory]   = useState<string>("");
+    const [turnoverCategories, setTurnoverCategories] = useState<string[]>([]);
+
     const [loading, setLoading]     = useState(false);
 
     // 판매 통계
@@ -87,17 +99,31 @@ export default function StatsPage() {
 
     // 수요 예측
     useEffect(() => {
-        if (tab !== "demand" || demandData.length) return;
+        if (tab !== "demand") return;
         setLoading(true);
-        getDemandForecast().then((res) => setDemandData(res.data.items ?? [])).finally(() => setLoading(false));
-    }, [tab]);
+        getDemandForecast(14, demandPage, 50, demandCategory || undefined)
+            .then((res) => {
+                setDemandData(res.data.items ?? []);
+                setDemandTotalPages(res.data.total_pages ?? 1);
+                setDemandTotal(res.data.total ?? 0);
+                if (res.data.categories?.length) setDemandCategories(res.data.categories);
+            })
+            .finally(() => setLoading(false));
+    }, [tab, demandPage, demandCategory]);
 
     // 재고 회전율
     useEffect(() => {
-        if (tab !== "turnover" || turnoverData.length) return;
+        if (tab !== "turnover") return;
         setLoading(true);
-        getTurnoverStats().then((res) => setTurnoverData(res.data.items ?? [])).finally(() => setLoading(false));
-    }, [tab]);
+        getTurnoverStats(30, turnoverPage, 50, turnoverCategory || undefined)
+            .then((res) => {
+                setTurnoverData(res.data.items ?? []);
+                setTurnoverTotalPages(res.data.total_pages ?? 1);
+                setTurnoverTotal(res.data.total ?? 0);
+                if (res.data.categories?.length) setTurnoverCategories(res.data.categories);
+            })
+            .finally(() => setLoading(false));
+    }, [tab, turnoverPage, turnoverCategory]);
 
     const pieData = stockStats
         ? [
@@ -262,14 +288,27 @@ export default function StatsPage() {
             {/* ── 수요 예측 ── */}
             {tab === "demand" && (
                 <div className="space-y-4">
+                    {/* 필터 + 총 건수 */}
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <span className="px-2 py-0.5 bg-red-50 text-red-600 rounded-full text-xs font-medium">재고 부족</span>
+                        <span className="text-sm text-gray-500">예측 기간 14일 기준 · 7일 이동평균</span>
+                        {demandCategories.length > 0 && (
+                            <select
+                                value={demandCategory}
+                                onChange={(e) => { setDemandCategory(e.target.value); setDemandPage(1); }}
+                                className="ml-auto border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
+                            >
+                                <option value="">전체 카테고리</option>
+                                {demandCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        )}
+                        <span className="text-xs text-gray-400">총 {demandTotal}건</span>
+                    </div>
+
                     {loading ? (
                         <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-blue-500" /></div>
                     ) : (
                         <>
-                            <div className="flex items-center gap-3 text-sm text-gray-500">
-                                <span className="px-2 py-0.5 bg-red-50 text-red-600 rounded-full text-xs font-medium">재고 부족</span>
-                                <span>예측 기간 14일 기준 · 7일 이동평균</span>
-                            </div>
                             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                                 <table className="w-full text-sm">
                                     <thead>
@@ -313,6 +352,26 @@ export default function StatsPage() {
                                     </tbody>
                                 </table>
                             </div>
+
+                            {/* 페이지네이션 */}
+                            {demandTotalPages > 1 && (
+                                <div className="flex items-center justify-end gap-1">
+                                    <button onClick={() => setDemandPage((p) => Math.max(1, p - 1))} disabled={demandPage === 1} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"><ChevronLeft size={14} /></button>
+                                    {Array.from({ length: demandTotalPages }, (_, i) => i + 1)
+                                        .filter((p) => p === 1 || p === demandTotalPages || Math.abs(p - demandPage) <= 2)
+                                        .reduce<(number | "…")[]>((acc, p, idx, arr) => {
+                                            if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("…");
+                                            acc.push(p); return acc;
+                                        }, [])
+                                        .map((p, i) => p === "…"
+                                            ? <span key={`e-${i}`} className="px-1 text-gray-400 text-xs">…</span>
+                                            : <button key={p} onClick={() => setDemandPage(p as number)}
+                                                      className={`min-w-[30px] h-[30px] rounded-lg text-xs font-medium transition ${demandPage === p ? "bg-blue-600 text-white" : "border border-gray-200 text-gray-600 hover:bg-gray-50"}`}>{p}</button>
+                                        )
+                                    }
+                                    <button onClick={() => setDemandPage((p) => Math.min(demandTotalPages, p + 1))} disabled={demandPage === demandTotalPages} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"><ChevronRight size={14} /></button>
+                                </div>
+                            )}
                         </>
                     )}
                 </div>
@@ -321,6 +380,21 @@ export default function StatsPage() {
             {/* ── 재고 회전율 ── */}
             {tab === "turnover" && (
                 <div className="space-y-6">
+                    {/* 필터 + 총 건수 */}
+                    <div className="flex items-center gap-3 flex-wrap">
+                        {turnoverCategories.length > 0 && (
+                            <select
+                                value={turnoverCategory}
+                                onChange={(e) => { setTurnoverCategory(e.target.value); setTurnoverPage(1); }}
+                                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
+                            >
+                                <option value="">전체 카테고리</option>
+                                {turnoverCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        )}
+                        <span className="ml-auto text-xs text-gray-400">총 {turnoverTotal}건</span>
+                    </div>
+
                     {loading ? (
                         <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-blue-500" /></div>
                     ) : (
@@ -391,6 +465,26 @@ export default function StatsPage() {
                                     </tbody>
                                 </table>
                             </div>
+
+                            {/* 페이지네이션 */}
+                            {turnoverTotalPages > 1 && (
+                                <div className="flex items-center justify-end gap-1">
+                                    <button onClick={() => setTurnoverPage((p) => Math.max(1, p - 1))} disabled={turnoverPage === 1} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"><ChevronLeft size={14} /></button>
+                                    {Array.from({ length: turnoverTotalPages }, (_, i) => i + 1)
+                                        .filter((p) => p === 1 || p === turnoverTotalPages || Math.abs(p - turnoverPage) <= 2)
+                                        .reduce<(number | "…")[]>((acc, p, idx, arr) => {
+                                            if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("…");
+                                            acc.push(p); return acc;
+                                        }, [])
+                                        .map((p, i) => p === "…"
+                                            ? <span key={`e-${i}`} className="px-1 text-gray-400 text-xs">…</span>
+                                            : <button key={p} onClick={() => setTurnoverPage(p as number)}
+                                                      className={`min-w-[30px] h-[30px] rounded-lg text-xs font-medium transition ${turnoverPage === p ? "bg-blue-600 text-white" : "border border-gray-200 text-gray-600 hover:bg-gray-50"}`}>{p}</button>
+                                        )
+                                    }
+                                    <button onClick={() => setTurnoverPage((p) => Math.min(turnoverTotalPages, p + 1))} disabled={turnoverPage === turnoverTotalPages} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"><ChevronRight size={14} /></button>
+                                </div>
+                            )}
                         </>
                     )}
                 </div>
