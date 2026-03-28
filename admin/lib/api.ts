@@ -212,6 +212,12 @@ export const changeMyPassword = (data: {
     new_password:     string;
 }) => apiClient.put("/scm/admin/me/password", data);
 
+export const getMyAdminProfile = () =>
+    apiClient.get("/scm/admin/me");
+
+export const updateMyProfile = (data: { email?: string; slack_user_id?: string }) =>
+    apiClient.put("/scm/admin/me/profile", data);
+
 // --- 분석 통계 ---
 export const getAbcStats = (days = 90) =>
     apiClient.get(`/scm/sheets/stats/abc?days=${days}`);

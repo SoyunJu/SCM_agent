@@ -86,10 +86,11 @@ export default function ReportsPage() {
             try {
                 const res = await getReportStatus(executionId);
                 const { status, error_message } = res.data;
-                if (status !== "in_progress") {
+                const s = (status as string).toLowerCase();
+                if (s !== "in_progress") {
                     clearInterval(pollRef.current!);
                     setPolling(false);
-                    if (status === "success") {
+                    if (s === "success") {
                         setMessage("✅ 보고서 생성이 완료되었습니다.");
                         fetchAll();
                     } else {
@@ -295,7 +296,7 @@ export default function ReportsPage() {
                                     </tr>
                                 ) : (
                                     history.map((r) => {
-                                        const s = STATUS_INFO[r.status];
+                                        const s = STATUS_INFO[(r.status as string)?.toLowerCase()];
                                         return (
                                             <tr key={r.id} className="hover:bg-gray-50 transition">
                                                 <td className="px-6 py-3 text-gray-400">#{r.id}</td>

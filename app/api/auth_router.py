@@ -67,7 +67,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]) -> Tok
         username: str = payload.get("sub")
         if username is None:
             raise credentials_exception
-        role: str = payload.get("role", "admin")
+        role: str = payload.get("role", "admin").lower()   # 소문자 정규화
         return TokenData(username=username, role=role)
     except JWTError:
         logger.warning("JWT 토큰 검증 실패")

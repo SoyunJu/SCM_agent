@@ -5,6 +5,7 @@ import {
     getOrders, getProposals, generateProposals,
     approveProposal, rejectProposal, updateProposal,
 } from "@/lib/api";
+import { getDefaultPageSize } from "@/lib/utils";
 import { OrderItem, OrderProposal } from "@/lib/types";
 import {
     Package, Loader2, RefreshCw, ChevronLeft, ChevronRight,
@@ -36,7 +37,7 @@ function OrdersTab() {
     const [tab, setTab]               = useState<string>("전체");
     const [loading, setLoading]       = useState(false);
     const [page, setPage]             = useState(1);
-    const [pageSize, setPageSize]     = useState(50);
+    const [pageSize, setPageSize]     = useState(getDefaultPageSize);
     const [totalPages, setTotalPages] = useState(1);
     const [total, setTotal]           = useState(0);
     const [isReadonly, setIsReadonly] = useState(false);

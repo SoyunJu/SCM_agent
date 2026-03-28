@@ -58,8 +58,11 @@ def send_email(
 
         logger.info(f"이메일 발송 완료: {recipients}")
         return True
+    except smtplib.SMTPAuthenticationError as e:
+        logger.warning(f"이메일 발송 스킵: SMTP 인증 실패 (앱 비밀번호 설정 필요) — {e.smtp_code}")
+        return False
     except Exception as e:
-        logger.error(f"이메일 발송 실패: {e}")
+        logger.warning(f"이메일 발송 실패: {e}")
         return False
 
 

@@ -22,7 +22,7 @@ SEVERITY_RANK: dict[str, int] = {"low": 0, "check":0, "medium": 1, "high": 2, "c
 
 def _get_severity_threshold(db: Session) -> str:
     row = db.query(SystemSettings).filter(
-        SystemSettings.setting_key == "AUTO_PROPOSAL_SEVERITY"
+        SystemSettings.setting_key == "AUTO_ORDER_MIN_SEVERITY"
     ).first()
     if row and row.setting_value.lower() in SEVERITY_RANK:
         return row.setting_value.lower()

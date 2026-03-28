@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getAnomalies, resolveAnomaly } from "@/lib/api";
+import { getDefaultPageSize } from "@/lib/utils";
 import { AnomalyLog } from "@/lib/types";
 import { CheckCircle, Search } from "lucide-react";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
@@ -23,7 +24,7 @@ export default function AnomaliesPage() {
     const [typeFilter, setType]         = useState("");
     const [search, setSearch]           = useState("");
     const [page, setPage]               = useState(1);
-    const [pageSize, setPageSize]       = useState(50);
+    const [pageSize, setPageSize]       = useState(getDefaultPageSize);
 
     const isResolved =
         statusFilter === "unresolved" ? false :

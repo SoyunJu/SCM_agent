@@ -101,6 +101,10 @@ export default function SettingsPage() {
     const saveMutation = useMutation({
         mutationFn: () => saveSettings(values),
         onSuccess:  () => {
+            // 기본 페이지 크기를 localStorage에 캐싱 → 각 페이지 초기화 시 사용
+            if (values["DEFAULT_PAGE_SIZE"]) {
+                localStorage.setItem("scm_default_page_size", values["DEFAULT_PAGE_SIZE"]);
+            }
             setMessage("✅ 설정이 저장되었습니다. 다음 분석부터 적용됩니다.");
             setTimeout(() => setMessage(""), 4000);
         },

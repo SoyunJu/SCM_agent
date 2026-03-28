@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getSheetsMaster, getSheetsSales, getSheetsStock, updateProductStatus, uploadExcel } from "@/lib/api";
+import { getDefaultPageSize } from "@/lib/utils";
 import { RefreshCw, Loader2, ArrowUp, ChevronLeft, ChevronRight, Upload } from "lucide-react";
 import { ProductStatus } from "@/lib/types";
 
@@ -31,7 +32,7 @@ export default function SheetsPage() {
     const [loading, setLoad]      = useState(false);
     const [days, setDays]         = useState(30);
     const [page, setPage]         = useState(1);
-    const [pageSize, setPageSize] = useState(50);
+    const [pageSize, setPageSize] = useState(getDefaultPageSize);
     const [totalPages, setTotalPages] = useState(1);
     const [total, setTotal]       = useState(0);
     const topRef                  = useRef<HTMLDivElement>(null);
