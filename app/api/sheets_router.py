@@ -103,14 +103,16 @@ async def get_master(
             if col:
                 df = df[df[col] == category]
 
-        # 다운로드 요청: CSV 반환
+        # 다운로드 요청: CSV 반환 (UTF-8 BOM으로 Excel 한글 정상 표시)
         if download:
             import io
-            buf = io.StringIO()
-            df.to_csv(buf, index=False, encoding="utf-8-sig")
+            buf = io.BytesIO()
+            buf.write(b'\xef\xbb\xbf')  # UTF-8 BOM
+            df.to_csv(buf, index=False, encoding="utf-8")
+            buf.seek(0)
             return StreamingResponse(
-                iter([buf.getvalue()]),
-                media_type="text/csv",
+                buf,
+                media_type="text/csv; charset=utf-8-sig",
                 headers={"Content-Disposition": 'attachment; filename="master.csv"'},
             )
 
@@ -143,6 +145,7 @@ async def get_sales(
         page: int = 1,
         page_size: int = 50,
         category: str | None = None,
+        search: str | None = None,
         download: bool = False,
 ):
 
@@ -153,6 +156,12 @@ async def get_sales(
         cutoff = df["날짜"].max() - pd.Timedelta(days=days)
         df = df[df["날짜"] >= cutoff].copy()
 
+        if search and "상품코드" in df.columns:
+            mask = df["상품코드"].astype(str).str.contains(search, case=False, na=False)
+            if "상품명" in df.columns:
+                mask = mask | df["상품명"].astype(str).str.contains(search, case=False, na=False)
+            df = df[mask]
+
         if category and "카테고리" in df.columns:
             df = df[df["카테고리"] == category]
 
@@ -160,11 +169,13 @@ async def get_sales(
 
         if download:
             import io
-            buf = io.StringIO()
-            df.to_csv(buf, index=False, encoding="utf-8-sig")
+            buf = io.BytesIO()
+            buf.write(b'\xef\xbb\xbf')
+            df.to_csv(buf, index=False, encoding="utf-8")
+            buf.seek(0)
             return StreamingResponse(
-                iter([buf.getvalue()]),
-                media_type="text/csv",
+                buf,
+                media_type="text/csv; charset=utf-8-sig",
                 headers={"Content-Disposition": 'attachment; filename="sales.csv"'},
             )
 
@@ -191,22 +202,31 @@ async def get_stock(
         page: int = 1,
         page_size: int = 50,
         category: str | None = None,
+        search: str | None = None,
         download: bool = False,
 ):
 
     try:
         df = read_stock()
 
+        if search and "상품코드" in df.columns:
+            mask = df["상품코드"].astype(str).str.contains(search, case=False, na=False)
+            if "상품명" in df.columns:
+                mask = mask | df["상품명"].astype(str).str.contains(search, case=False, na=False)
+            df = df[mask]
+
         if category and "카테고리" in df.columns:
             df = df[df["카테고리"] == category]
 
         if download:
             import io
-            buf = io.StringIO()
-            df.to_csv(buf, index=False, encoding="utf-8-sig")
+            buf = io.BytesIO()
+            buf.write(b'\xef\xbb\xbf')
+            df.to_csv(buf, index=False, encoding="utf-8")
+            buf.seek(0)
             return StreamingResponse(
-                iter([buf.getvalue()]),
-                media_type="text/csv",
+                buf,
+                media_type="text/csv; charset=utf-8-sig",
                 headers={"Content-Disposition": 'attachment; filename="stock.csv"'},
             )
 

@@ -138,15 +138,17 @@ export const getSheetsMaster = (page = 1, pageSize = 50, search?: string, catego
     return apiClient.get(`/scm/sheets/master?${params}`);
 };
 
-export const getSheetsSales = (days = 30, page = 1, pageSize = 50, category?: string) => {
+export const getSheetsSales = (days = 30, page = 1, pageSize = 50, category?: string, search?: string) => {
     const params = new URLSearchParams({ days: String(days), page: String(page), page_size: String(pageSize) });
     if (category) params.append("category", category);
+    if (search)   params.append("search", search);
     return apiClient.get(`/scm/sheets/sales?${params}`);
 };
 
-export const getSheetsStock = (page = 1, pageSize = 50, category?: string) => {
+export const getSheetsStock = (page = 1, pageSize = 50, category?: string, search?: string) => {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (category) params.append("category", category);
+    if (search)   params.append("search", search);
     return apiClient.get(`/scm/sheets/stock?${params}`);
 };
 

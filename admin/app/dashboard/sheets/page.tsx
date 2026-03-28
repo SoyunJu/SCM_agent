@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSheetsMaster, getSheetsSales, getSheetsStock, updateProductStatus, updateProduct, uploadExcel, getSheetCategories, downloadSheetCsv } from "@/lib/api";
 import { getDefaultPageSize } from "@/lib/utils";
 import { RefreshCw, Loader2, ArrowUp, ChevronLeft, ChevronRight, Upload, Pencil, X, Check, Search, Download } from "lucide-react";
@@ -29,15 +30,12 @@ const STATUS_TRANSITIONS: Record<ProductStatus, ProductStatus[]> = {
 };
 
 export default function SheetsPage() {
+    const qc = useQueryClient();
     const [isReadonly, setIsReadonly] = useState(false);
     const [tab, setTab]           = useState<Tab>("일별판매");
-    const [data, setData]         = useState<any[]>([]);
-    const [loading, setLoad]      = useState(false);
     const [days, setDays]         = useState(30);
     const [page, setPage]         = useState(1);
     const [pageSize, setPageSize] = useState(getDefaultPageSize);
-    const [totalPages, setTotalPages] = useState(1);
-    const [total, setTotal]       = useState(0);
     const topRef                  = useRef<HTMLDivElement>(null);
     const [search, setSearch]     = useState("");
     const [category, setCategory] = useState("");
@@ -59,42 +57,34 @@ export default function SheetsPage() {
     const [uploadMsg, setUploadMsg]         = useState("");
     const fileInputRef                      = useRef<HTMLInputElement>(null);
 
-    const fetchData = async () => {
-        setLoad(true);
-        try {
-            if (tab === "상품마스터") {
-                const res = await getSheetsMaster(page, pageSize, search || undefined, category || undefined);
-                setData(res.data.items ?? []);
-                setTotalPages(res.data.total_pages ?? 1);
-                setTotal(res.data.total ?? 0);
-            } else if (tab === "일별판매") {
-                const res = await getSheetsSales(days, page, pageSize, category || undefined);
-                setData(res.data.items ?? []);
-                setTotalPages(res.data.total_pages ?? 1);
-                setTotal(res.data.total ?? 0);
-            } else {
-                const res = await getSheetsStock(page, pageSize, category || undefined);
-                setData(res.data.items ?? []);
-                setTotalPages(res.data.total_pages ?? 1);
-                setTotal(res.data.total ?? 0);
-            }
-        } finally {
-            setLoad(false);
+    const queryKey = ["sheets", tab, page, pageSize, days, search, category];
+
+    const fetchFn = useCallback(async () => {
+        if (tab === "상품마스터") {
+            return getSheetsMaster(page, pageSize, search || undefined, category || undefined).then(r => r.data);
+        } else if (tab === "일별판매") {
+            return getSheetsSales(days, page, pageSize, category || undefined, search || undefined).then(r => r.data);
+        } else {
+            return getSheetsStock(page, pageSize, category || undefined, search || undefined).then(r => r.data);
         }
-    };
+    }, [tab, page, pageSize, days, search, category]);
+
+    const { data: queryData, isLoading: loading, refetch: fetchData } = useQuery({
+        queryKey,
+        queryFn: fetchFn,
+        staleTime: 30_000,
+        keepPreviousData: true,
+    } as any);
+
+    const data  = queryData?.items ?? [];
+    const total = queryData?.total ?? 0;
+    const totalPages = queryData?.total_pages ?? 1;
 
     useEffect(() => {
         const role = localStorage.getItem("user_role") ?? "";
         setIsReadonly(role === "readonly");
-        // 카테고리 목록 로드
         getSheetCategories().then((r) => setCategories(r.data.items ?? [])).catch(() => {});
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-
-    useEffect(() => {
-        fetchData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tab, days, page, pageSize, search, category]);
 
     const scrollToTop = () => topRef.current?.scrollIntoView({ behavior: "smooth" });
 
@@ -102,14 +92,7 @@ export default function SheetsPage() {
         setStatusChanging(productCode);
         try {
             await updateProductStatus(productCode, newStatus);
-            // 로컬 상태 즉시 반영
-            setData((prev) =>
-                prev.map((row) =>
-                    row["상품코드"] === productCode || row["product_code"] === productCode
-                        ? { ...row, status: newStatus }
-                        : row
-                )
-            );
+            qc.invalidateQueries({ queryKey: ["sheets"] });
         } finally {
             setStatusChanging(null);
         }
@@ -171,13 +154,7 @@ export default function SheetsPage() {
                 safety_stock: editValues.safety_stock ? Number(editValues.safety_stock) : undefined,
                 status:       editValues.status || undefined,
             });
-            setData((prev) =>
-                prev.map((r) =>
-                    (r["상품코드"] ?? r["product_code"]) === code
-                        ? { ...r, 상품명: editValues.name, 카테고리: editValues.category, status: editValues.status }
-                        : r
-                )
-            );
+            qc.invalidateQueries({ queryKey: ["sheets"] });
             setEditRow(null);
         } finally {
             setEditSaving(false);

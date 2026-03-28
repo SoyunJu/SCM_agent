@@ -18,8 +18,9 @@ from app.api.order_router               import router as order_router
 from app.api.admin_router               import router as admin_router
 from app.api.slack_interactions_router  import router as slack_interactions_router
 
-from app.api.product_router import router as product_router
-from app.api.task_router    import router as task_router
+from app.api.product_router    import router as product_router
+from app.api.task_router       import router as task_router
+from app.api.scheduler_router  import router as scheduler_router
 
 
 
@@ -86,8 +87,13 @@ def _warmup_sheets() -> None:
         read_sales()
         read_stock()
         logger.info("시트 캐시 워밍업 완료")
+
+        # Google Sheets → MariaDB 초기 동기화
+        from app.scheduler.jobs import _sync_sheets_to_db
+        _sync_sheets_to_db()
+        logger.info("DB 초기 동기화 완료")
     except Exception as e:
-        logger.warning(f"캐시 워밍업 실패(무시): {e}")
+        logger.warning(f"캐시 워밍업/DB 동기화 실패(무시): {e}")
 
 
 
@@ -118,6 +124,7 @@ app.include_router(order_router)
 app.include_router(admin_router)
 app.include_router(task_router)
 app.include_router(product_router)
+app.include_router(scheduler_router)
 
 
 @app.get("/scm/health")

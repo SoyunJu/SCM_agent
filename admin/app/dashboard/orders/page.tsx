@@ -298,13 +298,13 @@ function ProposalsTab() {
                     </button>
                 </div>
                 )}
-                {["all", "pending", "approved", "rejected"].map((s) => (
+                {["all", "PENDING", "APPROVED", "REJECTED"].map((s) => (
                     <button
                         key={s}
                         onClick={() => setFilter(s)}
                         className={`px-3 py-1.5 rounded-lg text-sm transition ${statusFilter === s ? "bg-gray-800 text-white" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}
                     >
-                        {{ all: "전체", pending: "대기", approved: "승인", rejected: "거절" }[s]}
+                        {{ all: "전체", PENDING: "대기", APPROVED: "승인", REJECTED: "거절" }[s]}
                     </button>
                 ))}
                 <span className="text-xs text-gray-400 ml-auto">총 {total}건</span>
@@ -370,7 +370,9 @@ function ProposalsTab() {
                                 )}
                             </td>
 
-                            <td className="px-4 py-3 text-gray-400 text-xs max-w-[180px] truncate" title={p.reason ?? ""}>{p.reason ?? "-"}</td>
+                            <td className="px-4 py-3 text-gray-400 text-xs max-w-[300px]">
+                                <span className="line-clamp-3 whitespace-pre-wrap" title={p.reason ?? ""}>{p.reason ?? "-"}</span>
+                            </td>
 
                             <td className="px-4 py-3">
                                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${PROPOSAL_STATUS_COLOR[p.status] ?? "bg-gray-100 text-gray-500"}`}>
@@ -387,7 +389,7 @@ function ProposalsTab() {
                                         <button onClick={() => saveEdit(p.id)} className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">저장</button>
                                         <button onClick={() => setEditId(null)} className="px-2 py-1 border border-gray-200 rounded text-xs hover:bg-gray-50">취소</button>
                                     </div>
-                                ) : p.status === "pending" && !isReadonly ? (
+                                ) : p.status === "PENDING" && !isReadonly ? (
                                     <div className="flex gap-1 justify-center">
                                         <button onClick={() => startEdit(p)} title="수정" className="p-1 rounded hover:bg-gray-100 text-gray-500"><Pencil size={14} /></button>
                                         <button onClick={() => handleApprove(p.id)} title="승인" className="p-1 rounded hover:bg-green-50 text-green-600"><CheckCircle size={14} /></button>
