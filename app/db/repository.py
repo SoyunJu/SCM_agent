@@ -13,18 +13,24 @@ from app.db.models import (
 
 # --- Report ---------------
 
-def create_report_execution(db: Session, report_type: ReportType = ReportType.DAILY) -> ReportExecution:
-    record = ReportExecution(report_type=report_type)
+def create_report_execution(
+        db: Session,
+        report_type: ReportType = ReportType.DAILY,
+        triggered_by: Optional[str] = None,
+) -> ReportExecution:
+    record = ReportExecution(report_type=report_type, triggered_by=triggered_by)
     db.add(record)
     db.commit()
     db.refresh(record)
-    logger.info(f"보고서 실행 이력 생성: id={record.id}, type={report_type}")
+    logger.info(f"보고서 실행 이력 생성: id={record.id}, type={report_type}, by={triggered_by}")
     return record
 
 
 def update_report_execution(
         db: Session, record_id: int, status: ExecutionStatus,
-        docs_url: Optional[str] = None, slack_sent: bool = False,
+        docs_url: Optional[str] = None,
+        slack_sent: bool = False,
+        email_sent: bool = False,
         error_message: Optional[str] = None,
 ) -> Optional[ReportExecution]:
     record = db.query(ReportExecution).filter(ReportExecution.id == record_id).first()
@@ -33,6 +39,7 @@ def update_report_execution(
     record.status        = status
     record.docs_url      = docs_url
     record.slack_sent    = slack_sent
+    record.email_sent    = email_sent
     record.error_message = error_message
     db.commit()
     db.refresh(record)
@@ -48,8 +55,7 @@ def get_report_execution_by_id(db: Session, record_id: int) -> Optional[ReportEx
 
 
 # --- Anomaly ------------─
-
-def create_anomaly_log(
+def upsert_anomaly_log(
         db: Session, product_code: str, product_name: str,
         anomaly_type: AnomalyType, severity: Severity,
         category: Optional[str] = None,
@@ -57,6 +63,31 @@ def create_anomaly_log(
         daily_avg_sales: Optional[float] = None,
         days_until_stockout: Optional[float] = None,
 ) -> AnomalyLog:
+    from datetime import date
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    # 중복 insert 방지
+    existing = (
+        db.query(AnomalyLog)
+        .filter(
+            AnomalyLog.product_code  == product_code,
+            AnomalyLog.anomaly_type  == anomaly_type,
+            AnomalyLog.is_resolved   == False,
+            AnomalyLog.detected_at   >= today_start,
+            )
+        .first()
+    )
+
+    if existing:
+        existing.severity            = severity
+        existing.current_stock       = current_stock
+        existing.daily_avg_sales     = daily_avg_sales
+        existing.days_until_stockout = days_until_stockout
+        existing.product_name        = product_name
+        existing.category            = category
+        db.commit()
+        db.refresh(existing)
+        return existing
+
     record = AnomalyLog(
         product_code=product_code, product_name=product_name,
         category=category, anomaly_type=anomaly_type, severity=severity,
@@ -81,14 +112,22 @@ def get_anomaly_logs(
     if is_resolved is not None:
         query = query.filter(AnomalyLog.is_resolved == is_resolved)
     if anomaly_type:
-        query = query.filter(AnomalyLog.anomaly_type == anomaly_type)
+        try:
+            query = query.filter(AnomalyLog.anomaly_type == AnomalyType(anomaly_type.upper()))
+        except ValueError:
+            pass
     if severity:
-        query = query.filter(AnomalyLog.severity == severity)
+        try:
+            from app.utils.severity import norm
+            query = query.filter(AnomalyLog.severity == Severity(norm(severity)))
+        except ValueError:
+            pass
 
     total = query.count()
-    items = query.order_by(desc(AnomalyLog.created_at)).offset((page - 1) * page_size).limit(page_size).all()
+    items = query.order_by(desc(AnomalyLog.detected_at)).offset((page - 1) * page_size).limit(page_size).all()
     total_pages = max(1, (total + page_size - 1) // page_size)
     return {"total": total, "page": page, "page_size": page_size, "total_pages": total_pages, "items": items}
+
 
 
 def resolve_anomaly(db: Session, anomaly_id: int) -> Optional[AnomalyLog]:

@@ -16,11 +16,11 @@ from app.db.connection import SessionLocal
 from app.db.models import ReportType, ExecutionStatus, AnomalyType, Severity
 from app.db.repository import (
     create_report_execution, update_report_execution,
-    create_anomaly_log, update_last_run, get_setting,
+    upsert_anomaly_log, update_last_run, get_setting,
 )
-from app.services.sync_service import SyncService
 from app.notifier.notifier import notify_daily_report, notify_anomaly_alert
 from app.report.pdf_generator import generate_daily_pdf
+from app.services.sync_service import SyncService
 from app.sheets.writer import write_orders, write_analysis_result
 
 EXCEL_PATH = os.getenv("EXCEL_PATH", "./sample_data.xlsx")
@@ -92,7 +92,6 @@ def sync_sheets_only() -> dict:
     """크롤러 결과 + Excel → Sheets → DB 전체 동기화"""
     logger.info("===== Sheets 동기화 시작 =====")
     from app.sheets.writer import write_stock_upsert, upsert_master_from_excel
-    from app.crawler.excel_parser import parse_sales_sheet, parse_stock_sheet
     from app.sheets.writer import write_sales
 
     df_crawled = _get_crawled_df()
@@ -249,7 +248,7 @@ def run_daily_job(
 
         # --- 6. DB 저장 ---
         for item in stock_anomalies:
-            create_anomaly_log(
+            upsert_anomaly_log(
                 db=db,
                 product_code=item["product_code"],
                 product_name=item.get("product_name", ""),
@@ -261,7 +260,7 @@ def run_daily_job(
                 days_until_stockout=item.get("days_until_stockout"),
             )
         for item in sales_anomalies:
-            create_anomaly_log(
+            upsert_anomaly_log(
                 db=db,
                 product_code=item["product_code"],
                 product_name=item["product_name"],
@@ -313,6 +312,7 @@ def run_daily_job(
 
         # --- 8. Slack + 이메일 발송 ---
         slack_ok = False
+        email_ok = False
         if pdf_ok:
             logger.info("[7/7] 알림 발송")
             try:
@@ -328,6 +328,25 @@ def run_daily_job(
                 slack_ok = True
             except Exception as notify_err:
                 logger.warning(f"알림 발송 실패(스킵): {notify_err}")
+
+            # 이메일 발송 결과 별도 추적
+            # TODO : 이메일 알림 기능 별도 분리
+            try:
+                from app.notifier.email_notifier import send_daily_report_email
+                from app.db.repository import list_admin_users
+                admins = list_admin_users(db)
+                admin_emails = [a.email for a in admins if a.email and a.is_active]
+                email_ok = send_daily_report_email(
+                    report_date=date.today().strftime("%Y-%m-%d"),
+                    total_products=len(df_master),
+                    stock_anomaly_count=len(stock_anomalies),
+                    sales_anomaly_count=len(sales_anomalies),
+                    risk_level=insight.get("risk_level", "medium"),
+                    pdf_path=Path(pdf_path) if pdf_path else None,
+                    to=admin_emails if admin_emails else None,
+                )
+            except Exception as email_err:
+                logger.warning(f"이메일 발송 실패(스킵): {email_err}")
         else:
             logger.info("[7/7] 알림 발송 건너뜀 (PDF 생성 실패)")
 
@@ -339,7 +358,12 @@ def run_daily_job(
         except Exception as e:
             logger.warning(f"분석결과 시트 기록 실패(스킵): {e}")
 
-        update_report_execution(db=db, record_id=execution_id, status=ExecutionStatus.SUCCESS, slack_sent=slack_ok)
+        update_report_execution(
+            db=db, record_id=execution_id,
+            status=ExecutionStatus.SUCCESS,
+            slack_sent=slack_ok,
+            email_sent=email_ok,
+        )
         update_last_run(db, "daily_report")
         logger.info("========== 보고서 생성 작업 완료 ==========")
 

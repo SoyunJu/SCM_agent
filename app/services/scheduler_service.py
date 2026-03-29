@@ -150,6 +150,32 @@ class SchedulerService:
             raise RuntimeError(f"보고서 태스크 실행 실패: {e}")
 
 
+    # --- 크롤러 즉시 실행 ---
+    @staticmethod
+    def trigger_crawler() -> dict:
+        try:
+            from app.celery_app.celery import celery_app
+            task = celery_app.send_task("app.celery_app.tasks.run_crawler")
+            logger.info(f"크롤러 즉시 실행 요청: task_id={task.id}")
+            return {"task_id": task.id, "message": "크롤러 태스크가 시작되었습니다."}
+        except Exception as e:
+            logger.error(f"크롤러 즉시 실행 실패: {e}")
+            raise RuntimeError(f"크롤러 태스크 실행 실패: {e}")
+
+
+    # --- 데이터 정리 즉시 실행 ---
+    @staticmethod
+    def trigger_cleanup() -> dict:
+        try:
+            from app.celery_app.celery import celery_app
+            task = celery_app.send_task("app.celery_app.tasks.run_cleanup")
+            logger.info(f"데이터 정리 즉시 실행 요청: task_id={task.id}")
+            return {"task_id": task.id, "message": "데이터 정리 태스크가 시작되었습니다."}
+        except Exception as e:
+            logger.error(f"데이터 정리 즉시 실행 실패: {e}")
+            raise RuntimeError(f"데이터 정리 태스크 실행 실패: {e}")
+
+
     # --- Sheets→DB 동기화 설정 조회 ---
     @staticmethod
     def get_sync_config(db: Session) -> dict:

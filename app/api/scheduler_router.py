@@ -101,3 +101,23 @@ async def stop_sync_schedule(
         current_user: Annotated[TokenData, Depends(require_admin)],
 ):
     return SchedulerService.stop_sync()
+
+
+@router.post("/trigger-crawler")
+async def trigger_crawler(
+        current_user: Annotated[TokenData, Depends(require_admin)],
+):
+    try:
+        return SchedulerService.trigger_crawler()
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/trigger-cleanup")
+async def trigger_cleanup(
+        current_user: Annotated[TokenData, Depends(require_admin)],
+):
+    try:
+        return SchedulerService.trigger_cleanup()
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))

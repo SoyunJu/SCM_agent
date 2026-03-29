@@ -275,13 +275,14 @@ export default function ReportsPage() {
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
-                                <tr className="bg-gray-50 text-gray-500 text-xs">
-                                    <th className="px-6 py-3 text-left">ID</th>
-                                    <th className="px-6 py-3 text-left">실행일시</th>
-                                    <th className="px-6 py-3 text-left">유형</th>
-                                    <th className="px-6 py-3 text-left">상태</th>
-                                    <th className="px-6 py-3 text-left">Slack</th>
-                                    <th className="px-6 py-3 text-left">오류</th>
+                                <tr className="bg-gray-50 text-gray-500 text-xs text-left">
+                                    <th className="px-4 py-3 whitespace-nowrap">시간</th>
+                                    <th className="px-4 py-3 whitespace-nowrap">유형</th>
+                                    <th className="px-4 py-3 whitespace-nowrap">상태</th>
+                                    <th className="px-4 py-3 whitespace-nowrap">생성자</th>
+                                    <th className="px-4 py-3 text-center whitespace-nowrap">Slack</th>
+                                    <th className="px-4 py-3 text-center whitespace-nowrap">이메일</th>
+                                    <th className="px-4 py-3 whitespace-nowrap"></th>
                                 </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
@@ -302,8 +303,19 @@ export default function ReportsPage() {
                                                         {s?.icon}{s?.label}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-3 text-xs">{r.slack_sent ? "✅ 전송됨" : "—"}</td>
-                                                <td className="px-6 py-3 text-gray-400 text-xs max-w-xs truncate">{r.error_message ?? "—"}</td>
+                                                <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
+                                                    {(r as any).triggered_by ?? "-"}
+                                                </td>
+                                                <td className="px-4 py-3 text-center whitespace-nowrap">
+                                                    {(r as any).slack_sent
+                                                        ? <CheckCircle size={14} className="text-green-500 mx-auto" />
+                                                        : <span className="text-gray-300 text-xs">-</span>}
+                                                </td>
+                                                <td className="px-4 py-3 text-center whitespace-nowrap">
+                                                    {(r as any).email_sent
+                                                        ? <CheckCircle size={14} className="text-blue-500 mx-auto" />
+                                                        : <span className="text-gray-300 text-xs">-</span>}
+                                                </td>
                                             </tr>
                                         );
                                     })

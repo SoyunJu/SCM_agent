@@ -110,6 +110,16 @@ def notify_daily_report(
     if channel in ("email", "both"):
         try:
             from app.notifier.email_notifier import send_daily_report_email
+            from app.db.repository import list_admin_users  # 추가
+            admin_emails = []
+            if db:
+                try:
+                    from app.db.connection import SessionLocal
+                    _db = db if hasattr(db, "query") else SessionLocal()
+                    admins = list_admin_users(_db)
+                    admin_emails = [a.email for a in admins if a.email and a.is_active]
+                except Exception:
+                    pass
             send_daily_report_email(
                 report_date=report_date,
                 total_products=total_products,
@@ -117,6 +127,7 @@ def notify_daily_report(
                 sales_anomaly_count=sales_anomaly_count,
                 risk_level=risk_level,
                 pdf_path=pdf_path,
+                to=admin_emails if admin_emails else None,
             )
         except Exception as e:
             logger.error(f"이메일 일일 보고서 발송 실패: {e}")
@@ -141,7 +152,6 @@ def notify_anomaly_alert(
         try:
             from app.notifier.slack_notifier import send_message
 
-            # slack_user_id 관리자 멘션 구성
             admin_ids = _get_admin_slack_ids(db)
             mention_str = " ".join(f"<@{uid}>" for uid in admin_ids) + " " if admin_ids else ""
 
@@ -153,7 +163,6 @@ def notify_anomaly_alert(
 
     if channel in ("email", "both"):
         try:
-            from app.notifier.email_notifier import send_alert_email
-            send_alert_email(product_name, anomaly_type, severity, message)
+            from app.notifier.email_notifier import send_daily_report_email
         except Exception as e:
             logger.error(f"이메일 알림 발송 실패: {e}")

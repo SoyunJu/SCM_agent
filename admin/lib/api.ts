@@ -1,4 +1,3 @@
-
 import axios from "axios";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -126,6 +125,15 @@ export const updateSchedulerConfig = (data: {
 
 export const getSchedulerStatus = () =>
     apiClient.get("/scm/scheduler/status");
+
+export const triggerCrawler = () =>
+    apiClient.post("/scm/scheduler/trigger-crawler");
+
+export const triggerCleanup = () =>
+    apiClient.post("/scm/scheduler/trigger-cleanup");
+
+export const triggerSync = () =>
+    apiClient.post("/scm/scheduler/sync-trigger");
 
 // --- Sheets ---
 export const getSheetCategories = () =>
