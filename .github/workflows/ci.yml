@@ -50,7 +50,7 @@ jobs:
       - name: 린트 (ruff)
         run: |
           pip install ruff
-          ruff check app/ tests/ --select E,F,W --ignore E501,W503
+          ruff check app/ tests/ --select E,F,W --ignore E501
         continue-on-error: true   # 린트는 경고만, 실패 차단 안 함
 
       - name: 단위 테스트
