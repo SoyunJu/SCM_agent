@@ -1,3 +1,4 @@
+# tests/test_chat.py
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
@@ -5,14 +6,16 @@ from unittest.mock import patch, MagicMock
 
 @pytest.fixture
 def client():
-    with patch("app.main.check_db_connection", return_value=True), \
-            patch("app.main.init_db"), \
-            patch("app.main._seed_superadmin"), \
-            patch("app.main._warmup_sheets"):
-        from app.main import app
-        from app.db.connection import get_db
-        app.dependency_overrides[get_db] = lambda: MagicMock()
-        return TestClient(app, raise_server_exceptions=False)
+    from app.main import app
+    from app.db.connection import get_db
+    app.dependency_overrides[get_db] = lambda: MagicMock()
+
+    with patch("app.main._seed_superadmin"), \
+            patch("app.main._warmup_sheets"), \
+            patch("app.db.connection.check_db_connection", return_value=True), \
+            patch("app.db.connection.init_db"):
+        with TestClient(app, raise_server_exceptions=False) as c:
+            yield c
 
 
 @pytest.fixture

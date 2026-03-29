@@ -1,3 +1,4 @@
+# tests/test_auth.py
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
@@ -5,15 +6,17 @@ from unittest.mock import patch, MagicMock
 
 @pytest.fixture
 def client():
-    # lifespan 내 DB/Sheets 접근 전부 mock
-    with patch("app.main.check_db_connection", return_value=True), \
-            patch("app.main.init_db"), \
-            patch("app.main._seed_superadmin"), \
-            patch("app.main._warmup_sheets"):
-        from app.main import app
-        from app.db.connection import get_db
-        app.dependency_overrides[get_db] = lambda: MagicMock()
-        return TestClient(app, raise_server_exceptions=False)
+    from app.main import app
+    from app.db.connection import get_db
+    app.dependency_overrides[get_db] = lambda: MagicMock()
+
+    with patch("app.main._seed_superadmin"), \
+            patch("app.main._warmup_sheets"), \
+            patch("app.db.connection.check_db_connection", return_value=True), \
+            patch("app.db.connection.init_db"):
+        # TestClient를 context manager로 → lifespan이 patch 범위 안에서 실행
+        with TestClient(app, raise_server_exceptions=False) as c:
+            yield c
 
 
 def test_health_check(client):
