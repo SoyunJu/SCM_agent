@@ -2,28 +2,53 @@
 from langchain.tools import StructuredTool
 from langchain.pydantic_v1 import BaseModel, Field
 from loguru import logger
-from app.sheets.reader import read_product_master, read_sales, read_stock
-from app.analyzer.stock_analyzer import detect_low_stock, detect_over_stock
-from app.analyzer.sales_analyzer import get_top_sales, get_sales_trend, detect_sales_anomaly
 
 
 class SingleStrInput(BaseModel):
     input: str = Field(default="", description="입력값")
 
 
+# --- 재고 부족 조회 ---
 def _get_low_stock(input: str = "") -> str:
     try:
-        df_master = read_product_master()
-        df_stock  = read_stock()
-        df_sales  = read_sales()
-        results   = detect_low_stock(df_master, df_stock, df_sales)
+        from datetime import date, timedelta
+        from app.db.connection import SessionLocal
+        from app.db.models import Product, ProductStatus, StockLevel
+        from app.db.repository import get_daily_sales_range, get_setting
+        from app.analyzer.stock_analyzer import detect_low_stock
+        import pandas as pd
 
+        db = SessionLocal()
+        try:
+            products = db.query(Product).filter(Product.status == ProductStatus.ACTIVE).all()
+            stocks   = db.query(StockLevel).all()
+            sales    = get_daily_sales_range(db, start=date.today() - timedelta(days=30), end=date.today())
+
+            df_master = pd.DataFrame([
+                {"상품코드": p.code, "상품명": p.name, "카테고리": p.category or "", "안전재고기준": p.safety_stock}
+                for p in products
+            ]) if products else pd.DataFrame(columns=["상품코드", "상품명", "카테고리", "안전재고기준"])
+
+            df_stock = pd.DataFrame([
+                {"상품코드": s.product_code, "현재재고": s.current_stock,
+                 "입고예정일": str(s.restock_date) if s.restock_date else "", "입고예정수량": s.restock_qty or 0}
+                for s in stocks
+            ]) if stocks else pd.DataFrame(columns=["상품코드", "현재재고", "입고예정일", "입고예정수량"])
+
+            df_sales = pd.DataFrame([
+                {"날짜": str(s.date), "상품코드": s.product_code, "판매수량": s.qty, "매출액": s.revenue}
+                for s in sales
+            ]) if sales else pd.DataFrame(columns=["날짜", "상품코드", "판매수량", "매출액"])
+        finally:
+            db.close()
+
+        results = detect_low_stock(df_master, df_stock, df_sales)
         if not results:
             return "현재 재고 부족 상품이 없습니다."
 
-        lines = [f" 재고 부족 상품 {len(results)}건:"]
+        lines = [f"재고 부족 상품 {len(results)}건:"]
         for r in results:
-            days = r["days_until_stockout"]
+            days     = r["days_until_stockout"]
             days_str = f"{days}일 후 소진 예상" if days < 999 else "판매 없음"
             lines.append(
                 f"• [{r['severity'].upper()}] {r['product_name']} ({r['product_code']}) "
@@ -35,22 +60,48 @@ def _get_low_stock(input: str = "") -> str:
         return f"재고 조회 중 오류 발생: {e}"
 
 
+# --- 판매 상위 상품 조회 ---
 def _get_top_sales(input: str = "7") -> str:
     try:
-        days_int  = int(input.strip()) if input.strip().isdigit() else 7
-        df_master = read_product_master()
-        df_sales  = read_sales()
-        result    = get_top_sales(df_master, df_sales, days=days_int, top_n=5)
+        from datetime import date, timedelta
+        from app.db.connection import SessionLocal
+        from app.db.models import Product, DailySales
+        from sqlalchemy import func
+        import pandas as pd
 
-        if result.empty:
+        days_int = int(input.strip()) if input.strip().isdigit() else 7
+        cutoff   = date.today() - timedelta(days=days_int)
+
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(
+                    DailySales.product_code,
+                    func.sum(DailySales.qty).label("판매수량합계"),
+                    func.sum(DailySales.revenue).label("매출액합계"),
+                )
+                .filter(DailySales.date >= cutoff)
+                .group_by(DailySales.product_code)
+                .order_by(func.sum(DailySales.qty).desc())
+                .limit(5)
+                .all()
+            )
+            # 상품명 JOIN
+            codes    = [r.product_code for r in rows]
+            products = db.query(Product).filter(Product.code.in_(codes)).all()
+            name_map = {p.code: p.name for p in products}
+        finally:
+            db.close()
+
+        if not rows:
             return f"최근 {days_int}일 판매 데이터가 없습니다."
 
-        lines = [f"📈 최근 {days_int}일 판매 TOP {len(result)}:"]
-        for i, (_, row) in enumerate(result.iterrows(), 1):
+        lines = [f"📈 최근 {days_int}일 판매 TOP {len(rows)}:"]
+        for i, r in enumerate(rows, 1):
             lines.append(
-                f"{i}. {row['상품명']} ({row['상품코드']}) "
-                f"| 판매수량: {int(row['판매수량합계'])}개 "
-                f"| 매출: {int(row['매출액합계']):,}원"
+                f"{i}. {name_map.get(r.product_code, r.product_code)} ({r.product_code}) "
+                f"| 판매수량: {int(r.판매수량합계)}개 "
+                f"| 매출: {int(r.매출액합계):,}원"
             )
         return "\n".join(lines)
     except Exception as e:
@@ -58,31 +109,40 @@ def _get_top_sales(input: str = "7") -> str:
         return f"판매 조회 중 오류 발생: {e}"
 
 
+# --- 상품별 재고 조회 ---
 def _get_stock_by_product(input: str = "") -> str:
     try:
+        from app.db.connection import SessionLocal
+        from app.db.models import Product, StockLevel, ProductStatus
+
         product_name = input.strip()
         if not product_name:
             return "상품명 또는 상품코드를 입력해주세요."
 
-        df_master = read_product_master()
-        df_stock  = read_stock()
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(Product, StockLevel)
+                .outerjoin(StockLevel, Product.code == StockLevel.product_code)
+                .filter(Product.status == ProductStatus.ACTIVE)
+                .filter(
+                    Product.name.contains(product_name) |
+                    Product.code.contains(product_name)
+                )
+                .all()
+            )
+        finally:
+            db.close()
 
-        mask = (
-                df_master["상품명"].str.contains(product_name, case=False, na=False) |
-                df_master["상품코드"].str.contains(product_name, case=False, na=False)
-        )
-        matched = df_master[mask]
-
-        if matched.empty:
+        if not rows:
             return f"'{product_name}' 에 해당하는 상품을 찾을 수 없습니다."
 
-        df = matched.merge(df_stock, on="상품코드", how="left")
-        lines = [f" '{product_name}' 검색 결과 {len(df)}건:"]
-        for _, row in df.iterrows():
-            stock   = int(row.get("현재재고", 0)) if str(row.get("현재재고", "")) != "nan" else 0
-            restock = row.get("입고예정일", "-")
+        lines = [f"'{product_name}' 검색 결과 {len(rows)}건:"]
+        for prod, sl in rows:
+            stock   = sl.current_stock if sl else 0
+            restock = str(sl.restock_date) if sl and sl.restock_date else "-"
             lines.append(
-                f"• {row['상품명']} ({row['상품코드']}) "
+                f"• {prod.name} ({prod.code}) "
                 f"| 현재재고: {stock}개 | 입고예정: {restock}"
             )
         return "\n".join(lines)
@@ -91,8 +151,14 @@ def _get_stock_by_product(input: str = "") -> str:
         return f"상품 재고 조회 중 오류 발생: {e}"
 
 
+# --- 판매 트렌드 조회 ---
 def _get_sales_trend(input: str = "") -> str:
     try:
+        from datetime import date, timedelta
+        from app.db.connection import SessionLocal
+        from app.db.models import DailySales
+        from sqlalchemy import func
+
         parts        = input.strip().split()
         product_code = parts[0] if parts else ""
         days_int     = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 30
@@ -100,21 +166,36 @@ def _get_sales_trend(input: str = "") -> str:
         if not product_code:
             return "상품코드를 입력해주세요. 예: 'CR001 30'"
 
-        df_sales = read_sales()
-        trend    = get_sales_trend(df_sales, product_code, days=days_int)
+        cutoff = date.today() - timedelta(days=days_int)
 
-        if trend.empty:
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(
+                    DailySales.date,
+                    func.sum(DailySales.qty).label("판매수량"),
+                    func.sum(DailySales.revenue).label("매출액"),
+                )
+                .filter(DailySales.product_code == product_code, DailySales.date >= cutoff)
+                .group_by(DailySales.date)
+                .order_by(DailySales.date)
+                .all()
+            )
+        finally:
+            db.close()
+
+        if not rows:
             return f"{product_code} 상품의 최근 {days_int}일 판매 데이터가 없습니다."
 
         lines = [f"📊 {product_code} 최근 {days_int}일 판매 트렌드:"]
-        for _, row in trend.iterrows():
+        for r in rows:
             lines.append(
-                f"• {str(row['날짜'])[:10]} "
-                f"| 판매: {int(row['판매수량'])}개 "
-                f"| 매출: {int(row['매출액']):,}원"
+                f"• {str(r.date)} "
+                f"| 판매: {int(r.판매수량)}개 "
+                f"| 매출: {int(r.매출액):,}원"
             )
-        total_qty = int(trend["판매수량"].sum())
-        total_rev = int(trend["매출액"].sum())
+        total_qty = sum(int(r.판매수량) for r in rows)
+        total_rev = sum(int(r.매출액) for r in rows)
         lines.append(f"합계: 판매 {total_qty}개 | 매출 {total_rev:,}원")
         return "\n".join(lines)
     except Exception as e:
@@ -122,6 +203,7 @@ def _get_sales_trend(input: str = "") -> str:
         return f"판매 트렌드 조회 중 오류 발생: {e}"
 
 
+# --- 이상 징후 조회 ---
 def _get_anomalies(input: str = "unresolved") -> str:
     try:
         from app.db.connection import SessionLocal
@@ -131,7 +213,7 @@ def _get_anomalies(input: str = "unresolved") -> str:
         db = SessionLocal()
         try:
             is_resolved = False if status == "unresolved" else None
-            result = get_anomaly_logs(db, is_resolved=is_resolved, page=1, page_size=20)
+            result  = get_anomaly_logs(db, is_resolved=is_resolved, page=1, page_size=20)
             records = result["items"]
         finally:
             db.close()
@@ -165,6 +247,7 @@ def _get_anomalies(input: str = "unresolved") -> str:
         return f"이상 징후 조회 중 오류 발생: {e}"
 
 
+# --- 보고서 즉시 생성 ---
 def _generate_report(input: str = "") -> str:
     try:
         import threading
@@ -172,13 +255,14 @@ def _generate_report(input: str = "") -> str:
         thread = threading.Thread(target=run_daily_job, daemon=True)
         thread.start()
         logger.info("보고서 생성 트리거 (Tool)")
-        return "보고서 생성을 시작했습니다. 완료되면 Slack으로 전송됩니다."
+        return "보고서 생성을 시작했습니다. 완료되면 Slack으로 알림됩니다."
     except Exception as e:
         logger.error(f"generate_report Tool 오류: {e}")
         return f"보고서 생성 트리거 중 오류 발생: {e}"
 
 
-# ########### Tool List ##########################
+# ── Tool 등록 ──────────────────────────────────────────────────────────────
+
 get_low_stock = StructuredTool.from_function(
     func=_get_low_stock,
     name="get_low_stock",
