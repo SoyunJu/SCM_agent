@@ -143,13 +143,12 @@ class TestSheetsMaster:
         resp = client.get("/scm/sheets/master?search=P001")
         assert resp.status_code == 200
         data = resp.json()
-        # 검색 결과가 1건 이상 반환되면 OK (키 구조는 SheetService에 의존)
-        assert data.get("total", len(data.get("items", []))) >= 1
+        assert data["total"] >= 1
 
     def test_search_by_name(self, client, seed_products):
         resp = client.get("/scm/sheets/master?search=상품A")
         assert resp.status_code == 200
-        assert resp.json().get("total", len(resp.json().get("items", []))) >= 1
+        assert resp.json()["total"] >= 1
 
     def test_pagination(self, client, seed_products):
         resp = client.get("/scm/sheets/master?page=1&page_size=1")

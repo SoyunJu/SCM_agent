@@ -66,7 +66,6 @@ def app(engine, TestingSessionLocal):
     for p in patches:
         p.start()
 
-    # ★ 핵심: 앱 내부 DB 엔진을 테스트 엔진으로 교체
     import app.db.connection as db_conn
     db_conn.engine = engine
     db_conn.SessionLocal = TestingSessionLocal
@@ -77,6 +76,9 @@ def app(engine, TestingSessionLocal):
 
     admin_user = TokenData(username="test_admin", role="admin")
 
+    #    세션을 매번 새로 만들지 않고 같은 factory에서 생성
+    #   → StaticPool이므로 물리 커넥션은 동일, 단 세션 캐시는 독립
+    #   → seed_products에서 commit()하면 다른 세션에서도 읽힘
     def _get_test_db():
         session = TestingSessionLocal()
         try:
@@ -113,6 +115,7 @@ def seed_products(db_session):
     ]
     db_session.add_all(products)
     db_session.commit()
+    db_session.expunge_all()
     return products
 
 
@@ -126,6 +129,7 @@ def seed_stock(db_session, seed_products):
     ]
     db_session.add_all(stocks)
     db_session.commit()
+    db_session.expunge_all()
     return stocks
 
 
@@ -143,6 +147,7 @@ def seed_sales(db_session, seed_products):
                                 qty=10, revenue=100000.0, cost=60000.0))
     db_session.add_all(sales)
     db_session.commit()
+    db_session.expunge_all()
     return sales
 
 
@@ -169,6 +174,7 @@ def seed_anomalies(db_session, seed_products):
     ]
     db_session.add_all(anomalies)
     db_session.commit()
+    db_session.expunge_all()
     return anomalies
 
 
@@ -192,4 +198,5 @@ def seed_proposals(db_session, seed_products):
     ]
     db_session.add_all(proposals)
     db_session.commit()
+    db_session.expunge_all()
     return proposals
