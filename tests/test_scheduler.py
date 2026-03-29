@@ -15,8 +15,8 @@ def test_run_daily_job_success():
     """일일 작업 정상 완료 — 예외 없이 실행되면 통과"""
 
     with patch("app.scheduler.jobs._get_crawled_df") as mock_crawl, \
-            patch("app.sheets.writer.upsert_master_from_excel"), \
-            patch("app.sheets.writer.write_stock_upsert"), \
+            patch("app.scheduler.jobs.upsert_master_from_excel"), \
+            patch("app.scheduler.jobs.write_stock_upsert"), \
             patch("app.scheduler.jobs.os.path.exists", return_value=False), \
             patch("app.scheduler.jobs.read_product_master") as mock_master, \
             patch("app.scheduler.jobs.read_sales") as mock_sales, \
@@ -54,7 +54,7 @@ def test_run_daily_job_success():
         mock_sync.sync_all_from_sheets.return_value = None
 
         from app.scheduler.jobs import run_daily_job
-        run_daily_job()   # 예외 없이 완료되면 통과
+        run_daily_job()
 
 
 def test_run_daily_job_failure_handled():
@@ -72,9 +72,8 @@ def test_run_daily_job_failure_handled():
         mock_create.return_value = MagicMock(id=1)
 
         from app.scheduler.jobs import run_daily_job
-        run_daily_job()   # 예외가 밖으로 나오면 안 됨
+        run_daily_job()
 
-        # FAILURE 상태로 update_report_execution 호출됐는지 확인
         assert mock_update.called
         call_kwargs = mock_update.call_args.kwargs
         assert call_kwargs["status"].value.lower() == "failure"

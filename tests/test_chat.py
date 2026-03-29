@@ -1,7 +1,3 @@
-"""
-채팅 엔드포인트 단위 테스트
-- get_db MagicMock 오버라이드
-"""
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
@@ -9,11 +5,14 @@ from unittest.mock import patch, MagicMock
 
 @pytest.fixture
 def client():
-    from app.main import app
-    from app.db.connection import get_db
-
-    app.dependency_overrides[get_db] = lambda: MagicMock()
-    return TestClient(app, raise_server_exceptions=False)
+    with patch("app.main.check_db_connection", return_value=True), \
+            patch("app.main.init_db"), \
+            patch("app.main._seed_superadmin"), \
+            patch("app.main._warmup_sheets"):
+        from app.main import app
+        from app.db.connection import get_db
+        app.dependency_overrides[get_db] = lambda: MagicMock()
+        return TestClient(app, raise_server_exceptions=False)
 
 
 @pytest.fixture
@@ -23,7 +22,7 @@ def auth_token(client):
         "password": "admin1!",
     })
     if res.status_code != 200:
-        pytest.skip("로그인 실패 — 스킵")
+        pytest.skip("로그인 실패")
     return res.json()["access_token"]
 
 
@@ -71,7 +70,6 @@ def test_slack_webhook_normal_message(client):
 
 
 def test_chat_query_requires_auth(client):
-    """인증 없이 챗봇 질의 → 401 확인"""
     res = client.post("/scm/chat/query", json={
         "message": "재고 알려줘",
         "session_id": "test",
@@ -81,7 +79,6 @@ def test_chat_query_requires_auth(client):
 
 
 def test_chat_query_with_auth(client, auth_token):
-    """인증 후 챗봇 질의 정상 처리 확인"""
     with patch("app.api.chat_router.run_agent", return_value="재고 부족 상품 없음"):
         res = client.post(
             "/scm/chat/query",
