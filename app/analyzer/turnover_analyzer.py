@@ -9,11 +9,7 @@ def calc_inventory_turnover(
         df_stock: pd.DataFrame,
         days: int = 30,
 ) -> list[dict]:
-    """
-    재고 회전율 = 기간 판매량 / 현재재고
-    체류일수   = days / 회전율  (회전율 0 또는 재고 0이면 None)
-    등급: 체류일수 7이하=우수, 30이하=보통, 초과=주의, None=데이터없음
-    """
+
     logger.info(f"[회전율] 분석 시작 — 기간: {days}일, 대상: {len(df_master)}개 상품")
 
     if df_master.empty:
@@ -73,21 +69,32 @@ def calc_inventory_turnover(
     grade_choices = ["데이터없음", "우수", "보통"]
     df["등급"] = np.select(grade_conditions, grade_choices, default="주의")
 
-    # 결과
-    results = []
-    for row in df.itertuples(index=False):
-        stay = None if pd.isna(row.체류일수) else float(row.체류일수)
-        results.append({
-            "상품코드":   str(row.상품코드),
-            "상품명":    str(getattr(row, "상품명", "")),
-            "카테고리":  str(getattr(row, "카테고리", "")),
-            "기간판매량": int(row.기간판매량),
-            "현재재고":  int(row.현재재고),
-            "회전율":    float(row.회전율),
-            "체류일수":  stay,
-            "등급":      str(row.등급),
-        })
+    # NaN -> None
+    df["체류일수_out"] = df["체류일수"].where(df["체류일수"].notna(), other=None)
 
-    results.sort(key=lambda x: (x["체류일수"] is None, x["체류일수"] or 0))
+    # 정렬
+    df["_sort_key"] = df["체류일수"].fillna(float("inf"))
+    df = df.sort_values("_sort_key").drop(columns=["_sort_key"])
+
+    # 컬럼명 정리 및 dict 변환
+    out = df[["상품코드", "상품명", "카테고리", "기간판매량", "현재재고", "회전율", "체류일수_out", "등급"]].copy()
+    out = out.rename(columns={"체류일수_out": "체류일수"})
+
+    # 타입 정규화
+    out["상품코드"]   = out["상품코드"].astype(str)
+    out["상품명"]     = out["상품명"].fillna("").astype(str)
+    out["카테고리"]   = out["카테고리"].fillna("").astype(str)
+    out["기간판매량"] = out["기간판매량"].astype(int)
+    out["현재재고"]   = out["현재재고"].astype(int)
+    out["회전율"]     = out["회전율"].astype(float).round(2)
+    out["등급"]       = out["등급"].astype(str)
+
+    results = out.to_dict(orient="records")
+
+    # NaN → None
+    for r in results:
+        if r["체류일수"] != r["체류일수"]:  # NaN 체크
+            r["체류일수"] = None
+
     logger.info(f"[회전율] 분석 완료 — {len(results)}건")
     return results

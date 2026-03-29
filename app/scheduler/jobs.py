@@ -1,33 +1,32 @@
-import os
 import asyncio
-import pandas as pd
+import os
 from datetime import date
+
+import pandas as pd
 from loguru import logger
 
-from app.sheets.reader import read_product_master, read_sales, read_stock
-from app.crawler.scraper import crawl_all_sites
+from app.ai.insight_generator import generate_daily_insight
+from app.ai.sentiment_analyzer import batch_analyze_sales_anomalies
+from app.analyzer.sales_analyzer import run_sales_analysis
+from app.analyzer.stock_analyzer import run_stock_analysis
+from app.cache.redis_client import cache_get, cache_delete
 from app.crawler.excel_parser import parse_stock_sheet, parse_sales_sheet
 from app.crawler.order_scraper import generate_orders
-from app.sheets.writer import (
-    write_product_master, write_stock_upsert, write_sales, write_stock,
-    upsert_master_from_excel, upsert_stock_from_excel, write_orders,
-    write_analysis_result,
-)
-from app.analyzer.stock_analyzer import run_stock_analysis
-from app.analyzer.sales_analyzer import run_sales_analysis
-from app.ai.sentiment_analyzer import batch_analyze_sales_anomalies
-from app.ai.insight_generator import generate_daily_insight
-from app.report.pdf_generator import generate_daily_pdf
-from app.notifier.notifier import notify_daily_report, notify_anomaly_alert
-
+from app.crawler.scraper import crawl_all_sites
 from app.db.connection import SessionLocal
+from app.db.models import ReportType, ExecutionStatus, AnomalyType, Severity
 from app.db.repository import (
     create_report_execution, update_report_execution,
     create_anomaly_log, update_last_run, get_setting,
 )
-from app.db.models import ReportType, ExecutionStatus, AnomalyType, Severity
-from app.cache.redis_client import cache_get, cache_delete
 from app.db.sync import bulk_upsert_products, bulk_upsert_daily_sales, bulk_upsert_stock_levels
+from app.notifier.notifier import notify_daily_report, notify_anomaly_alert
+from app.report.pdf_generator import generate_daily_pdf
+from app.sheets.reader import read_product_master, read_sales, read_stock
+from app.sheets.writer import (
+    write_stock_upsert, write_sales, upsert_master_from_excel, upsert_stock_from_excel, write_orders,
+    write_analysis_result,
+)
 
 EXCEL_PATH = os.getenv("EXCEL_PATH", "./sample_data.xlsx")
 
@@ -301,10 +300,10 @@ def run_daily_job(
             create_anomaly_log(
                 db=db,
                 product_code=item["product_code"],
-                product_name=item["product_name"],
+                product_name=item.get("product_name", ""),
                 category=item.get("category"),
-                anomaly_type=AnomalyType(item["anomaly_type"]),
-                severity=Severity(item["severity"]),
+                anomaly_type=AnomalyType(str(item["anomaly_type"]).upper()),
+                severity=Severity(str(item["severity"]).upper()),
                 current_stock=item.get("current_stock"),
                 daily_avg_sales=item.get("daily_avg_sales"),
                 days_until_stockout=item.get("days_until_stockout"),

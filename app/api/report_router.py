@@ -180,12 +180,17 @@ async def get_anomalies(
         "total_pages": result["total_pages"],
         "items": [
             {
-                "id": r.id, "detected_at": str(r.detected_at),
-                "product_code": r.product_code, "product_name": r.product_name,
-                "category": r.category,
-                "anomaly_type": r.anomaly_type, "current_stock": r.current_stock,
-                "daily_avg_sales": r.daily_avg_sales, "days_until_stockout": r.days_until_stockout,
-                "severity": r.severity, "is_resolved": r.is_resolved,
+                "id":                r.id,
+                "detected_at":       str(r.detected_at),
+                "product_code":      r.product_code,
+                "product_name":      r.product_name,
+                "category":          r.category,
+                "anomaly_type":      r.anomaly_type.value  if hasattr(r.anomaly_type,  "value") else str(r.anomaly_type),
+                "current_stock":     r.current_stock,
+                "daily_avg_sales":   r.daily_avg_sales,
+                "days_until_stockout": r.days_until_stockout,
+                "severity":          r.severity.value if hasattr(r.severity, "value") else str(r.severity),
+                "is_resolved":       r.is_resolved,
             }
             for r in result["items"]
         ],

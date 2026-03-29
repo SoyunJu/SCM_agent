@@ -1,7 +1,10 @@
 from celery import Celery
 from app.config import settings
 
-celery_app = Celery("scm_agent")
+celery_app = Celery(
+    "scm_agent",
+    include=["app.celery_app.tasks"],   # tasks.py 자동 등록
+)
 
 celery_app.conf.update(
     broker_url              = settings.rabbitmq_url,
@@ -12,14 +15,13 @@ celery_app.conf.update(
     task_serializer         = "json",
     result_serializer       = "json",
     accept_content          = ["json"],
-    task_acks_late          = True,           # 워커 재시작 시 메시지 유실 방지
-    worker_prefetch_multiplier = 1,           # 공정 분배
+    task_acks_late          = True,
+    worker_prefetch_multiplier = 1,
     timezone                = "Asia/Seoul",
     enable_utc              = False,
     task_track_started      = True,
-    result_expires          = 86400,          # 24시간 후 결과 삭제
+    result_expires          = 86400,
 )
 
-# schedule 별도 임포트
 from app.celery_app.beat_schedule import BEAT_SCHEDULE  # noqa: E402
 celery_app.conf.beat_schedule = BEAT_SCHEDULE
