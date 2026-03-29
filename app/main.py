@@ -82,13 +82,6 @@ def _seed_superadmin() -> None:
 
 def _warmup_sheets() -> None:
     try:
-        # Redis 캐시 워밍업
-        from app.sheets.reader import read_product_master, read_sales, read_stock
-        read_product_master()
-        read_sales()
-        read_stock()
-        logger.info("시트 캐시 워밍업 완료")
-
         from app.services.sync_service import SyncService
         from app.db.connection import SessionLocal
         db = SessionLocal()
@@ -98,7 +91,7 @@ def _warmup_sheets() -> None:
         finally:
             db.close()
     except Exception as e:
-        logger.warning(f"캐시 워밍업/DB 동기화 실패(무시): {e}")
+        logger.warning(f"DB 초기 동기화 실패(무시): {e}")
 
 
 

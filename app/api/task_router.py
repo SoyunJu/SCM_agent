@@ -47,3 +47,34 @@ async def get_task_status(
     except Exception as exc:
         logger.error(f"[태스크상태] 조회 실패 task_id={task_id}: {exc}")
         raise HTTPException(status_code=500, detail=f"태스크 상태 조회 중 오류 발생: {exc}")
+
+
+@router.get("/tasks/{task_id}/status")
+async def get_task_status(
+        task_id: str,
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+):
+    try:
+        from app.celery_app.celery import celery_app
+        result = celery_app.AsyncResult(task_id)
+
+        state = result.state
+        try:
+            info = result.info
+        except Exception:
+            info = None
+
+        if state == "SUCCESS":
+            return {"state": "SUCCESS", "result": info}
+        elif state == "FAILURE":
+            error_msg = str(info) if info else "태스크 실패"
+            return {"state": "FAILURE", "error": error_msg}
+        elif state == "STARTED":
+            status_msg = info.get("status", "처리 중") if isinstance(info, dict) else "처리 중"
+            return {"state": "STARTED", "status": status_msg}
+        else:
+            return {"state": state}
+
+    except Exception as e:
+        logger.error(f"[태스크상태] 조회 실패 task_id={task_id}: {e}")
+        return {"state": "UNKNOWN", "error": str(e)}

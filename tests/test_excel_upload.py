@@ -1,4 +1,3 @@
-# ── tests/test_excel_upload.py ────────────────────────────────────────────────
 """
 Excel 업로드 엔드포인트 단위 테스트
 - 파일 검증, 파싱 성공/실패, DB 업서트 연동 검증
@@ -14,16 +13,15 @@ from fastapi.testclient import TestClient
 
 def _make_app():
     from app.api.sheets_router import router
-    from app.api.auth_router import get_current_user, require_admin
+    from app.api.auth_router import get_current_user, require_admin, TokenData
     from app.db.connection import get_db
-    from app.api.auth_router import TokenData
 
     app = FastAPI()
     app.include_router(router)
     mock_user = TokenData(username="admin", role="admin")
-    app.dependency_overrides[require_admin] = lambda: mock_user
+    app.dependency_overrides[require_admin]    = lambda: mock_user
     app.dependency_overrides[get_current_user] = lambda: mock_user
-    app.dependency_overrides[get_db] = lambda: MagicMock()
+    app.dependency_overrides[get_db]           = lambda: MagicMock()
     return app
 
 
@@ -33,8 +31,8 @@ def client():
 
 
 def _make_xlsx_bytes() -> bytes:
-    """테스트용 최소 xlsx 파일 생성 (openpyxl 사용)"""
-    import openpyxl, io
+    """상품마스터 테스트용 xlsx"""
+    import openpyxl
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "상품마스터"
@@ -47,7 +45,8 @@ def _make_xlsx_bytes() -> bytes:
 
 
 def _make_sales_xlsx_bytes() -> bytes:
-    import openpyxl, io
+    """일별판매 테스트용 xlsx"""
+    import openpyxl
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "일별판매"
@@ -64,8 +63,11 @@ def test_upload_master_success(client):
     """상품마스터 업로드 성공 — inserted/updated 반환"""
     xlsx_bytes = _make_xlsx_bytes()
 
-    with patch("app.db.sync.bulk_upsert_products",
-               return_value={"inserted": 2, "updated": 0, "skipped": 0}):
+    with patch("app.api.sheets_router.upsert_master_from_excel", return_value=None), \
+            patch("app.api.sheets_router.SyncService") as mock_sync:
+
+        mock_sync.sync_master.return_value = {"inserted": 2, "updated": 0, "skipped": 0}
+
         resp = client.post(
             "/scm/sheets/upload-excel",
             files={"file": ("test.xlsx", xlsx_bytes,
@@ -84,18 +86,43 @@ def test_upload_sales_success(client):
     """일별판매 업로드 성공"""
     xlsx_bytes = _make_sales_xlsx_bytes()
 
-    with patch("app.crawler.excel_parser.parse_sales_sheet") as mock_parse, \
-            patch("app.db.sync.bulk_upsert_daily_sales",
-                  return_value={"inserted": 1, "updated": 0, "skipped": 0}):
-        import pandas as pd
-        mock_parse.return_value = pd.DataFrame({
-            "날짜": ["2026-03-01"], "상품코드": ["P001"], "판매수량": [5], "매출액": [50000.0]
-        })
+    with patch("app.api.sheets_router.write_sales", return_value=None), \
+            patch("app.api.sheets_router.SyncService") as mock_sync:
+
+        mock_sync.sync_sales.return_value = {"inserted": 1, "updated": 0, "skipped": 0}
+
         resp = client.post(
             "/scm/sheets/upload-excel",
             files={"file": ("sales.xlsx", xlsx_bytes,
                             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
             data={"sheet_type": "sales"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+    assert resp.json()["total"] == 1
+
+
+def test_upload_stock_success(client):
+    """재고현황 업로드 성공"""
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["상품코드", "현재재고", "입고예정일", "입고예정수량"])
+    ws.append(["P001", 50, "2026-04-01", 100])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    with patch("app.api.sheets_router.upsert_stock_from_excel", return_value=None), \
+            patch("app.api.sheets_router.SyncService") as mock_sync:
+
+        mock_sync.sync_stock.return_value = {"inserted": 1, "updated": 0, "skipped": 0}
+
+        resp = client.post(
+            "/scm/sheets/upload-excel",
+            files={"file": ("stock.xlsx", buf.getvalue(),
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            data={"sheet_type": "stock"},
         )
 
     assert resp.status_code == 200
@@ -130,11 +157,11 @@ def test_upload_invalid_sheet_type(client):
 
 def test_upload_missing_required_columns(client):
     """필수 컬럼 누락 xlsx → 422"""
-    import openpyxl, io
+    import openpyxl
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "상품마스터"
-    ws.append(["잘못된컬럼"])   # 상품코드/상품명 없음
+    ws.append(["잘못된컬럼"])
     ws.append(["P001"])
     buf = io.BytesIO()
     wb.save(buf)

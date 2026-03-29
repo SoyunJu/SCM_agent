@@ -13,7 +13,7 @@ const QUICK_QUERIES = [
 ];
 
 const WELCOME_MSG: ChatMessage = {
-    role: "assistant",
+    role: "ASSISTANT",
     content: "안녕하세요! SCM Agent입니다. 재고·판매 데이터에 대해 질문해주세요.",
     timestamp: new Date(),
 };
@@ -41,7 +41,7 @@ export default function ChatPage() {
             try {
                 const res = await getChatHistory(id, 7);
                 const historical: ChatMessage[] = res.data.items.map((item: any) => ({
-                    role: item.role as "user" | "assistant",
+                    role: item.role as "USER" | "ASSISTANT",
                     content: item.message,
                     timestamp: new Date(item.created_at),
                 }));
@@ -64,7 +64,7 @@ export default function ChatPage() {
     const sendMessage = async (text: string) => {
         if (!text.trim() || loading || !sessionId.current) return;
 
-        const userMsg: ChatMessage = { role: "user", content: text, timestamp: new Date() };
+        const userMsg: ChatMessage = { role: "USER", content: text, timestamp: new Date() };
         setMessages((prev) => [...prev, userMsg]);
         setInput("");
         setLoading(true);
@@ -73,12 +73,12 @@ export default function ChatPage() {
             const res = await chatQuery(text, sessionId.current);
             setMessages((prev) => [
                 ...prev,
-                { role: "assistant", content: res.data.reply, timestamp: new Date() },
+                { role: "ASSISTANT", content: res.data.reply, timestamp: new Date() },
             ]);
         } catch {
             setMessages((prev) => [
                 ...prev,
-                { role: "assistant", content: "오류가 발생했습니다. 다시 시도해주세요.", timestamp: new Date() },
+                { role: "ASSISTANT", content: "오류가 발생했습니다. 다시 시도해주세요.", timestamp: new Date() },
             ]);
         } finally {
             setLoading(false);
@@ -118,17 +118,17 @@ export default function ChatPage() {
                 ) : (
                     <>
                         {messages.map((msg, i) => (
-                            <div key={i} className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+                            <div key={i} className={`flex gap-3 ${msg.role === "USER" ? "flex-row-reverse" : ""}`}>
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                    msg.role === "assistant" ? "bg-blue-100" : "bg-gray-100"
+                                    msg.role === "ASSISTANT" ? "bg-blue-100" : "bg-gray-100"
                                 }`}>
-                                    {msg.role === "assistant"
+                                    {msg.role === "ASSISTANT"
                                         ? <Bot size={14} className="text-blue-600" />
                                         : <User size={14} className="text-gray-500" />
                                     }
                                 </div>
                                 <div className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap ${
-                                    msg.role === "assistant"
+                                    msg.role === "ASSISTANT"
                                         ? "bg-gray-50 text-gray-700"
                                         : "bg-blue-600 text-white"
                                 }`}>

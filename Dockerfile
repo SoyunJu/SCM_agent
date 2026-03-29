@@ -1,15 +1,17 @@
 FROM python:3.11-slim
 
-WORKDIR /app
-
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     pkg-config \
     libcairo2-dev \
+    fonts-nanum \
+    fontconfig \
+    && fc-cache -fv \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install uv
+WORKDIR /app
 
+RUN pip install uv
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system --index-strategy unsafe-best-match -r requirements.txt

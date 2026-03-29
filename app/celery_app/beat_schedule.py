@@ -17,9 +17,9 @@ BEAT_SCHEDULE = {
         "task":     "app.celery_app.tasks.run_cleanup",
         "schedule": crontab(hour=2, minute=0),
     },
-    # Sheets→DB 1분 주기 동기화
+    # Sheets→DB 15분 주기 동기화
     "sync-sheets-to-db": {
         "task":     "app.celery_app.tasks.run_sync_sheets_to_db",
-        "schedule": timedelta(minutes=1),
+        "schedule": timedelta(minutes=15),
     },
 }

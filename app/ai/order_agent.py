@@ -90,8 +90,8 @@ def generate_order_proposals(
         proposed_qty = max(1, math.ceil(safety_stock + lead_demand - current_stock))
 
         reason = (
-            f"현재재고 {current_stock}개, 일평균판매 {avg_sales:.1f}개, "
-            f"리드타임 {LEAD_TIME_DAYS}일 기준 발주 수량 산출"
+            f"재고 {current_stock}개 / 일평균 {avg_sales:.1f}개 / "
+            f"리드타임 {LEAD_TIME_DAYS}일"
         )
 
     unit_price = unit_price_map.get(code, 0.0)

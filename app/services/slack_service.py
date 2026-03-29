@@ -93,6 +93,46 @@ class SlackService:
         except Exception as e:
             logger.warning(f"[SlackService] 수정 업데이트 실패(스킵): {e}")
 
+
+    # --- 자동 승인 결과 통보 (버튼 없음) ---
+    @staticmethod
+    def send_auto_approved(proposal) -> None:
+        from app.notifier.slack_notifier import get_slack_client
+        from app.config import settings
+
+        client  = get_slack_client()
+        channel = settings.slack_channel_id
+
+        try:
+            resp = client.chat_postMessage(
+                channel=channel,
+                text=f"✅ [자동승인] 발주제안 #{proposal.id} | {proposal.product_code} {proposal.proposed_qty:,}개",
+                blocks=[
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": (
+                                f"✅ *자동 승인 완료* — 발주제안 #{proposal.id}\n"
+                                f"상품: *{proposal.product_name}* (`{proposal.product_code}`)\n"
+                                f"수량: *{proposal.proposed_qty:,}개* | "
+                                f"단가: {proposal.unit_price:,.0f}원\n"
+                                f"사유: {proposal.reason or '-'}"
+                            ),
+                        },
+                    },
+                    {"type": "context",
+                     "elements": [{"type": "mrkdwn",
+                                   "text": "SCM Agent 자동 승인 (AUTO_ORDER_APPROVAL=true)"}]},
+                ],
+            )
+            proposal.slack_ts      = resp["ts"]
+            proposal.slack_channel = channel
+            logger.info(f"[SlackService] 자동승인 #{proposal.id} 전송 완료")
+        except Exception as e:
+            logger.warning(f"[SlackService] 자동승인 #{proposal.id} 전송 실패(스킵): {e}")
+
+
     # ── 블록 빌더 ─────────────────────────────────────────────────────
 
     @staticmethod

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {useEffect, useState} from "react";
 import {
     getAbcStats,
     getDemandForecast,
@@ -10,16 +10,22 @@ import {
     getTaskStatus,
     getTurnoverStats,
 } from "@/lib/api";
-import { getDefaultPageSize } from "@/lib/utils";
-import { SalesStatItem } from "@/lib/types";
+import {getDefaultPageSize} from "@/lib/utils";
+import {SalesStatItem} from "@/lib/types";
 import {
-    Bar, BarChart, CartesianGrid, Cell, Legend,
-    Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+    Bar,
+    BarChart,
+    CartesianGrid,
+    Cell,
+    Legend,
+    Pie,
+    PieChart,
+    ResponsiveContainer,
+    Tooltip,
+    XAxis,
+    YAxis,
 } from "recharts";
-import {
-    ChevronLeft, ChevronRight, Loader2, Minus,
-    Search, TrendingDown, TrendingUp, X,
-} from "lucide-react";
+import {ChevronLeft, ChevronRight, Loader2, Minus, Search, TrendingDown, TrendingUp, X,} from "lucide-react";
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 const PERIOD_LABELS = { daily: "일별", weekly: "주별", monthly: "월별" };
@@ -178,6 +184,10 @@ export default function StatsPage() {
 
     // 재고 통계
     const [stockStats, setStockStats] = useState<any>(null);
+    const [stockPage, setStockPage] = useState(1);
+    const [stockPageSize, setStockPageSize] = useState(getDefaultPageSize);
+    const [stockTotalPages, setStockTotalPages] = useState(1);
+    const [stockTotal, setStockTotal] = useState(0);
     const [stockCategory, setStockCategory] = useState("");
 
     // ABC 분석
@@ -220,8 +230,10 @@ export default function StatsPage() {
                     setSalesData(res.data.items ?? []);
 
                 } else if (tab === "stock") {
-                    const res = await getStockStats(stockCategory || undefined);
+                    const res = await getStockStats(stockCategory || undefined, stockPage, stockPageSize);
                     setStockStats(res.data);
+                    setStockTotal(res.data.total ?? 0);
+                    setStockTotalPages(res.data.total_pages ?? 1);
 
                 } else if (tab === "abc") {
                     const res  = await getAbcStats(90, abcCategory || undefined);
@@ -257,7 +269,8 @@ export default function StatsPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         tab, period,
-        salesCategory, stockCategory, abcCategory,
+        salesCategory, stockCategory, stockPage, stockPageSize,
+        abcCategory,
         demandPage, demandPageSize, demandCategory,
         turnoverPage, turnoverPageSize, turnoverCategory,
     ]);
@@ -297,14 +310,13 @@ export default function StatsPage() {
         : turnoverData;
 
     // ── 재고현황 매입/할인 데이터 (stock_items에 cost 포함 시) ────────────────
-    const stockItemsWithDiscount = (stockStats?.stock_items ?? []).map((item: any) => {
-        const { unitSell, unitCost, marginRate, discountRate } = calcDiscount(
-            item.revenue ?? 0,
-            item.cost    ?? 0,
-            item.qty     ?? item.현재재고 ?? 1,
-        );
-        return { ...item, unitSell, unitCost, marginRate, discountRate };
-    });
+    const stockItemsWithDiscount = (stockStats?.stock_items ?? []).map((item: any) => ({
+        ...item,
+        unitSell: item.unit_sell ?? 0,
+        unitCost: item.unit_cost ?? 0,
+        marginRate: item.margin_rate ?? 0,
+        discountRate: item.discount_max ?? 0,
+    }));
 
     // ── 렌더 ─────────────────────────────────────────────────────────────────
     return (
@@ -399,6 +411,15 @@ export default function StatsPage() {
                         >
                             <option value="">전체 카테고리</option>
                             {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        <select
+                            value={stockPageSize}
+                            onChange={(e) => { setStockPageSize(Number(e.target.value)); setStockPage(1); }}
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none ml-auto"
+                        >
+                            {[10, 25, 50, 100].map((n) => (
+                                <option key={n} value={n}>{n}건</option>
+                            ))}
                         </select>
                     </div>
 
@@ -527,6 +548,13 @@ export default function StatsPage() {
                                                 );
                                             })}
                                             </tbody>
+                                            {stockTotalPages > 1 && (
+                                                <Pagination
+                                                    current={stockPage}
+                                                    total={stockTotalPages}
+                                                    onPageChange={(p) => { setStockPage(p); }}
+                                                />
+                                            )}
                                         </table>
                                     </div>
                                     <div className="px-5 py-3 bg-gray-50 border-t border-gray-100">

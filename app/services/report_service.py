@@ -22,7 +22,7 @@ class ReportService:
             severity_filter: list[str] | None = None,
             category_filter: list[str] | None = None,
     ) -> dict:
-        record = create_report_execution(db, report_type=ReportType.MANUAL)
+        record = create_report_execution(db, report_type=ReportType.MANUAL, triggered_by=username)
 
         async def _run():
             from app.db.connection import SessionLocal
@@ -85,13 +85,38 @@ class ReportService:
             "items": [
                 {
                     "id":           r.id,
-                    "executed_at":  str(r.executed_at),
-                    "report_type":  r.report_type,
-                    "status":       r.status,
+                    "executed_at":  str(r.executed_at)[:19] if r.executed_at else "",
+                    "report_type":  r.report_type.value if hasattr(r.report_type, "value") else str(r.report_type),
+                    "status":       r.status.value if hasattr(r.status, "value") else str(r.status),
                     "slack_sent":   r.slack_sent,
-                    "error_message":r.error_message,
-                    "created_at":   str(r.created_at),
+                    "email_sent":   getattr(r, "email_sent", False),
+                    "triggered_by": getattr(r, "triggered_by", None),
+                    "created_at":   str(r.created_at)[:19] if r.created_at else "",
                 }
                 for r in records
             ],
         }
+
+
+    @staticmethod
+    def list_pdfs() -> dict:
+        from pathlib import Path
+        reports_dir = Path("reports")
+        if not reports_dir.exists():
+            return {"items": [], "total": 0}
+        try:
+            files = sorted(reports_dir.glob("*.pdf"), key=lambda f: f.stat().st_mtime, reverse=True)
+            return {
+                "items": [
+                    {
+                        "filename":   f.name,
+                        "size_kb":    round(f.stat().st_size / 1024, 1),
+                        "created_at": datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M"),
+                    }
+                    for f in files
+                ],
+                "total": len(files),
+            }
+        except Exception as e:
+            logger.warning(f"PDF 목록 조회 실패: {e}")
+            return {"items": [], "total": 0}

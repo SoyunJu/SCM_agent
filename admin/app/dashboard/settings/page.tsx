@@ -59,6 +59,10 @@ const SELECT_OPTIONS: Record<string, { value: string; label: string }[]> = {
         { value: "50",  label: "50건 (기본)" },
         { value: "100", label: "100건" },
     ],
+    AUTO_ORDER_APPROVAL: [
+        { value: "false", label: "승인 대기 (관리자 확인 후 처리)" },
+        { value: "true",  label: "자동 승인 (즉시 처리, 주의)" },
+    ],
 };
 
 // ── 그룹 정의 (title + tab 귀속) ───────────────────────────────────────────────
@@ -66,7 +70,7 @@ const GROUPS: { title: string; tab: string; keys: string[] }[] = [
     { title: "안전재고 설정",    tab: "재고",      keys: ["SAFETY_STOCK_DAYS", "SAFETY_STOCK_DEFAULT"] },
     { title: "이상 징후 임계값", tab: "이상징후",  keys: ["LOW_STOCK_CRITICAL_DAYS", "LOW_STOCK_HIGH_DAYS", "LOW_STOCK_MEDIUM_DAYS", "SALES_SURGE_THRESHOLD", "SALES_DROP_THRESHOLD"] },
     { title: "알림 설정",        tab: "알림·발주", keys: ["ALERT_CHANNEL", "ALERT_MIN_SEVERITY"] },
-    { title: "발주 설정",        tab: "알림·발주", keys: ["AUTO_ORDER_MIN_SEVERITY"] },
+    { title: "발주 설정", tab: "알림·발주", keys: ["AUTO_ORDER_MIN_SEVERITY", "AUTO_ORDER_APPROVAL"] },
     { title: "시스템 설정",      tab: "시스템",    keys: ["CHAT_HISTORY_DAYS", "SHEETS_CACHE_TTL", "EXCEL_MAX_SIZE_MB", "DEFAULT_PAGE_SIZE"] },
     { title: "데이터 보존 설정", tab: "데이터",    keys: ["DATA_RETENTION_SALES_DAYS", "DATA_RETENTION_STOCK_DAYS", "DATA_RETENTION_ANALYSIS_HOURS"] },
 ];

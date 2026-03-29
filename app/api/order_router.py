@@ -25,10 +25,11 @@ def list_proposals(
         status: Optional[str] = Query(None),
         limit:  int = Query(50, ge=1, le=200),
         offset: int = Query(0, ge=0),
+        days:   Optional[int] = Query(None, ge=1, description="최근 N일 이내 생성된 발주만 조회"),
         db: Session = Depends(get_db),
         _: TokenData = Depends(get_current_user),
 ):
-    return OrderService.list_proposals(db, status, limit, offset)
+    return OrderService.list_proposals(db, status, limit, offset, days)   # ← days 전달
 
 
 @router.get("/proposals/threshold")
@@ -69,6 +70,15 @@ def reject_proposal(
         current_user: TokenData = Depends(require_admin),
 ):
     return OrderService.reject(db, proposal_id, current_user.username)
+
+
+@router.patch("/proposals/{proposal_id}/reset")
+def reset_proposal(
+        proposal_id: int,
+        db: Session = Depends(get_db),
+        current_user: TokenData = Depends(require_admin),
+):
+    return OrderService.reset(db, proposal_id, current_user.username)
 
 
 @router.put("/proposals/{proposal_id}")

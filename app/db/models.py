@@ -84,8 +84,11 @@ class ReportExecution(Base):
     status        = Column(UpperCaseEnum(ExecutionStatus), nullable=False, default=ExecutionStatus.IN_PROGRESS)
     docs_url      = Column(String(500), nullable=True)
     slack_sent    = Column(Boolean, nullable=False, default=False)
+    email_sent    = Column(Boolean, nullable=False, default=False)
+    triggered_by  = Column(String(100), nullable=True)
     error_message = Column(Text, nullable=True)
     created_at    = Column(DateTime, nullable=False, default=func.now())
+
 
 class AnomalyLog(Base):
     __tablename__ = "anomaly_logs"

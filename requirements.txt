@@ -7,7 +7,7 @@ uvicorn[standard]==0.29.0
 # DB
 sqlalchemy==2.0.30
 pymysql==1.1.0
-alembic==1.13.1
+# alembic==1.13.1  # 마이그레이션 이력 관리 필요 시 활성화
 
 # Redis
 redis==5.0.3
@@ -15,15 +15,14 @@ redis==5.0.3
 # Google API
 gspread==6.1.2
 google-auth==2.29.0
-google-api-python-client==2.128.0
 
 # Data
 pandas==2.2.2
 openpyxl==3.1.2
 
 # Crawler
-requests==2.31.0
 beautifulsoup4==4.12.3
+aiohttp==3.9.5
 
 # AI / LLM
 openai==1.52.0
@@ -36,9 +35,6 @@ langchain-community==0.2.1
 transformers==4.41.1
 torch==2.3.0+cpu
 
-# Scheduler
-apscheduler==3.10.4
-
 # Slack
 slack-sdk==3.27.2
 
@@ -49,7 +45,6 @@ xhtml2pdf==0.2.11
 # Auth
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-bcrypt==3.2.0
 
 # Logging
 loguru==0.7.2
@@ -60,5 +55,4 @@ pydantic-settings==2.3.0
 
 # Celery
 celery[amqp]==5.3.6
-aiohttp==3.9.5
 kombu==5.3.4

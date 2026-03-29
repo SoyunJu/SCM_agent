@@ -46,6 +46,7 @@ export default function SheetsPage() {
     const topRef                  = useRef<HTMLDivElement>(null);
     const [search, setSearch]     = useState("");
     const [category, setCategory] = useState("");
+    const [statusFilter, setStatusFilter] = useState("");
     const [categories, setCategories] = useState<string[]>([]);
     const [downloading, setDownloading] = useState(false);
 
@@ -64,17 +65,22 @@ export default function SheetsPage() {
     const [uploadMsg, setUploadMsg]         = useState("");
     const fileInputRef                      = useRef<HTMLInputElement>(null);
 
-    const queryKey = ["sheets", tab, page, pageSize, days, search, category];
+    const queryKey = ["sheets", tab, page, pageSize, days, search, category, statusFilter];
 
     const fetchFn = useCallback(async (): Promise<SheetsResponse> => {
         if (tab === "상품마스터") {
-            return getSheetsMaster(page, pageSize, search || undefined, category || undefined).then(r => r.data);
+            return getSheetsMaster(
+                page, pageSize,
+                search || undefined,
+                category || undefined,
+                statusFilter || undefined,
+            ).then(r => r.data);
         } else if (tab === "일별판매") {
             return getSheetsSales(days, page, pageSize, category || undefined, search || undefined).then(r => r.data);
         } else {
             return getSheetsStock(page, pageSize, category || undefined, search || undefined).then(r => r.data);
         }
-    }, [tab, page, pageSize, days, search, category]);
+    }, [tab, page, pageSize, days, search, category, statusFilter]);
 
     const { data: queryData, isLoading: loading, refetch: fetchData } = useQuery<SheetsResponse>({
         queryKey,
@@ -232,7 +238,7 @@ export default function SheetsPage() {
                 {(isReadonly ? READONLY_TABS : ALL_TABS).map((t) => (
                     <button
                         key={t}
-                        onClick={() => { setTab(t); setPage(1); setSearch(""); setCategory(""); }}
+                        onClick={() => { setTab(t); setPage(1); setSearch(""); setCategory(""); setStatusFilter(""); }}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
                             tab === t ? "bg-blue-600 text-white" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
                         }`}
@@ -276,6 +282,18 @@ export default function SheetsPage() {
                     >
                         <option value="">전체 카테고리</option>
                         {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                )}
+                {isMasterTab && (
+                    <select
+                        value={statusFilter}
+                        onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+                        className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
+                    >
+                        <option value="">전체 상태</option>
+                        <option value="active">활성</option>
+                        <option value="inactive">비활성</option>
+                        <option value="sample">샘플</option>
                     </select>
                 )}
                 <button
