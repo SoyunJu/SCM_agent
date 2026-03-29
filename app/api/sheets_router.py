@@ -155,23 +155,26 @@ async def get_stock_stats(
 @router.get("/stats/abc")
 async def get_abc_stats(
         current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),
         days: int = 90, category: str | None = None,
 ):
     try:
-        return SheetService.get_abc_stats(days, category)
+        return SheetService.get_abc_stats(db, days, category)
     except Exception as e:
         logger.error(f"ABC분석 조회 실패: {e}")
         return {"items": []}
 
 
+
 @router.get("/stats/demand")
 async def get_demand_forecast(
         current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),
         forecast_days: int = 14, page: int = 1,
         page_size: int = 50, category: str | None = None,
 ):
     try:
-        return SheetService.get_demand_stats(forecast_days, page, page_size, category)
+        return SheetService.get_demand_stats(db, forecast_days, page, page_size, category)
     except Exception as e:
         logger.error(f"수요예측 조회 실패: {e}")
         return {"total": 0, "items": []}
@@ -180,11 +183,12 @@ async def get_demand_forecast(
 @router.get("/stats/turnover")
 async def get_turnover_stats(
         current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),
         days: int = 30, page: int = 1,
         page_size: int = 50, category: str | None = None,
 ):
     try:
-        return SheetService.get_turnover_stats(days, page, page_size, category)
+        return SheetService.get_turnover_stats(db, days, page, page_size, category)
     except Exception as e:
         logger.error(f"회전율 조회 실패: {e}")
         return {"total": 0, "items": []}

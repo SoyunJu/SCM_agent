@@ -10,10 +10,59 @@ import pandas as pd
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.sheets.reader import read_product_master, read_sales, read_stock
-from app.sheets.writer import write_order_proposals
+
+# 내부 헬퍼
+def _build_dataframes(db) -> tuple:
+    from datetime import date, timedelta
+    import pandas as pd
+    from app.db.models import Product, ProductStatus
+    from app.db.repository import get_daily_sales_range, get_all_stock_levels
+
+    products = (
+        db.query(Product)
+        .filter(Product.status == ProductStatus.ACTIVE)
+        .all()
+    )
+    df_master = pd.DataFrame([
+        {
+            "상품코드": p.code,
+            "상품명": p.name,
+            "카테고리": p.category or "",
+            "안전재고기준": p.safety_stock,
+        }
+        for p in products
+    ]) if products else pd.DataFrame(columns=["상품코드", "상품명", "카테고리", "안전재고기준"])
+
+    sales_rows = get_daily_sales_range(
+        db,
+        start=date.today() - timedelta(days=90),
+        end=date.today(),
+    )
+    df_sales = pd.DataFrame([
+        {
+            "날짜": str(s.date),
+            "상품코드": s.product_code,
+            "판매수량": s.qty,
+            "매출액": s.revenue,
+        }
+        for s in sales_rows
+    ]) if sales_rows else pd.DataFrame(columns=["날짜", "상품코드", "판매수량", "매출액"])
+
+    stocks = get_all_stock_levels(db)
+    df_stock = pd.DataFrame([
+        {
+            "상품코드": s.product_code,
+            "현재재고": s.current_stock,
+            "입고예정일": str(s.restock_date) if s.restock_date else "",
+            "입고예정수량": s.restock_qty or 0,
+        }
+        for s in stocks
+    ]) if stocks else pd.DataFrame(columns=["상품코드", "현재재고", "입고예정일", "입고예정수량"])
+
+    return df_master, df_sales, df_stock
 
 
+# 클래스
 class SheetService:
 
     # ── Helper ──────────────────────────────────────
@@ -30,6 +79,7 @@ class SheetService:
             "items": df.iloc[start:start + page_size].to_dict(orient="records"),
         }
 
+
     @staticmethod
     def _to_csv(df: pd.DataFrame, filename: str) -> StreamingResponse:
         buf = io.BytesIO()
@@ -42,6 +92,7 @@ class SheetService:
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
+
     @staticmethod
     def _search_filter(df: pd.DataFrame, search: str | None) -> pd.DataFrame:
         if not search:
@@ -51,12 +102,16 @@ class SheetService:
             mask = mask | df["상품명"].astype(str).str.contains(search, case=False, na=False)
         return df[mask]
 
+
     @staticmethod
     def _category_filter(df: pd.DataFrame, category: str | None) -> pd.DataFrame:
         if not category:
             return df
         col = next((c for c in ["카테고리", "category"] if c in df.columns), None)
         return df[df[col] == category] if col else df
+
+
+
 
     # ── 조회 ──────────────────────────────────────
 
@@ -173,7 +228,6 @@ class SheetService:
             page: int, page_size: int,
             search: str | None, category: str | None, download: bool,
     ):
-        """DB stock_levels + products JOIN 기반 조회"""
         from app.db.models import StockLevel, Product
 
         query = (
@@ -394,64 +448,81 @@ class SheetService:
 
 
     @staticmethod
-    def get_abc_stats(days: int, category: str | None = None) -> dict:
+    def get_abc_stats(
+            db: Session,
+            days: int, category: str | None = None,
+    ) -> dict:
         from app.analyzer.abc_analyzer import run_abc_analysis
-        df_master = read_product_master()
-        df_sales  = read_sales()
-        if category:
+
+        df_master, df_sales, _ = _build_dataframes(db)
+        if category and not df_master.empty:
             df_master = SheetService._category_filter(df_master, category)
+
         return {"days": days, "items": run_abc_analysis(df_master, df_sales, days=days)}
+
 
     @staticmethod
     def get_demand_stats(
-            forecast_days: int, page: int, page_size: int, category: str | None,
+            db: Session,
+            forecast_days: int, page: int, page_size: int,
+            category: str | None,
     ) -> dict:
-        from app.analyzer.demand_forecaster import run_demand_forecast_all   # ← 수정
-        df_master = read_product_master()
-        df_sales  = read_sales()
-        df_stock  = read_stock()
+        from app.analyzer.demand_forecaster import run_demand_forecast_all
+
+        df_master, df_sales, df_stock = _build_dataframes(db)
+
         items = run_demand_forecast_all(df_master, df_sales, df_stock, forecast_days=forecast_days)
-        categories = sorted({i.get("category","") for i in items if i.get("category")})
+        categories = sorted({i.get("category", "") for i in items if i.get("category")})
+
         if category:
             items = [i for i in items if i.get("category") == category]
+
         total       = len(items)
         total_pages = max(1, (total + page_size - 1) // page_size)
         start       = (page - 1) * page_size
         return {
             "forecast_days": forecast_days,
             "categories":    categories,
-            "total": total, "page": page,
-            "page_size": page_size, "total_pages": total_pages,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
             "items": items[start:start + page_size],
         }
 
+
     @staticmethod
     def get_turnover_stats(
-            days: int, page: int, page_size: int, category: str | None,
+            db: Session,
+            days: int, page: int, page_size: int,
+            category: str | None,
     ) -> dict:
         from app.analyzer.turnover_analyzer import calc_inventory_turnover
-        df_master = read_product_master()
-        df_sales  = read_sales()
-        df_stock  = read_stock()
+
+        df_master, df_sales, df_stock = _build_dataframes(db)
+
         items = calc_inventory_turnover(df_master, df_sales, df_stock, days=days)
-        categories = sorted({i.get("카테고리","") for i in items if i.get("카테고리")})
+        categories = sorted({i.get("카테고리", "") for i in items if i.get("카테고리")})
+
         if category:
             items = [i for i in items if i.get("카테고리") == category]
+
         total       = len(items)
         total_pages = max(1, (total + page_size - 1) // page_size)
         start       = (page - 1) * page_size
         return {
-            "days": days,
-            "categories":    categories,
-            "total": total, "page": page,
-            "page_size": page_size, "total_pages": total_pages,
-            "items": items[start:start + page_size],
+            "days":        days,
+            "categories":  categories,
+            "total":       total,
+            "page":        page,
+            "page_size":   page_size,
+            "total_pages": total_pages,
+            "items":       items[start:start + page_size],
         }
 
 
     @staticmethod
     def update_product(db: Session, code: str, body_dict: dict) -> dict:
-        """상품 정보 수정 (name/category/safety_stock/status)"""
         from app.db.models import ProductStatus
         from app.db.repository import get_product_by_code
 
