@@ -1,6 +1,3 @@
-"""
-스케줄러 jobs.py 단위 테스트
-"""
 import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
@@ -12,20 +9,17 @@ def _empty_df(*cols):
 
 
 def test_run_daily_job_success():
-    """일일 작업 정상 완료 — 예외 없이 실행되면 통과"""
-
     with patch("app.scheduler.jobs._get_crawled_df") as mock_crawl, \
-            patch("app.scheduler.jobs.upsert_master_from_excel",
-                  create=True), \
-            patch("app.scheduler.jobs.write_stock_upsert",
-                  create=True), \
+            patch("app.scheduler.jobs.upsert_master_from_excel",  create=True), \
+            patch("app.scheduler.jobs.write_stock_upsert",        create=True), \
             patch("app.scheduler.jobs.os.path.exists", return_value=False), \
-            patch("app.scheduler.jobs.read_product_master") as mock_master, \
-            patch("app.scheduler.jobs.read_sales") as mock_sales, \
-            patch("app.scheduler.jobs.read_stock") as mock_stock, \
-            patch("app.scheduler.jobs.run_stock_analysis", return_value=[]), \
-            patch("app.scheduler.jobs.run_sales_analysis", return_value=[]), \
-            patch("app.scheduler.jobs.batch_analyze_sales_anomalies", return_value=[]), \
+            patch("app.scheduler.jobs.read_product_master",       create=True) as mock_master, \
+            patch("app.scheduler.jobs.read_sales",                create=True) as mock_sales, \
+            patch("app.scheduler.jobs.read_stock",                create=True) as mock_stock, \
+            patch("app.scheduler.jobs.SyncService") as mock_sync, \
+            patch("app.scheduler.jobs.run_stock_analysis",        return_value=[]), \
+            patch("app.scheduler.jobs.run_sales_analysis",        return_value=[]), \
+            patch("app.scheduler.jobs.batch_analyze_sales_anomalies", create=True, return_value=[]), \
             patch("app.scheduler.jobs.generate_daily_insight", return_value={
                 "overall_summary": "테스트 요약",
                 "key_issues": [],
@@ -33,8 +27,8 @@ def test_run_daily_job_success():
                 "risk_level": "low",
             }), \
             patch("app.scheduler.jobs.generate_daily_pdf") as mock_pdf, \
-            patch("app.scheduler.jobs.notify_daily_report", return_value=True), \
-            patch("app.scheduler.jobs.notify_anomaly_alert"), \
+            patch("app.scheduler.jobs.notify_daily_report",  return_value=True), \
+            patch("app.scheduler.jobs.notify_anomaly_alert", create=True), \
             patch("app.scheduler.jobs.SessionLocal") as mock_session, \
             patch("app.scheduler.jobs.create_report_execution") as mock_create, \
             patch("app.scheduler.jobs.update_report_execution"), \
@@ -59,8 +53,6 @@ def test_run_daily_job_success():
 
 
 def test_run_daily_job_failure_handled():
-    """_get_crawled_df 실패 시 FAILURE 상태로 기록되고 예외 미전파"""
-
     with patch("app.scheduler.jobs._get_crawled_df",
                side_effect=Exception("크롤링 실패")), \
             patch("app.scheduler.jobs.SessionLocal") as mock_session, \
