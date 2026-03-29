@@ -1,6 +1,6 @@
 """
 통합 테스트 공통 Fixture
-- SQLite in-memory DB 사용 (MariaDB 불필요)
+- SQLite in-memory DB (단일 커넥션 공유 방식)
 - AI / Slack / Redis / Celery 전부 Mock 처리
 - FastAPI TestClient 기반
 """
@@ -9,67 +9,88 @@ from __future__ import annotations
 import pytest
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
-# ── DB 설정 (SQLite in-memory) ────────────────────────────────────────────────
+
+# ── DB 설정: 단일 커넥션 공유 (테이블이 세션에 보이도록) ─────────────────────
 TEST_DB_URL = "sqlite:///:memory:"
 
 
 @pytest.fixture(scope="session")
 def engine():
+    """세션 전체에서 단일 커넥션 공유 — in-memory DB 테이블 유실 방지"""
     _engine = create_engine(
         TEST_DB_URL,
         connect_args={"check_same_thread": False},
     )
+    # in-memory SQLite는 커넥션마다 별도 DB → 강제로 동일 커넥션 재사용
+    _conn = _engine.connect()
+
+    @event.listens_for(_engine, "connect")
+    def connect(dbapi_conn, connection_record):
+        connection_record.dbapi_conn = _conn.connection.dbapi_connection
+
     from app.db.models import Base
-    Base.metadata.create_all(bind=_engine)
+    Base.metadata.create_all(bind=_conn)
+
     yield _engine
+
+    _conn.close()
     _engine.dispose()
 
 
+@pytest.fixture(scope="session")
+def TestingSessionLocal(engine):
+    return sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+
+# ── 함수 단위 DB 세션: 트랜잭션 롤백 대신 데이터 직접 삭제 ───────────────────
 @pytest.fixture(scope="function")
-def db_session(engine):
-    """각 테스트마다 독립적인 DB 세션 + 트랜잭션 롤백"""
-    connection  = engine.connect()
-    transaction = connection.begin()
-    Session     = sessionmaker(bind=connection)
-    session     = Session()
+def db_session(TestingSessionLocal):
+    """각 테스트마다 독립 세션. 종료 후 모든 테이블 truncate."""
+    session = TestingSessionLocal()
     yield session
+    session.rollback()
+    # 전체 테이블 초기화 (롤백 대신 delete — SQLite 호환)
+    from app.db.models import (
+        Product, DailySales, StockLevel, AnomalyLog,
+        OrderProposal, ReportExecution, AnalysisCache,
+        AdminUser, SystemSettings, ChatHistory, ScheduleConfig,
+    )
+    for model in [
+        AnomalyLog, OrderProposal, ReportExecution, AnalysisCache,
+        DailySales, StockLevel, ChatHistory, ScheduleConfig,
+        Product, AdminUser, SystemSettings,
+    ]:
+        try:
+            session.query(model).delete()
+            session.commit()
+        except Exception:
+            session.rollback()
     session.close()
-    transaction.rollback()
-    connection.close()
 
 
-# ── 인증 토큰 헬퍼 ────────────────────────────────────────────────────────────
+# ── 인증 헬퍼 ─────────────────────────────────────────────────────────────────
 @pytest.fixture(scope="session")
 def admin_token_data():
     from app.api.auth_router import TokenData
     return TokenData(username="test_admin", role="admin")
 
 
-@pytest.fixture(scope="session")
-def readonly_token_data():
-    from app.api.auth_router import TokenData
-    return TokenData(username="test_readonly", role="readonly")
-
-
 # ── FastAPI 앱 + TestClient ───────────────────────────────────────────────────
 @pytest.fixture(scope="session")
-def app(engine):
+def app(engine, TestingSessionLocal):
     """외부 의존성을 전부 mock 처리한 FastAPI 앱"""
-    # 외부 서비스 mock (import 전에 패치)
-    mock_patches = [
-        patch("app.sheets.reader.read_product_master", return_value=MagicMock()),
-        patch("app.sheets.reader.read_sales",          return_value=MagicMock()),
-        patch("app.sheets.reader.read_stock",          return_value=MagicMock()),
+    patches = [
         patch("app.cache.redis_client.cache_get",      return_value=None),
         patch("app.cache.redis_client.cache_set",      return_value=None),
         patch("app.cache.redis_client.cache_delete",   return_value=None),
         patch("app.notifier.slack_notifier.get_slack_client", return_value=MagicMock()),
-        patch("app.celery_app.celery.celery_app.send_task",   return_value=MagicMock(id="mock-task-id")),
+        patch("app.celery_app.celery.celery_app.send_task",
+              return_value=MagicMock(id="mock-task-id")),
     ]
-    for p in mock_patches:
+    for p in patches:
         p.start()
 
     from app.main import app as _app
@@ -78,22 +99,20 @@ def app(engine):
 
     admin_user = TokenData(username="test_admin", role="admin")
 
-    Session = sessionmaker(bind=engine)
-
     def _get_test_db():
-        session = Session()
+        session = TestingSessionLocal()
         try:
             yield session
         finally:
             session.close()
 
-    _app.dependency_overrides[get_db]          = _get_test_db
-    _app.dependency_overrides[get_current_user] = lambda: admin_user
-    _app.dependency_overrides[require_admin]    = lambda: admin_user
+    _app.dependency_overrides[get_db]           = _get_test_db
+    _app.dependency_overrides[get_current_user]  = lambda: admin_user
+    _app.dependency_overrides[require_admin]     = lambda: admin_user
 
     yield _app
 
-    for p in mock_patches:
+    for p in patches:
         p.stop()
 
 
@@ -102,15 +121,17 @@ def client(app):
     return TestClient(app, raise_server_exceptions=False)
 
 
-# ── DB 시드 데이터 ────────────────────────────────────────────────────────────
+# ── 시드 데이터 ───────────────────────────────────────────────────────────────
 @pytest.fixture(scope="function")
 def seed_products(db_session):
-    """테스트용 상품 데이터 삽입"""
     from app.db.models import Product, ProductStatus
     products = [
-        Product(code="P001", name="상품A", category="카테고리1", safety_stock=10, status=ProductStatus.ACTIVE),
-        Product(code="P002", name="상품B", category="카테고리1", safety_stock=5,  status=ProductStatus.ACTIVE),
-        Product(code="P003", name="상품C", category="카테고리2", safety_stock=20, status=ProductStatus.INACTIVE),
+        Product(code="P001", name="상품A", category="카테고리1",
+                safety_stock=10, status=ProductStatus.ACTIVE),
+        Product(code="P002", name="상품B", category="카테고리1",
+                safety_stock=5,  status=ProductStatus.ACTIVE),
+        Product(code="P003", name="상품C", category="카테고리2",
+                safety_stock=20, status=ProductStatus.INACTIVE),
     ]
     db_session.add_all(products)
     db_session.commit()
@@ -119,7 +140,6 @@ def seed_products(db_session):
 
 @pytest.fixture(scope="function")
 def seed_stock(db_session, seed_products):
-    """테스트용 재고 데이터 삽입"""
     from app.db.models import StockLevel
     stocks = [
         StockLevel(product_code="P001", current_stock=3,   restock_qty=50),
@@ -133,15 +153,16 @@ def seed_stock(db_session, seed_products):
 
 @pytest.fixture(scope="function")
 def seed_sales(db_session, seed_products):
-    """테스트용 판매 데이터 삽입"""
     from app.db.models import DailySales
     from datetime import date, timedelta
     today = date.today()
     sales = []
     for i in range(7):
         d = today - timedelta(days=i)
-        sales.append(DailySales(date=d, product_code="P001", qty=5,  revenue=50000.0, cost=30000.0))
-        sales.append(DailySales(date=d, product_code="P002", qty=10, revenue=100000.0, cost=60000.0))
+        sales.append(DailySales(date=d, product_code="P001",
+                                qty=5,  revenue=50000.0, cost=30000.0))
+        sales.append(DailySales(date=d, product_code="P002",
+                                qty=10, revenue=100000.0, cost=60000.0))
     db_session.add_all(sales)
     db_session.commit()
     return sales
@@ -149,7 +170,6 @@ def seed_sales(db_session, seed_products):
 
 @pytest.fixture(scope="function")
 def seed_anomalies(db_session, seed_products):
-    """테스트용 이상징후 데이터 삽입"""
     from app.db.models import AnomalyLog, AnomalyType, Severity
     anomalies = [
         AnomalyLog(
@@ -176,7 +196,6 @@ def seed_anomalies(db_session, seed_products):
 
 @pytest.fixture(scope="function")
 def seed_proposals(db_session, seed_products):
-    """테스트용 발주 제안 데이터 삽입"""
     from app.db.models import OrderProposal, ProposalStatus
     proposals = [
         OrderProposal(
