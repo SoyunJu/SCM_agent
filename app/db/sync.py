@@ -141,6 +141,49 @@ def bulk_upsert_stock_levels(db: Session, records: list[dict]) -> dict:
 
 
 
+def bulk_upsert_products(db: Session, records: list[dict]) -> dict:
+    """상품마스터 DataFrame → products 테이블 upsert."""
+    if not records:
+        return {"inserted": 0, "updated": 0, "skipped": 0}
+
+    sql = text("""
+               INSERT INTO products
+                   (code, name, category, safety_stock, status, source, updated_at)
+               VALUES
+                   (:code, :name, :category, :safety_stock, :status, :source, NOW())
+                   ON DUPLICATE KEY UPDATE
+                                        name         = VALUES(name),
+                                        category     = VALUES(category),
+                                        safety_stock = VALUES(safety_stock),
+                                        source       = VALUES(source),
+                                        updated_at   = NOW()
+               """)
+
+    total = 0
+    for batch in _batched(records, _BATCH):
+        params = [
+            {
+                "code":         r["code"],
+                "name":         r.get("name", ""),
+                "category":     r.get("category"),
+                "safety_stock": int(r.get("safety_stock", 0)),
+                "status":       r.get("status", "active"),
+                "source":       r.get("source", "sheets"),
+            }
+            for r in batch
+            if r.get("code")
+        ]
+        if not params:
+            continue
+        db.execute(sql, params)
+        db.commit()
+        total += len(params)
+
+    logger.info(f"[sync] products upsert: total={total}")
+    return {"inserted": total, "updated": 0, "skipped": len(records) - total}
+
+
+
 # 헬퍼
 def make_params_hash(params: dict) -> str:
     serialized = json.dumps(params, sort_keys=True, default=str)

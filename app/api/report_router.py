@@ -1,32 +1,26 @@
+from __future__ import annotations
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Body
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-import asyncio
 from pathlib import Path
-from datetime import datetime, timedelta
-import os
-
-from app.api.auth_router import get_current_user, TokenData
-from app.db.connection import get_db
-from app.db.models import ReportExecution
-from app.db.repository import (
-    get_report_executions, get_report_execution_by_id,
-    get_anomaly_logs, resolve_anomaly,
-    create_report_execution, update_report_execution,
-)
-from app.db.models import ExecutionStatus, ReportType
-from app.scheduler.jobs import run_daily_job
 from loguru import logger
 from sqlalchemy.orm import Session
+
+from app.api.auth_router import get_current_user, require_admin, TokenData
+from app.db.connection import get_db
+from app.services.report_service  import ReportService
+from app.services.anomaly_service import AnomalyService
 
 router = APIRouter(prefix="/scm/report", tags=["report"])
 
 
 class ReportRequest(BaseModel):
-    severity_filter: list[str] | None = None   # ["critical", "high"]
-    category_filter: list[str] | None = None   # ["Fiction", "Music"]
+    severity_filter: list[str] | None = None
+    category_filter: list[str] | None = None
 
+
+# --- 보고서 ---
 
 @router.post("/run")
 async def trigger_report(
@@ -34,30 +28,9 @@ async def trigger_report(
         current_user: Annotated[TokenData, Depends(get_current_user)] = None,
         db: Session = Depends(get_db),
 ):
-    record = create_report_execution(db, report_type=ReportType.MANUAL)
-
-    async def _run():
-        from app.db.connection import SessionLocal
-        job_db = SessionLocal()
-        try:
-            await asyncio.to_thread(
-                run_daily_job,
-                record.id,
-                req.severity_filter,
-                req.category_filter,
-            )
-        except Exception as e:
-            update_report_execution(job_db, record.id, ExecutionStatus.FAILURE, error_message=str(e))
-        finally:
-            job_db.close()
-
-    asyncio.create_task(_run())
-    logger.info(f"보고서 수동 트리거: user={current_user.username}, id={record.id}, filters={req}")
-    return {
-        "status": "triggered",
-        "execution_id": record.id,
-        "message": "보고서 생성이 시작되었습니다.",
-    }
+    return ReportService.trigger(
+        db, current_user.username, req.severity_filter, req.category_filter
+    )
 
 
 @router.get("/status/{execution_id}")
@@ -66,68 +39,17 @@ async def get_report_status(
         current_user: Annotated[TokenData, Depends(get_current_user)],
         db: Session = Depends(get_db),
 ):
-    record = db.query(ReportExecution).filter(ReportExecution.id == execution_id).first()
-    if not record:
-        raise HTTPException(status_code=404, detail="실행 이력을 찾을 수 없습니다.")
+    return ReportService.get_status(db, execution_id)
 
-    # in_progress 상태가 10분 이상 지속되면 자동 실패 처리
-    effective_status = record.status
-    if record.status == ExecutionStatus.IN_PROGRESS and record.created_at:
-        elapsed = (datetime.utcnow() - record.created_at).total_seconds()
-        if elapsed > 600:
-            update_report_execution(
-                db=db,
-                record_id=record.id,
-                status=ExecutionStatus.FAILURE,
-                error_message="실행 시간 초과 (10분)",
-            )
-            effective_status = ExecutionStatus.FAILURE
-            logger.warning(f"execution_id={execution_id} 시간 초과로 FAILURE 처리")
-
-    return {
-        "id": record.id,
-        "status": effective_status,
-        "error_message": record.error_message,
-        "docs_url": record.docs_url,
-    }
 
 @router.get("/history")
 async def get_history(
         current_user: Annotated[TokenData, Depends(get_current_user)],
-        limit: int = 5,
-        offset: int = 0,
-        period: str | None = None,
-        status: str | None = None,
+        limit:  int = 5, offset: int = 0,
+        period: str | None = None, status: str | None = None,
         db: Session = Depends(get_db),
 ):
-    records = get_report_executions(db, limit=500)
-
-    if period:
-        now = datetime.now()
-        cutoff_map = {"daily": timedelta(days=1), "weekly": timedelta(weeks=1), "monthly": timedelta(days=30)}
-        cutoff = now - cutoff_map.get(period, timedelta(days=1))
-        records = [r for r in records if r.created_at and r.created_at >= cutoff]
-
-    if status and status != "all":
-        records = [r for r in records if r.status.value == status]
-
-    total = len(records)
-    records = records[offset: offset + limit]
-
-    return {
-        "total":  total,
-        "offset": offset,
-        "limit":  limit,
-        "items": [
-            {
-                "id": r.id, "executed_at": str(r.executed_at),
-                "report_type": r.report_type, "status": r.status,
-                "slack_sent": r.slack_sent, "error_message": r.error_message,
-                "created_at": str(r.created_at),
-            }
-            for r in records
-        ],
-    }
+    return ReportService.get_history(db, limit, offset, period, status)
 
 
 @router.delete("/history/{record_id}")
@@ -136,77 +58,14 @@ async def delete_report_history(
         current_user: Annotated[TokenData, Depends(get_current_user)],
         db: Session = Depends(get_db),
 ):
-    record = db.query(ReportExecution).filter(ReportExecution.id == record_id).first()
-    if not record:
-        raise HTTPException(status_code=404, detail="이력을 찾을 수 없습니다.")
-    db.delete(record)
-    db.commit()
-    return {"deleted": True, "id": record_id}
+    return ReportService.delete_history(db, record_id)
 
 
-@router.delete("/pdf/{filename}")
-async def delete_pdf(
-        filename: str,
-        current_user: Annotated[TokenData, Depends(get_current_user)],
-):
-    if ".." in filename or "/" in filename or "\\" in filename:
-        raise HTTPException(status_code=400, detail="잘못된 파일명입니다.")
-    pdf_path = Path("reports") / filename
-    if not pdf_path.exists():
-        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
-    os.remove(pdf_path)
-    return {"deleted": True, "filename": filename}
+# --- PDF ---
 
-
-@router.get("/anomalies")
-async def get_anomalies(
-        current_user: Annotated[TokenData, Depends(get_current_user)],
-        is_resolved: bool | None = None,
-        anomaly_type: str | None = None,
-        severity: str | None = None,
-        page: int = 1,
-        page_size: int = 50,
-        db: Session = Depends(get_db),
-):
-    result = get_anomaly_logs(
-        db, is_resolved=is_resolved,
-        anomaly_type=anomaly_type, severity=severity,
-        page=page, page_size=page_size,
-    )
-    return {
-        "total": result["total"],
-        "page": result["page"],
-        "page_size": result["page_size"],
-        "total_pages": result["total_pages"],
-        "items": [
-            {
-                "id":                r.id,
-                "detected_at":       str(r.detected_at),
-                "product_code":      r.product_code,
-                "product_name":      r.product_name,
-                "category":          r.category,
-                "anomaly_type":      r.anomaly_type.value  if hasattr(r.anomaly_type,  "value") else str(r.anomaly_type),
-                "current_stock":     r.current_stock,
-                "daily_avg_sales":   r.daily_avg_sales,
-                "days_until_stockout": r.days_until_stockout,
-                "severity":          r.severity.value if hasattr(r.severity, "value") else str(r.severity),
-                "is_resolved":       r.is_resolved,
-            }
-            for r in result["items"]
-        ],
-    }
-
-
-@router.patch("/anomalies/{anomaly_id}/resolve")
-async def resolve_anomaly_endpoint(
-        anomaly_id: int,
-        current_user: Annotated[TokenData, Depends(get_current_user)],
-        db: Session = Depends(get_db),
-):
-    record = resolve_anomaly(db, anomaly_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="이상 징후를 찾을 수 없습니다.")
-    return {"id": record.id, "is_resolved": record.is_resolved}
+@router.get("/pdf-list")
+async def list_pdfs(current_user: Annotated[TokenData, Depends(get_current_user)]):
+    return ReportService.list_pdfs()
 
 
 @router.get("/pdf/{filename}")
@@ -214,21 +73,43 @@ async def download_pdf(
         filename: str,
         current_user: Annotated[TokenData, Depends(get_current_user)],
 ):
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(400, "잘못된 파일명입니다.")
     pdf_path = Path("reports") / filename
     if not pdf_path.exists():
-        raise HTTPException(status_code=404, detail="PDF 파일을 찾을 수 없습니다.")
+        raise HTTPException(404, "PDF 파일을 찾을 수 없습니다.")
     return FileResponse(path=str(pdf_path), media_type="application/pdf", filename=filename)
 
 
-@router.get("/pdf-list")
-async def list_pdfs(current_user: Annotated[TokenData, Depends(get_current_user)]):
-    reports_dir = Path("reports")
-    if not reports_dir.exists():
-        return {"items": []}
-    files = sorted(reports_dir.glob("*.pdf"), reverse=True)
-    return {
-        "items": [
-            {"filename": f.name, "size_kb": round(f.stat().st_size / 1024, 1), "created_at": str(f.stat().st_mtime)}
-            for f in files
-        ]
-    }
+@router.delete("/pdf/{filename}")
+async def delete_pdf(
+        filename: str,
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+):
+    return ReportService.delete_pdf(filename)
+
+
+# --- 이상징후 ---
+
+@router.get("/anomalies")
+async def get_anomalies(
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+        is_resolved:  bool | None = None,
+        anomaly_type: str | None = None,
+        severity:     str | None = None,
+        page:      int = 1,
+        page_size: int = 50,
+        db: Session = Depends(get_db),
+):
+    return AnomalyService.list_anomalies(
+        db, is_resolved, anomaly_type, severity, page, page_size
+    )
+
+
+@router.patch("/anomalies/{anomaly_id}/resolve")
+async def resolve_anomaly(
+        anomaly_id: int,
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),
+):
+    return AnomalyService.resolve(db, anomaly_id)

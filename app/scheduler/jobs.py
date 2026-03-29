@@ -19,7 +19,7 @@ from app.db.repository import (
     create_report_execution, update_report_execution,
     create_anomaly_log, update_last_run, get_setting,
 )
-from app.db.sync import bulk_upsert_products, bulk_upsert_daily_sales, bulk_upsert_stock_levels
+from app.services.sync_service import SyncService
 from app.notifier.notifier import notify_daily_report, notify_anomaly_alert
 from app.report.pdf_generator import generate_daily_pdf
 from app.sheets.reader import read_product_master, read_sales, read_stock

@@ -61,29 +61,28 @@ PDF       → 일별 보고서 파일 (/reports/*.pdf)
 
 ```
 app/
-├── api/            # FastAPI 라우터 (13개)
-├── analyzer/       # 데이터 분석 로직
-│   ├── abc_analyzer.py       — ABC 재고 분류
-│   ├── demand_forecaster.py  — 수요 예측
-│   ├── sales_analyzer.py     — 판매 이상징후
-│   ├── stock_analyzer.py     — 재고 이상징후
-│   └── turnover_analyzer.py  — 재고 회전율
-├── ai/             # LLM / AI 모듈
-│   ├── agent.py              — LangChain 에이전트 루프
-│   ├── insight_generator.py  — 일별 인사이트 생성
-│   ├── order_agent.py        — 발주 제안 생성
-│   ├── sentiment_analyzer.py — KR-FinBert 감성 분석
-│   └── tools.py              — LangChain 툴 정의
-├── cache/          # Redis 클라이언트 래퍼
-├── celery_app/     # Celery 앱 + 태스크 정의
-├── crawler/        # 웹 스크래퍼 (BeautifulSoup)
-├── db/             # SQLAlchemy 모델 + Repository
-├── notifier/       # Slack/Email 알림 발송
-├── report/         # PDF 보고서 생성 (ReportLab)
-├── scheduler/      # 일일 작업 오케스트레이션
-├── sheets/         # gspread 클라이언트 + reader/writer
-├── utils/          # 헬퍼 유틸리티
-└── main.py         # FastAPI 앱 진입점, lifespan 훅
+├── api/            # FastAPI 라우터 — HTTP 파라미터 수신 + Service 위임만
+│   ├── sheets_router.py
+│   ├── order_router.py
+│   ├── report_router.py
+│   └── ...
+│
+├── services/       # 비즈니스 로직 전담 (신규)
+│   ├── sync_service.py      — Sheets/Excel → DB 동기화
+│   ├── sheet_service.py     — 데이터 조회/필터/통계
+│   ├── order_service.py     — 발주 제안 CRUD + Slack
+│   ├── report_service.py    — 보고서 트리거/상태/이력
+│   └── anomaly_service.py   — 이상징후 조회/해결
+│
+├── analyzer/       # 순수 분석 함수 (변경 없음)
+├── ai/             # LLM 로직 (변경 없음)
+├── db/             # ORM 모델 + Repository + bulk upsert (변경 없음)
+├── notifier/       # Slack/Email 알림 (변경 없음)
+├── report/         # PDF 생성 (변경 없음)
+├── scheduler/      # jobs.py — SyncService 래퍼로 경량화
+├── sheets/         # gspread reader/writer (변경 없음)
+├── utils/          # severity 헬퍼 등
+└── main.py         # lifespan에서 SyncService 직접 호출
 ```
 
 ---
