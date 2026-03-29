@@ -1,12 +1,11 @@
 FROM python:3.11-slim
 
-RUN sed -i 's/deb.debian.org/mirror.kakao.com/g' /etc/apt/sources.list.d/debian.sources
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     pkg-config \
     libcairo2-dev \
     fonts-nanum \
+    fontconfig \
     && fc-cache -fv \
     && rm -rf /var/lib/apt/lists/*
 
