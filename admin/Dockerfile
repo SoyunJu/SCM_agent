@@ -1,8 +1,8 @@
 FROM node:20-alpine AS base
 
 WORKDIR /app
-COPY package*.json ./
 
+COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci
 
