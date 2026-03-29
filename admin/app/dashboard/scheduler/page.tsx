@@ -17,13 +17,13 @@ import {
 
 // ── Beat 스케줄 한글 라벨 + 즉시 실행 task key ────────────────────────────
 const BEAT_LABELS: Record<string, { label: string }> = {
-    "daily-report":       { label: "보고서 생성"      },
-    "daily-crawler":      { label: "크롤러 실행"       },
-    "cleanup-data":       { label: "데이터 정리"       },
-    "sync-sheets-to-db":  { label: "Sheets→DB 동기화" },
-    "demand-forecast":    { label: "수요 예측 분석"    },
-    "turnover-analysis":  { label: "재고 회전율 분석"  },
-    "abc-analysis":       { label: "ABC 분석"          },
+    "daily-report":      { label: "보고서 생성"      },
+    "daily-crawler":     { label: "크롤러 실행"       },
+    "cleanup-data":      { label: "데이터 정리"       },
+    "sync-sheets-to-db": { label: "Sheets→DB 동기화" },
+    "demand-forecast":   { label: "수요 예측 분석"    },
+    "turnover-analysis": { label: "재고 회전율 분석"  },
+    "abc-analysis":      { label: "ABC 분석"          },
 };
 
 // Beat 항목별 즉시 실행 API 매핑
