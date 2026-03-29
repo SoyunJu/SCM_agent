@@ -1,42 +1,27 @@
-"""
-통합 테스트 공통 Fixture
-- SQLite in-memory DB (단일 커넥션 공유 방식)
-- AI / Slack / Redis / Celery 전부 Mock 처리
-- FastAPI TestClient 기반
-"""
 from __future__ import annotations
 
 import pytest
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 
-# ── DB 설정: 단일 커넥션 공유 (테이블이 세션에 보이도록) ─────────────────────
-TEST_DB_URL = "sqlite:///:memory:"
+TEST_DB_URL = "sqlite://"   # in-memory
 
 
 @pytest.fixture(scope="session")
 def engine():
-    """세션 전체에서 단일 커넥션 공유 — in-memory DB 테이블 유실 방지"""
     _engine = create_engine(
         TEST_DB_URL,
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,   # 모든 커넥션이 동일 물리 연결 재사용
     )
-    # in-memory SQLite는 커넥션마다 별도 DB → 강제로 동일 커넥션 재사용
-    _conn = _engine.connect()
-
-    @event.listens_for(_engine, "connect")
-    def connect(dbapi_conn, connection_record):
-        connection_record.dbapi_conn = _conn.connection.dbapi_connection
-
     from app.db.models import Base
-    Base.metadata.create_all(bind=_conn)
-
+    Base.metadata.create_all(bind=_engine)
     yield _engine
-
-    _conn.close()
+    Base.metadata.drop_all(bind=_engine)
     _engine.dispose()
 
 
@@ -45,18 +30,15 @@ def TestingSessionLocal(engine):
     return sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
-# ── 함수 단위 DB 세션: 트랜잭션 롤백 대신 데이터 직접 삭제 ───────────────────
 @pytest.fixture(scope="function")
 def db_session(TestingSessionLocal):
-    """각 테스트마다 독립 세션. 종료 후 모든 테이블 truncate."""
     session = TestingSessionLocal()
     yield session
     session.rollback()
-    # 전체 테이블 초기화 (롤백 대신 delete — SQLite 호환)
     from app.db.models import (
-        Product, DailySales, StockLevel, AnomalyLog,
-        OrderProposal, ReportExecution, AnalysisCache,
-        AdminUser, SystemSettings, ChatHistory, ScheduleConfig,
+        AnomalyLog, OrderProposal, ReportExecution, AnalysisCache,
+        DailySales, StockLevel, ChatHistory, ScheduleConfig,
+        Product, AdminUser, SystemSettings,
     )
     for model in [
         AnomalyLog, OrderProposal, ReportExecution, AnalysisCache,
@@ -71,17 +53,8 @@ def db_session(TestingSessionLocal):
     session.close()
 
 
-# ── 인증 헬퍼 ─────────────────────────────────────────────────────────────────
-@pytest.fixture(scope="session")
-def admin_token_data():
-    from app.api.auth_router import TokenData
-    return TokenData(username="test_admin", role="admin")
-
-
-# ── FastAPI 앱 + TestClient ───────────────────────────────────────────────────
 @pytest.fixture(scope="session")
 def app(engine, TestingSessionLocal):
-    """외부 의존성을 전부 mock 처리한 FastAPI 앱"""
     patches = [
         patch("app.cache.redis_client.cache_get",      return_value=None),
         patch("app.cache.redis_client.cache_set",      return_value=None),
@@ -92,6 +65,11 @@ def app(engine, TestingSessionLocal):
     ]
     for p in patches:
         p.start()
+
+    # ★ 핵심: 앱 내부 DB 엔진을 테스트 엔진으로 교체
+    import app.db.connection as db_conn
+    db_conn.engine = engine
+    db_conn.SessionLocal = TestingSessionLocal
 
     from app.main import app as _app
     from app.db.connection import get_db
