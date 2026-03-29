@@ -334,10 +334,18 @@ def get_products_paginated(
     if category:
         query = query.filter(Product.category == category)
     if status:
-        query = query.filter(Product.status == status)
+        try:
+            query = query.filter(Product.status == ProductStatus(status.upper()))
+        except ValueError:
+            pass
 
     total = query.count()
-    items = query.offset((page - 1) * page_size).limit(page_size).all()
+    items = (
+        query.order_by(Product.code)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     return {"total": total, "page": page, "page_size": page_size, "items": items}
 
 

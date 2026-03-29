@@ -72,6 +72,15 @@ def reject_proposal(
     return OrderService.reject(db, proposal_id, current_user.username)
 
 
+@router.patch("/proposals/{proposal_id}/reset")
+def reset_proposal(
+        proposal_id: int,
+        db: Session = Depends(get_db),
+        current_user: TokenData = Depends(require_admin),
+):
+    return OrderService.reset(db, proposal_id, current_user.username)
+
+
 @router.put("/proposals/{proposal_id}")
 def update_proposal(
         proposal_id: int,

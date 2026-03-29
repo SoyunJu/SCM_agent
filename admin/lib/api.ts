@@ -81,11 +81,11 @@ export const getChatHistory = (sessionId: string, days = 7) =>
     apiClient.get(`/scm/chat/history?session_id=${encodeURIComponent(sessionId)}&days=${days}`);
 
 // --- Order Proposals ---
-export const getProposals = (status?: string, limit = 50, offset = 0) => {
+export const getProposals = (status?: string, limit = 50, page = 1) => {
     const p = new URLSearchParams();
-    if (status) p.append("status", status);
+    if (status && status !== "all") p.append("status", status);
     p.append("limit", String(limit));
-    p.append("offset", String(offset));
+    p.append("offset", String((page - 1) * limit));
     return apiClient.get(`/scm/orders/proposals?${p}`);
 };
 
@@ -99,6 +99,9 @@ export const approveProposal = (id: number) =>
 
 export const rejectProposal = (id: number) =>
     apiClient.patch(`/scm/orders/proposals/${id}/reject`);
+
+export const resetProposal = (id: number) =>
+    apiClient.patch(`/scm/orders/proposals/${id}/reset`);
 
 export const updateProposal = (id: number, data: { proposed_qty?: number; unit_price?: number }) =>
     apiClient.put(`/scm/orders/proposals/${id}`, data);
@@ -139,10 +142,15 @@ export const triggerSync = () =>
 export const getSheetCategories = () =>
     apiClient.get("/scm/sheets/categories");
 
-export const getSheetsMaster = (page = 1, pageSize = 50, search?: string, category?: string) => {
+export const getSheetsMaster = (
+    page = 1, pageSize = 50,
+    search?: string, category?: string,
+    status?: string,
+) => {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (search)   params.append("search", search);
     if (category) params.append("category", category);
+    if (status)   params.append("status", status);
     return apiClient.get(`/scm/sheets/master?${params}`);
 };
 
@@ -192,8 +200,12 @@ export const getSalesStats = (period: "daily" | "weekly" | "monthly", category?:
     return apiClient.get(`/scm/sheets/stats/sales?${params}`);
 };
 
-export const getStockStats = (category?: string) => {
-    const params = new URLSearchParams();
+export const getStockStats = (
+    category?: string,
+    page = 1,
+    pageSize = 50,
+) => {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (category) params.append("category", category);
     return apiClient.get(`/scm/sheets/stats/stock?${params}`);
 };

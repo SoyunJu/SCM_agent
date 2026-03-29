@@ -66,6 +66,22 @@ class OrderService:
         logger.info(f"[OrderService] 발주 거절: id={proposal_id}, by={username}")
         return OrderService._serialize(p)
 
+
+    @staticmethod
+    def reset(db: Session, proposal_id: int, username: str) -> dict:
+        p = OrderService._get_or_404(db, proposal_id)
+        if p.status == ProposalStatus.PENDING:
+            from fastapi import HTTPException
+            raise HTTPException(400, "이미 PENDING 상태입니다.")
+        p.status      = ProposalStatus.PENDING
+        p.approved_by = None
+        p.approved_at = None
+        db.commit()
+        db.refresh(p)
+        logger.info(f"[OrderService] 발주 되돌리기: id={proposal_id}, by={username}")
+        return OrderService._serialize(p)
+
+
     @staticmethod
     def update(db: Session, proposal_id: int,
                proposed_qty: int | None, unit_price: float | None) -> dict:

@@ -141,12 +141,13 @@ class SheetService:
             db: Session,
             page: int, page_size: int,
             search: str | None, category: str | None, download: bool,
+            status: str | None = None,
     ):
         from app.db.repository import get_products_paginated
 
         result = get_products_paginated(
             db, page=page, page_size=page_size,
-            search=search, category=category,
+            search=search, category=category, status=status,
         )
 
         items = [
@@ -384,75 +385,128 @@ class SheetService:
     def get_stock_stats(
             db: Session,
             category: str | None = None,
+            page: int = 1,
+            page_size: int = 50,
     ) -> dict:
-        from app.db.models import StockLevel, Product
+        from datetime import date, timedelta
+        from sqlalchemy import func
+        from app.db.models import Product, StockLevel, DailySales, ProductStatus
+        from app.db.repository import get_daily_sales_range
         from app.analyzer.stock_analyzer import run_stock_analysis
         from app.utils.severity import norm
+        import pandas as pd
 
-        query = (
-            db.query(StockLevel, Product)
-            .outerjoin(Product, StockLevel.product_code == Product.code)
+        # --- DB에서 데이터 로드 ---
+        products = (
+            db.query(Product)
+            .filter(Product.status == ProductStatus.ACTIVE)
+            .all()
         )
         if category:
-            query = query.filter(Product.category == category)
+            products = [p for p in products if p.category == category]
 
-        rows = query.order_by(StockLevel.current_stock.desc()).all()
+        product_codes = [p.code for p in products]
 
-        stock_items = [
-            {
-                "상품코드":     sl.product_code,
-                "상품명":       prod.name     if prod else "",
-                "카테고리":     prod.category if prod else "",
-                "현재재고":     sl.current_stock,
-                "안전재고":     prod.safety_stock if prod else 0,
-                "입고예정일":   str(sl.restock_date) if sl.restock_date else "",
-                "입고예정수량": sl.restock_qty or 0,
-            }
-            for sl, prod in rows
-        ]
+        stocks = (
+            db.query(StockLevel)
+            .filter(StockLevel.product_code.in_(product_codes))
+            .all()
+        ) if product_codes else []
 
-        # 이상징후 분석
-        import pandas as pd
-        all_products = db.query(Product).all()
-        all_stock    = db.query(StockLevel).all()
+        sales_rows = get_daily_sales_range(
+            db,
+            start=date.today() - timedelta(days=90),
+            end=date.today(),
+        )
+        sales_rows = [s for s in sales_rows if s.product_code in set(product_codes)]
 
+        # --- 분석용 DataFrame ---
         df_master = pd.DataFrame([
-            {"상품코드": p.code, "상품명": p.name, "카테고리": p.category or "", "안전재고기준": p.safety_stock}
-            for p in all_products
-        ]) if all_products else pd.DataFrame()
+            {"상품코드": p.code, "상품명": p.name,
+             "카테고리": p.category or "", "안전재고기준": p.safety_stock}
+            for p in products
+        ]) if products else pd.DataFrame(columns=["상품코드", "상품명", "카테고리", "안전재고기준"])
 
         df_stock = pd.DataFrame([
             {"상품코드": s.product_code, "현재재고": s.current_stock,
              "입고예정일": str(s.restock_date) if s.restock_date else "",
              "입고예정수량": s.restock_qty or 0}
-            for s in all_stock
-        ]) if all_stock else pd.DataFrame()
+            for s in stocks
+        ]) if stocks else pd.DataFrame(columns=["상품코드", "현재재고", "입고예정일", "입고예정수량"])
 
-        # 판매 데이터 조회
-        from app.db.repository import get_daily_sales_range
-        from datetime import date, timedelta
-        sales_rows = get_daily_sales_range(
-            db,
-            start=date.today() - timedelta(days=30),
-            end=date.today(),
-        )
         df_sales = pd.DataFrame([
-            {"날짜": str(s.date), "상품코드": s.product_code, "판매수량": s.qty, "매출액": s.revenue}
+            {"날짜": str(s.date), "상품코드": s.product_code,
+             "판매수량": s.qty, "매출액": s.revenue}
             for s in sales_rows
         ]) if sales_rows else pd.DataFrame(columns=["날짜", "상품코드", "판매수량", "매출액"])
 
+        # --- 이상징후 분석 ---
         anomalies = run_stock_analysis(df_master, df_stock, df_sales) if not df_master.empty else []
-
         severity_counts: dict[str, int] = {}
         for a in anomalies:
             sev = norm(a.get("severity", ""))
             severity_counts[sev] = severity_counts.get(sev, 0) + 1
 
+        # --- 판매 집계 (상품코드별 qty / revenue / cost 합계) ---
+        sales_agg: dict[str, dict] = {}
+        for s in sales_rows:
+            if s.product_code not in sales_agg:
+                sales_agg[s.product_code] = {"qty": 0, "revenue": 0.0, "cost": 0.0}
+            sales_agg[s.product_code]["qty"]     += s.qty
+            sales_agg[s.product_code]["revenue"] += s.revenue
+            sales_agg[s.product_code]["cost"]    += getattr(s, "cost", 0.0) or 0.0
+
+        stock_map  = {s.product_code: s.current_stock for s in stocks}
+        name_map   = {p.code: p.name for p in products}
+        cat_map    = {p.code: p.category or "" for p in products}
+
+        # --- stock_items 조립 (페이징) ---
+        all_items = []
+        for p in products:
+            agg    = sales_agg.get(p.code, {"qty": 0, "revenue": 0.0, "cost": 0.0})
+            stock  = stock_map.get(p.code, 0)
+            qty    = agg["qty"]
+            rev    = agg["revenue"]
+            cost   = agg["cost"]
+
+            # 단가 계산
+            unit_sell = round(rev  / qty, 0) if qty > 0 else 0.0
+            unit_cost = round(cost / qty, 0) if qty > 0 else 0.0
+            margin    = round(((unit_sell - unit_cost) / unit_sell) * 100, 1) if unit_sell > 0 else 0.0
+            discount  = max(margin, 0.0)
+
+            all_items.append({
+                "상품코드":    p.code,
+                "상품명":      p.name,
+                "카테고리":    p.category or "",
+                "현재재고":    stock,
+                "qty":         qty,
+                "revenue":     round(rev,  0),
+                "cost":        round(cost, 0),
+                "unit_sell":   unit_sell,
+                "unit_cost":   unit_cost,
+                "margin_rate": margin,
+                "discount_max": discount,
+            })
+
+        # 현재재고 내림차순 정렬
+        all_items.sort(key=lambda x: x["현재재고"], reverse=True)
+
+        total       = len(all_items)
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        start       = (page - 1) * page_size
+        paged_items = all_items[start:start + page_size]
+
         return {
             "total_anomalies": len(anomalies),
             "severity_counts": severity_counts,
-            "stock_items":     stock_items,
+            "stock_items":     paged_items,
+            "total":           total,
+            "page":            page,
+            "page_size":       page_size,
+            "total_pages":     total_pages,
         }
+
 
     # --- ABC 분석 (Redis → DB cache → Celery task) ---
     @staticmethod

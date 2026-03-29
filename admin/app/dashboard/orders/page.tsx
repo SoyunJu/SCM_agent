@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
     getOrders, getProposals, generateProposals,
-    approveProposal, rejectProposal, updateProposal,
+    approveProposal, rejectProposal, updateProposal, resetProposal
 } from "@/lib/api";
 import { getDefaultPageSize } from "@/lib/utils";
 import { OrderItem, OrderProposal } from "@/lib/types";
@@ -193,6 +193,8 @@ function OrdersTab() {
 function ProposalsTab() {
     const [proposals, setProposals]   = useState<OrderProposal[]>([]);
     const [total, setTotal]           = useState(0);
+    const [page, setPage]             = useState(1);
+    const [pageSize]                  = useState(getDefaultPageSize);
     const [statusFilter, setFilter]   = useState<string>("all");
     const [loading, setLoading]       = useState(false);
     const [generating, setGenerating] = useState(false);
@@ -203,11 +205,13 @@ function ProposalsTab() {
     const [isReadonly, setIsReadonly] = useState(false);
     const [severityOverride, setSeverityOverride] = useState("");
 
-    const fetchProposals = async () => {
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    const fetchProposals = async (p = page) => {
         setLoading(true);
         try {
             const status = statusFilter === "all" ? undefined : statusFilter;
-            const res = await getProposals(status, 50, 0);
+            const res = await getProposals(status, pageSize, p);
             setProposals(res.data.items ?? []);
             setTotal(res.data.total ?? 0);
         } finally {
@@ -218,21 +222,27 @@ function ProposalsTab() {
     useEffect(() => {
         const role = localStorage.getItem("user_role") ?? "";
         setIsReadonly(role === "readonly");
-        if (role !== "readonly") {
-            fetchProposals();
-        }
+        if (role !== "readonly") fetchProposals(1);
     }, [statusFilter]);
 
+    useEffect(() => {
+        if (!isReadonly) fetchProposals(page);
+    }, [page]);
+
+    const flash = (text: string) => {
+        setMsg(text);
+        setTimeout(() => setMsg(""), 4000);
+    };
 
     const handleGenerate = async () => {
         setGenerating(true);
-        setMsg("");
         try {
             const res = await generateProposals(severityOverride || undefined);
-            setMsg(res.data.message ?? "완료");
-            fetchProposals();
+            flash(res.data.message ?? `${res.data.created ?? 0}건 생성 완료`);
+            setPage(1);
+            fetchProposals(1);
         } catch (e: any) {
-            setMsg(e?.response?.data?.detail ?? "생성 실패");
+            flash(e?.response?.data?.detail ?? "생성 실패");
         } finally {
             setGenerating(false);
         }
@@ -240,27 +250,32 @@ function ProposalsTab() {
 
     const handleApprove = async (id: number) => {
         await approveProposal(id);
-        fetchProposals();
+        fetchProposals(page);
     };
 
     const handleReject = async (id: number) => {
         await rejectProposal(id);
-        fetchProposals();
+        fetchProposals(page);
+    };
+
+    const handleReset = async (id: number) => {
+        await resetProposal(id);
+        fetchProposals(page);
     };
 
     const startEdit = (p: OrderProposal) => {
         setEditId(p.id);
         setEditQty(String(p.proposed_qty));
-        setEditPrice(String(p.unit_price));
+        setEditPrice(String(p.unit_price > 0 ? p.unit_price : ""));
     };
 
     const saveEdit = async (id: number) => {
         await updateProposal(id, {
-            proposed_qty: editQty ? parseInt(editQty, 10) : undefined,
-            unit_price:   editPrice ? parseFloat(editPrice) : undefined,
+            proposed_qty: editQty  ? parseInt(editQty, 10)    : undefined,
+            unit_price:   editPrice ? parseFloat(editPrice)   : undefined,
         });
         setEditId(null);
-        fetchProposals();
+        fetchProposals(page);
     };
 
     if (isReadonly) return (
@@ -273,7 +288,6 @@ function ProposalsTab() {
         <div className="space-y-4">
             {/* 헤더 */}
             <div className="flex items-center gap-3 flex-wrap">
-                {!isReadonly && (
                 <div className="flex items-center gap-2">
                     <select
                         value={severityOverride}
@@ -291,24 +305,34 @@ function ProposalsTab() {
                         disabled={generating}
                         className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition"
                     >
-                        {generating
-                            ? <Loader2 size={14} className="animate-spin" />
-                            : <Zap size={14} />}
+                        {generating ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
                         발주 제안 생성
                     </button>
                 </div>
-                )}
-                {["all", "PENDING", "APPROVED", "REJECTED"].map((s) => (
-                    <button
-                        key={s}
-                        onClick={() => setFilter(s)}
-                        className={`px-3 py-1.5 rounded-lg text-sm transition ${statusFilter === s ? "bg-gray-800 text-white" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}
-                    >
-                        {{ all: "전체", PENDING: "대기", APPROVED: "승인", REJECTED: "거절" }[s]}
-                    </button>
-                ))}
+
+                {/* 상태 필터 */}
+                <div className="flex gap-1">
+                    {(["all", "PENDING", "APPROVED", "REJECTED"] as const).map((s) => (
+                        <button
+                            key={s}
+                            onClick={() => { setFilter(s); setPage(1); }}
+                            className={`px-3 py-1.5 rounded-lg text-sm transition ${
+                                statusFilter === s
+                                    ? "bg-gray-800 text-white"
+                                    : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
+                            }`}
+                        >
+                            {{ all: "전체", PENDING: "대기", APPROVED: "승인", REJECTED: "거절" }[s]}
+                        </button>
+                    ))}
+                </div>
+
                 <span className="text-xs text-gray-400 ml-auto">총 {total}건</span>
-                <button onClick={fetchProposals} disabled={loading} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50">
+                <button
+                    onClick={() => fetchProposals(page)}
+                    disabled={loading}
+                    className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+                >
                     <RefreshCw size={15} className={`text-gray-500 ${loading ? "animate-spin" : ""}`} />
                 </button>
             </div>
@@ -322,29 +346,34 @@ function ProposalsTab() {
                 <table className="w-full text-sm">
                     <thead>
                     <tr className="bg-gray-50 text-gray-500 text-xs">
-                        <th className="px-4 py-3 text-left">상품코드</th>
-                        <th className="px-4 py-3 text-left">상품명</th>
-                        <th className="px-4 py-3 text-left">카테고리</th>
-                        <th className="px-4 py-3 text-right">발주수량</th>
-                        <th className="px-4 py-3 text-right">단가</th>
-                        <th className="px-4 py-3 text-left">사유</th>
-                        <th className="px-4 py-3 text-left">상태</th>
-                        <th className="px-4 py-3 text-left">생성일시</th>
-                        <th className="px-4 py-3 text-center">액션</th>
+                        <th className="px-4 py-3 text-left whitespace-nowrap">상품코드</th>
+                        <th className="px-4 py-3 text-left whitespace-nowrap">상품명</th>
+                        <th className="px-4 py-3 text-left whitespace-nowrap">카테고리</th>
+                        <th className="px-4 py-3 text-right whitespace-nowrap">발주수량</th>
+                        <th className="px-4 py-3 text-right whitespace-nowrap">단가</th>
+                        <th className="px-4 py-3 text-left whitespace-nowrap">사유</th>
+                        <th className="px-4 py-3 text-left whitespace-nowrap">상태</th>
+                        <th className="px-4 py-3 text-left whitespace-nowrap">생성일시</th>
+                        <th className="px-4 py-3 text-center whitespace-nowrap">액션</th>
                     </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                     {loading ? (
-                        <tr><td colSpan={9} className="py-12 text-center"><Loader2 size={24} className="animate-spin text-blue-500 mx-auto" /></td></tr>
+                        <tr><td colSpan={9} className="py-12 text-center">
+                            <Loader2 size={24} className="animate-spin text-blue-500 mx-auto" />
+                        </td></tr>
                     ) : proposals.length === 0 ? (
-                        <tr><td colSpan={9} className="py-12 text-center text-gray-400"><Package size={32} className="mx-auto mb-2 text-gray-300" />발주 제안이 없습니다</td></tr>
+                        <tr><td colSpan={9} className="py-12 text-center text-gray-400">
+                            <Package size={32} className="mx-auto mb-2 text-gray-300" />
+                            발주 제안이 없습니다
+                        </td></tr>
                     ) : proposals.map((p) => (
                         <tr key={p.id} className="hover:bg-gray-50 transition">
                             <td className="px-4 py-3 font-mono text-gray-600 text-xs">{p.product_code}</td>
-                            <td className="px-4 py-3 text-gray-700">{p.product_name ?? "-"}</td>
+                            <td className="px-4 py-3 text-gray-700 max-w-[140px] truncate">{p.product_name ?? "-"}</td>
                             <td className="px-4 py-3 text-gray-500 text-xs">{p.category ?? "-"}</td>
 
-                            {/* 수량 (인라인 수정) */}
+                            {/* 수량 인라인 수정 */}
                             <td className="px-4 py-3 text-right">
                                 {editId === p.id ? (
                                     <input
@@ -357,7 +386,7 @@ function ProposalsTab() {
                                 )}
                             </td>
 
-                            {/* 단가 (인라인 수정) */}
+                            {/* 단가 인라인 수정 */}
                             <td className="px-4 py-3 text-right">
                                 {editId === p.id ? (
                                     <input
@@ -366,44 +395,93 @@ function ProposalsTab() {
                                         className="w-24 text-right border border-blue-300 rounded px-1 py-0.5 text-sm"
                                     />
                                 ) : (
-                                    <span className="text-gray-600">{p.unit_price > 0 ? p.unit_price.toLocaleString() + "원" : "-"}</span>
+                                    <span className="text-gray-600 whitespace-nowrap">
+                                        {p.unit_price > 0 ? `${p.unit_price.toLocaleString()}원` : <span className="text-gray-300">-</span>}
+                                    </span>
                                 )}
                             </td>
 
-                            <td className="px-4 py-3 text-gray-400 text-xs max-w-[300px]">
-                                <span className="line-clamp-3 whitespace-pre-wrap" title={p.reason ?? ""}>{p.reason ?? "-"}</span>
+                            {/* 사유 — 짧게 */}
+                            <td className="px-4 py-3 text-gray-400 text-xs max-w-[180px]">
+                                <span className="truncate block" title={p.reason ?? ""}>{p.reason ?? "-"}</span>
                             </td>
 
                             <td className="px-4 py-3">
-                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${PROPOSAL_STATUS_COLOR[p.status] ?? "bg-gray-100 text-gray-500"}`}>
-                                        {PROPOSAL_STATUS_LABEL[p.status] ?? p.status}
-                                    </span>
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${PROPOSAL_STATUS_COLOR[p.status] ?? "bg-gray-100 text-gray-500"}`}>
+                                    {PROPOSAL_STATUS_LABEL[p.status] ?? p.status}
+                                </span>
                             </td>
 
-                            <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{p.created_at.slice(0, 16).replace("T", " ")}</td>
+                            <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                                {p.created_at?.slice(0, 16) ?? "-"}
+                            </td>
 
-                            {/* 액션 버튼 */}
-                            <td className="px-4 py-3 text-center whitespace-nowrap">
-                                {editId === p.id ? (
-                                    <div className="flex gap-1 justify-center">
-                                        <button onClick={() => saveEdit(p.id)} className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">저장</button>
-                                        <button onClick={() => setEditId(null)} className="px-2 py-1 border border-gray-200 rounded text-xs hover:bg-gray-50">취소</button>
-                                    </div>
-                                ) : p.status === "PENDING" && !isReadonly ? (
-                                    <div className="flex gap-1 justify-center">
-                                        <button onClick={() => startEdit(p)} title="수정" className="p-1 rounded hover:bg-gray-100 text-gray-500"><Pencil size={14} /></button>
-                                        <button onClick={() => handleApprove(p.id)} title="승인" className="p-1 rounded hover:bg-green-50 text-green-600"><CheckCircle size={14} /></button>
-                                        <button onClick={() => handleReject(p.id)} title="거절" className="p-1 rounded hover:bg-red-50 text-red-500"><XCircle size={14} /></button>
-                                    </div>
-                                ) : (
-                                    <span className="text-gray-300 text-xs">{p.approved_by ?? "-"}</span>
-                                )}
+                            {/* 액션 */}
+                            <td className="px-4 py-3">
+                                <div className="flex items-center gap-1 justify-center">
+                                    {p.status === "PENDING" && editId !== p.id && (
+                                        <>
+                                            <button
+                                                onClick={() => handleApprove(p.id)}
+                                                className="px-2 py-1 rounded text-xs bg-green-50 text-green-700 hover:bg-green-100 transition font-medium"
+                                            >승인</button>
+                                            <button
+                                                onClick={() => handleReject(p.id)}
+                                                className="px-2 py-1 rounded text-xs bg-red-50 text-red-600 hover:bg-red-100 transition font-medium"
+                                            >거절</button>
+                                            <button
+                                                onClick={() => startEdit(p)}
+                                                className="px-2 py-1 rounded text-xs bg-gray-50 text-gray-600 hover:bg-gray-100 transition"
+                                            >수정</button>
+                                        </>
+                                    )}
+                                    {editId === p.id && (
+                                        <>
+                                            <button
+                                                onClick={() => saveEdit(p.id)}
+                                                className="px-2 py-1 rounded text-xs bg-blue-600 text-white hover:bg-blue-700 transition font-medium"
+                                            >저장</button>
+                                            <button
+                                                onClick={() => setEditId(null)}
+                                                className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-600 hover:bg-gray-200 transition"
+                                            >취소</button>
+                                        </>
+                                    )}
+                                    {/* 승인/거절 → 되돌리기 */}
+                                    {(p.status === "APPROVED" || p.status === "REJECTED") && (
+                                        <button
+                                            onClick={() => handleReset(p.id)}
+                                            className="px-2 py-1 rounded text-xs bg-amber-50 text-amber-700 hover:bg-amber-100 transition font-medium"
+                                        >되돌리기</button>
+                                    )}
+                                </div>
                             </td>
                         </tr>
                     ))}
                     </tbody>
                 </table>
             </div>
+
+            {/* 페이징 */}
+            {totalPages > 1 && (
+                <div className="flex items-center justify-end gap-1">
+                    <button
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={page === 1 || loading}
+                        className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+                    >
+                        <ChevronLeft size={14} />
+                    </button>
+                    <span className="px-3 text-sm text-gray-600">{page} / {totalPages}</span>
+                    <button
+                        onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                        disabled={page === totalPages || loading}
+                        className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+                    >
+                        <ChevronRight size={14} />
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

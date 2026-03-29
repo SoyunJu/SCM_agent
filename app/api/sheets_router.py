@@ -57,10 +57,10 @@ async def update_product(
 @router.get("/categories")
 async def get_categories(
         current_user: Annotated[TokenData, Depends(get_current_user)],
-        db: Session = Depends(get_db),     # ← 추가
+        db: Session = Depends(get_db),
 ):
     try:
-        return {"items": SheetService.get_categories(db)}   # ← db 전달
+        return {"items": SheetService.get_categories(db)}
     except Exception as e:
         logger.error(f"카테고리 조회 실패: {e}")
         return {"items": []}
@@ -68,13 +68,15 @@ async def get_categories(
 
 @router.get("/master")
 async def get_master(
-        current_user: Annotated[TokenData, Depends(require_admin)],
-        db: Session = Depends(get_db),
+        current_user: Annotated[TokenData, Depends(get_current_user)],
         page: int = 1, page_size: int = 50,
-        search: str | None = None, category: str | None = None, download: bool = False,
+        search: str | None = None, category: str | None = None,
+        status: str | None = None,
+        download: bool = False,
+        db: Session = Depends(get_db),
 ):
     try:
-        return SheetService.get_master(db, page, page_size, search, category, download)
+        return SheetService.get_master(db, page, page_size, search, category, download, status)
     except Exception as e:
         logger.error(f"상품마스터 조회 실패: {e}")
         return {"total": 0, "page": 1, "page_size": page_size, "total_pages": 0, "items": []}
@@ -141,14 +143,17 @@ async def get_sales_stats(
 @router.get("/stats/stock")
 async def get_stock_stats(
         current_user: Annotated[TokenData, Depends(get_current_user)],
-        db: Session = Depends(get_db),
         category: str | None = None,
+        page: int = 1,
+        page_size: int = 50,
+        db: Session = Depends(get_db),
 ):
     try:
-        return SheetService.get_stock_stats(db, category)
+        return SheetService.get_stock_stats(db, category, page, page_size)
     except Exception as e:
         logger.error(f"재고통계 조회 실패: {e}")
-        return {"total_anomalies": 0, "severity_counts": {}, "stock_items": []}
+        return {"total_anomalies": 0, "severity_counts": {}, "stock_items": [],
+                "total": 0, "page": 1, "page_size": page_size, "total_pages": 1}
 
 
 
