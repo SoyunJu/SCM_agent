@@ -1,5 +1,6 @@
 from typing import Annotated
 
+import logger
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -53,7 +54,57 @@ async def update_config(
 async def scheduler_status(
         current_user: Annotated[TokenData, Depends(get_current_user)],
 ):
-    return SchedulerService.get_status()
+    try:
+        from app.celery_app.celery import celery_app
+        inspect = celery_app.control.inspect(timeout=2.0)
+        active  = inspect.active()
+        stats   = inspect.stats()
+
+        workers = []
+        if stats:
+            for w_name, w_stat in stats.items():
+                active_tasks = active.get(w_name, []) if active else []
+                workers.append({
+                    "name":         w_name,
+                    "status":       "online",
+                    "active_tasks": len(active_tasks),
+                })
+
+        # beat_schedule을 파일에서 직접 읽기 (api 컨테이너에서도 접근 가능)
+        beat_schedule = {}
+        try:
+            from app.celery_app.beat_schedule import BEAT_SCHEDULE
+            from celery.schedules import crontab
+            from datetime import timedelta
+
+            for k, v in BEAT_SCHEDULE.items():
+                sched = v.get("schedule")
+                if isinstance(sched, crontab):
+                    h = str(sched.hour).replace("{", "").replace("}", "")
+                    m = str(sched.minute).replace("{", "").replace("}", "")
+                    beat_schedule[k] = f"매일 {h.zfill(2)}:{m.zfill(2)}"
+                elif isinstance(sched, timedelta):
+                    minutes = int(sched.total_seconds() // 60)
+                    beat_schedule[k] = f"매 {minutes}분"
+                else:
+                    beat_schedule[k] = str(sched)
+        except Exception as be:
+            logger.warning(f"Beat 스케줄 읽기 실패: {be}")
+
+        return {
+            "workers":       workers,
+            "worker_count":  len(workers),
+            "beat_schedule": beat_schedule,
+            "broker":        celery_app.conf.broker_url,
+        }
+    except Exception as e:
+        logger.warning(f"Celery 상태 조회 실패: {e}")
+        return {
+            "workers":      [],
+            "worker_count": 0,
+            "beat_schedule": {},
+            "error":        str(e),
+        }
 
 
 @router.post("/trigger")

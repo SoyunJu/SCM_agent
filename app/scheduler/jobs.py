@@ -334,17 +334,13 @@ def run_daily_job(
             # TODO : 이메일 알림 기능 별도 분리
             try:
                 from app.notifier.email_notifier import send_daily_report_email
-                from app.db.repository import list_admin_users
-                admins = list_admin_users(db)
-                admin_emails = [a.email for a in admins if a.email and a.is_active]
                 email_ok = send_daily_report_email(
                     report_date=date.today().strftime("%Y-%m-%d"),
                     total_products=len(df_master),
                     stock_anomaly_count=len(stock_anomalies),
                     sales_anomaly_count=len(sales_anomalies),
                     risk_level=insight.get("risk_level", "medium"),
-                    pdf_path=Path(pdf_path) if pdf_path else None,
-                    to=admin_emails if admin_emails else None,
+                    pdf_path=pdf_path,
                 )
             except Exception as email_err:
                 logger.warning(f"이메일 발송 실패(스킵): {email_err}")

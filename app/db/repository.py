@@ -56,48 +56,47 @@ def get_report_execution_by_id(db: Session, record_id: int) -> Optional[ReportEx
 
 # --- Anomaly ------------─
 def upsert_anomaly_log(
-        db: Session, product_code: str, product_name: str,
-        anomaly_type: AnomalyType, severity: Severity,
-        category: Optional[str] = None,
-        current_stock: Optional[int] = None,
-        daily_avg_sales: Optional[float] = None,
-        days_until_stockout: Optional[float] = None,
+        db: Session,
+        product_code: str,
+        product_name: str,
+        anomaly_type,
+        severity,
+        current_stock: int | None = None,
+        daily_avg_sales: float | None = None,
+        days_until_stockout: float | None = None,
 ) -> AnomalyLog:
-    from datetime import date
+    from datetime import datetime, date
     today_start = datetime.combine(date.today(), datetime.min.time())
-    # 중복 insert 방지
-    existing = (
-        db.query(AnomalyLog)
-        .filter(
-            AnomalyLog.product_code  == product_code,
-            AnomalyLog.anomaly_type  == anomaly_type,
-            AnomalyLog.is_resolved   == False,
-            AnomalyLog.detected_at   >= today_start,
-            )
-        .first()
-    )
+
+    # 당일 미해결 동일 이상징후가 있으면 severity만 업데이트
+    existing = db.query(AnomalyLog).filter(
+        AnomalyLog.product_code == product_code,
+        AnomalyLog.anomaly_type == anomaly_type,
+        AnomalyLog.is_resolved  == False,
+        AnomalyLog.detected_at  >= today_start,
+        ).first()
 
     if existing:
         existing.severity            = severity
         existing.current_stock       = current_stock
         existing.daily_avg_sales     = daily_avg_sales
         existing.days_until_stockout = days_until_stockout
-        existing.product_name        = product_name
-        existing.category            = category
         db.commit()
         db.refresh(existing)
         return existing
 
     record = AnomalyLog(
         product_code=product_code, product_name=product_name,
-        category=category, anomaly_type=anomaly_type, severity=severity,
+        anomaly_type=anomaly_type, severity=severity,
         current_stock=current_stock, daily_avg_sales=daily_avg_sales,
         days_until_stockout=days_until_stockout,
+        is_resolved=False,
     )
     db.add(record)
     db.commit()
     db.refresh(record)
     return record
+
 
 
 def get_anomaly_logs(
