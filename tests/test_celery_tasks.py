@@ -27,20 +27,21 @@ def _base_mocks():
 # ── Redis 캐시 히트 ───────────────────────────────────────────────────────────
 
 def test_run_demand_forecast_redis_cache_hit():
-    """Redis 캐시 히트 시 분석기·DB 미호출"""
+    """Redis 캐시 히트 시 분석기 미호출 + 캐시 결과 반환 확인"""
     cached_items = [{"product_code": "P001", "forecast": 10}]
 
     with patch("app.celery_app.tasks.cache_get", return_value=cached_items), \
-            patch("app.celery_app.tasks.SessionLocal") as mock_session, \
+            patch("app.celery_app.tasks.SessionLocal"), \
             patch("app.celery_app.tasks._get_cache_ttl",    return_value=7200), \
-            patch("app.celery_app.tasks._get_cache_max_age", return_value=120):
+            patch("app.celery_app.tasks._get_cache_max_age", return_value=120), \
+            patch("app.celery_app.tasks._build_dataframes") as mock_build:
 
         from app.celery_app.tasks import run_demand_forecast
         result = run_demand_forecast.run(forecast_days=14)
 
         assert result["from_cache"] is True
         assert result["items"] == cached_items
-        mock_session.assert_not_called()
+        mock_build.assert_not_called()   # 분석기는 호출 안 됨
 
 
 def test_run_abc_analysis_redis_cache_hit():

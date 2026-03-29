@@ -111,10 +111,10 @@ def _get_cached(cache_key: str, analysis_type: str, params_hash: str, db):
         logger.debug(f"[{analysis_type}] Redis 캐시 히트")
         return redis_hit
 
-    db_hit = get_analysis_cache(db, analysis_type, params_hash, max_age_minutes=ANALYSIS_CACHE_MAX_AGE)
+    db_hit = get_analysis_cache(db, analysis_type, params_hash, max_age_minutes=_get_cache_max_age(db))
     if db_hit:
         items = json.loads(db_hit.result_json).get("items", [])
-        cache_set(cache_key, items, ttl=ANALYSIS_CACHE_TTL)
+        cache_set(cache_key, items, ttl=_get_cache_ttl(db))
         logger.debug(f"[{analysis_type}] DB 캐시 히트 → Redis 워밍업")
         return items
 
@@ -129,7 +129,7 @@ def _store_cache(cache_key: str, analysis_type: str, params_hash: str, items: li
         upsert_analysis_cache(db, analysis_type, params_hash, payload)
     except Exception as exc:
         logger.warning(f"[{analysis_type}] DB 캐시 저장 실패 (Redis만 유지): {exc}")
-    cache_set(cache_key, items, ttl=ANALYSIS_CACHE_TTL)
+    cache_set(cache_key, items, ttl=_get_cache_ttl(db))
 
 
 

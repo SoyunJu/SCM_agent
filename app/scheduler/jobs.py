@@ -5,6 +5,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 from loguru import logger
+from pathlib import Path
 
 from app.ai.insight_generator import generate_daily_insight
 from app.ai.sentiment_analyzer import batch_analyze_sales_anomalies

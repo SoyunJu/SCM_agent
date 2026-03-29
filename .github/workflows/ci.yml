@@ -76,11 +76,3 @@ jobs:
             --cov-fail-under=40 \
             -q
         continue-on-error: true   # 커버리지 미달 시 경고만
-
-      - name: 커버리지 리포트 업로드 (선택)
-        uses: codecov/codecov-action@v4
-        if: always()
-        with:
-          file: ./coverage.xml
-          fail_ci_if_error: false
-        continue-on-error: true
