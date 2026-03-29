@@ -1,6 +1,7 @@
+
 import asyncio
 import os
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 from loguru import logger
@@ -9,8 +10,6 @@ from app.ai.insight_generator import generate_daily_insight
 from app.ai.sentiment_analyzer import batch_analyze_sales_anomalies
 from app.analyzer.sales_analyzer import run_sales_analysis
 from app.analyzer.stock_analyzer import run_stock_analysis
-from app.cache.redis_client import cache_get, cache_delete
-from app.crawler.excel_parser import parse_stock_sheet, parse_sales_sheet
 from app.crawler.order_scraper import generate_orders
 from app.crawler.scraper import crawl_all_sites
 from app.db.connection import SessionLocal
@@ -22,28 +21,14 @@ from app.db.repository import (
 from app.services.sync_service import SyncService
 from app.notifier.notifier import notify_daily_report, notify_anomaly_alert
 from app.report.pdf_generator import generate_daily_pdf
-from app.sheets.reader import read_product_master, read_sales, read_stock
-from app.sheets.writer import (
-    write_stock_upsert, write_sales, upsert_master_from_excel, upsert_stock_from_excel, write_orders,
-    write_analysis_result,
-)
+from app.sheets.writer import write_orders, write_analysis_result
 
 EXCEL_PATH = os.getenv("EXCEL_PATH", "./sample_data.xlsx")
 
 
-def _sync_excel_to_sheets(excel_path: str) -> None:
-    df_sales_excel = parse_sales_sheet(excel_path)
-    write_sales(df_sales_excel)
-    upsert_master_from_excel(df_sales_excel)
-    try:
-        df_stock_excel = parse_stock_sheet(excel_path)
-        upsert_stock_from_excel(df_stock_excel)
-        upsert_master_from_excel(df_stock_excel)
-    except Exception as e:
-        logger.warning(f"엑셀 재고 파싱 스킵: {e}")
-
-
+# --- 크롤 결과 조회 (Redis 캐시 우선) ---
 def _get_crawled_df() -> pd.DataFrame:
+    from app.cache.redis_client import cache_get
     cached = cache_get("crawler:results")
     if cached:
         logger.info("Redis에서 크롤 결과 로드")
@@ -59,100 +44,104 @@ def _get_crawled_df() -> pd.DataFrame:
     return crawl_all_sites(books_pages=3, webscraper_pages=2, scrapingcourse_pages=2)
 
 
-def _sync_sheets_to_db() -> None:
-    from app.services.sync_service import SyncService
+# --- DB에서 분석용 DataFrame 조립 ---
+def _load_dataframes_from_db(db) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """DB에서 df_master / df_sales / df_stock 조립 (status 컬럼 포함 → analyzer 자동 필터)"""
+    from app.db.models import Product, StockLevel
+    from app.db.repository import get_daily_sales_range
+
+    products = db.query(Product).all()
+    df_master = pd.DataFrame([
+        {
+            "상품코드":     p.code,
+            "상품명":       p.name,
+            "카테고리":     p.category or "",
+            "안전재고기준": p.safety_stock,
+            "status":       p.status.value,  # analyzer inactive/sample 제외용
+        }
+        for p in products
+    ]) if products else pd.DataFrame(columns=["상품코드", "상품명", "카테고리", "안전재고기준", "status"])
+
+    sales_rows = get_daily_sales_range(db, start=date.today() - timedelta(days=90), end=date.today())
+    df_sales = pd.DataFrame([
+        {
+            "날짜":    str(s.date),
+            "상품코드": s.product_code,
+            "판매수량": s.qty,
+            "매출액":  s.revenue,
+        }
+        for s in sales_rows
+    ]) if sales_rows else pd.DataFrame(columns=["날짜", "상품코드", "판매수량", "매출액"])
+
+    stocks = db.query(StockLevel).all()
+    df_stock = pd.DataFrame([
+        {
+            "상품코드":     s.product_code,
+            "현재재고":     s.current_stock,
+            "입고예정일":   str(s.restock_date) if s.restock_date else "",
+            "입고예정수량": s.restock_qty or 0,
+        }
+        for s in stocks
+    ]) if stocks else pd.DataFrame(columns=["상품코드", "현재재고", "입고예정일", "입고예정수량"])
+
+    return df_master, df_sales, df_stock
+
+
+# --- Celery task에서 호출하는 수동/주기 동기화 ---
+def sync_sheets_only() -> dict:
+    """크롤러 결과 + Excel → Sheets → DB 전체 동기화"""
+    logger.info("===== Sheets 동기화 시작 =====")
+    from app.sheets.writer import write_stock_upsert, upsert_master_from_excel
+    from app.crawler.excel_parser import parse_sales_sheet, parse_stock_sheet
+    from app.sheets.writer import write_sales
+
+    df_crawled = _get_crawled_df()
+    if not df_crawled.empty:
+        upsert_master_from_excel(df_crawled)
+        write_stock_upsert(df_crawled)
+
+    if os.path.exists(EXCEL_PATH):
+        from app.crawler.excel_parser import parse_sales_sheet, parse_stock_sheet
+        df_sales_excel = parse_sales_sheet(EXCEL_PATH)
+        write_sales(df_sales_excel)
+        upsert_master_from_excel(df_sales_excel)
+        try:
+            df_stock_excel = parse_stock_sheet(EXCEL_PATH)
+            from app.sheets.writer import upsert_stock_from_excel
+            upsert_stock_from_excel(df_stock_excel)
+            upsert_master_from_excel(df_stock_excel)
+        except Exception as e:
+            logger.warning(f"엑셀 재고 파싱 스킵: {e}")
+
     db = SessionLocal()
     try:
         SyncService.sync_all_from_sheets(db)
     finally:
         db.close()
 
-
-# 수동 동기화
-def sync_sheets_only() -> dict:
-    logger.info("===== Sheets 동기화 시작 =====")
-    df_crawled = _get_crawled_df()
-    if not df_crawled.empty:
-        # 마스터 먼저 upsert
-        upsert_master_from_excel(df_crawled)
-        # 재고현황 upsert
-        write_stock_upsert(df_crawled)
-    if os.path.exists(EXCEL_PATH):
-        _sync_excel_to_sheets(EXCEL_PATH)
-    # Redis 캐시 무효화
-    for sheet_name in ["상품마스터", "일별판매", "재고현황"]:
-        cache_delete(f"sheets:{sheet_name}")
-    # Sheets → DB 동기화
-    _sync_sheets_to_db()
     logger.info("===== Sheets 동기화 완료 =====")
     return {"crawled": len(df_crawled) if not df_crawled.empty else 0}
 
 
+# --- Celery Beat 주기 동기화 ---
 def sync_sheets_to_db_incremental() -> dict:
-    logger.info("===== [5분주기] Sheets → DB 동기화 시작 =====")
-    result = {"products": 0, "sales": 0, "stock": 0, "error": None}
+    logger.info("===== Sheets → DB 동기화 시작 =====")
     db = SessionLocal()
     try:
-        for sheet_name in ["상품마스터", "일별판매", "재고현황"]:
-            cache_delete(f"sheets:{sheet_name}")
-
-        df_master = read_product_master()
-        df_sales  = read_sales()
-        df_stock  = read_stock()
-
-        if not df_master.empty:
-            products = [
-                {
-                    "code":         str(r.get("상품코드", "")),
-                    "name":         str(r.get("상품명", "")),
-                    "category":     r.get("카테고리"),
-                    "safety_stock": int(r.get("안전재고기준", 0) or 0),
-                    "source":       "sheets",
-                }
-                for r in df_master.to_dict("records")
-                if r.get("상품코드")
-            ]
-            res = bulk_upsert_products(db, products)
-            result["products"] = res.get("inserted", 0) + res.get("updated", 0)
-
-        if not df_sales.empty:
-            sales = [
-                {
-                    "date":         str(r.get("날짜", "")),
-                    "product_code": str(r.get("상품코드", "")),
-                    "qty":          int(r.get("판매수량", 0) or 0),
-                    "revenue":      float(r.get("매출액", 0) or 0),
-                    "cost":         float(r.get("매입액", 0) or 0),
-                }
-                for r in df_sales.to_dict("records")
-                if r.get("상품코드") and r.get("날짜")
-            ]
-            res = bulk_upsert_daily_sales(db, sales)
-            result["sales"] = res.get("inserted", 0) + res.get("updated", 0)
-
-        if not df_stock.empty:
-            stock = [
-                {
-                    "product_code":  str(r.get("상품코드", "")),
-                    "current_stock": int(r.get("현재재고", 0) or 0),
-                    "restock_date":  r.get("입고예정일") or None,
-                    "restock_qty":   r.get("입고예정수량"),
-                }
-                for r in df_stock.to_dict("records")
-                if r.get("상품코드")
-            ]
-            res = bulk_upsert_stock_levels(db, stock)
-            result["stock"] = res.get("inserted", 0) + res.get("updated", 0)
-
-        logger.info(f"[5분주기] DB 동기화 완료: {result}")
+        result = {}
+        result["master"] = SyncService.sync_master(db, __import__("app.sheets.reader", fromlist=["read_product_master"]).read_product_master())
+        result["sales"]  = SyncService.sync_sales(db,  __import__("app.sheets.reader", fromlist=["read_sales"]).read_sales())
+        result["stock"]  = SyncService.sync_stock(db,  __import__("app.sheets.reader", fromlist=["read_stock"]).read_stock())
+        logger.info(f"===== Sheets → DB 동기화 완료: {result} =====")
+        return result
     except Exception as e:
-        result["error"] = str(e)
-        logger.error(f"[5분주기] DB 동기화 실패: {e}")
+        logger.error(f"Sheets → DB 동기화 실패: {e}")
+        return {"error": str(e)}
     finally:
         db.close()
-    return result
 
 
+# --- 일일 보고서 메인 ---
 def run_daily_job(
         execution_id: int | None = None,
         severity_filter: list[str] | None = None,
@@ -181,22 +170,32 @@ def run_daily_job(
         surge_threshold      = float(get_setting(db, "SALES_SURGE_THRESHOLD", "50"))
         drop_threshold       = float(get_setting(db, "SALES_DROP_THRESHOLD", "50"))
 
-        # --- 1. Sheets 동기화 ---
+        # --- 1. Sheets 동기화 (크롤러 결과 반영) ---
         logger.info("[1/7] Sheets 동기화")
         df_crawled = _get_crawled_df()
         if not df_crawled.empty:
-            upsert_master_from_excel(df_crawled)   # 마스터 선행
+            from app.sheets.writer import write_stock_upsert, upsert_master_from_excel
+            upsert_master_from_excel(df_crawled)
             write_stock_upsert(df_crawled)
         if os.path.exists(EXCEL_PATH):
-            _sync_excel_to_sheets(EXCEL_PATH)
+            from app.crawler.excel_parser import parse_sales_sheet, parse_stock_sheet
+            from app.sheets.writer import write_sales, upsert_master_from_excel, upsert_stock_from_excel
+            df_sales_excel = parse_sales_sheet(EXCEL_PATH)
+            write_sales(df_sales_excel)
+            upsert_master_from_excel(df_sales_excel)
+            try:
+                df_stock_excel = parse_stock_sheet(EXCEL_PATH)
+                upsert_stock_from_excel(df_stock_excel)
+                upsert_master_from_excel(df_stock_excel)
+            except Exception as e:
+                logger.warning(f"엑셀 재고 파싱 스킵: {e}")
+        # Sheets → DB 반영
+        SyncService.sync_all_from_sheets(db)
 
-        # --- 2. 데이터 읽기 ---
-        df_master = read_product_master()
-        df_sales  = read_sales()
-        df_stock  = read_stock()
-
-        # --- 3. 분석 ---
+        # --- 2. DB에서 분석 데이터 로드 ---
         logger.info("[2/7] 재고/판매 분석")
+        df_master, df_sales, df_stock = _load_dataframes_from_db(db)
+
         stock_anomalies = run_stock_analysis(
             df_master, df_stock, df_sales,
             safety_stock_days=safety_stock_days,
@@ -211,7 +210,7 @@ def run_daily_job(
             drop_threshold=drop_threshold,
         )
 
-        # --- 4. 주문 동기화 ---
+        # --- 3. 주문 동기화 ---
         logger.info("[3/7] 주문 데이터 동기화")
         try:
             product_codes = df_master["상품코드"].tolist()
@@ -224,11 +223,11 @@ def run_daily_job(
         except Exception as e:
             logger.warning(f"주문 동기화 실패(스킵): {e}")
 
-        # --- 5. 감성 분석 ---
+        # --- 4. 감성 분석 ---
         logger.info("[4/7] 감성 분석")
         sales_anomalies = batch_analyze_sales_anomalies(sales_anomalies)
 
-        # --- 6. 인사이트 생성 ---
+        # --- 5. 인사이트 생성 ---
         logger.info("[5/7] 인사이트 생성")
         insight = generate_daily_insight(
             stock_anomalies=list(stock_anomalies),
@@ -236,7 +235,7 @@ def run_daily_job(
             total_products=len(df_master),
         )
 
-        # 심각도/카테고리 필터 적용 (선택적)
+        # 심각도/카테고리 필터
         filtered_stock = [
             a for a in stock_anomalies
             if (not severity_filter or a["severity"] in severity_filter)
@@ -248,7 +247,7 @@ def run_daily_job(
                and (not category_filter or a.get("category") in category_filter)
         ]
 
-        # --- 7. DB 저장 ---
+        # --- 6. DB 저장 ---
         for item in stock_anomalies:
             create_anomaly_log(
                 db=db,
@@ -272,12 +271,11 @@ def run_daily_job(
             )
 
         # --- SSE + 이상징후 알림 ---
-        all_anomalies = list(stock_anomalies) + list(sales_anomalies)
+        all_anomalies  = list(stock_anomalies) + list(sales_anomalies)
         critical_items = [
             i for i in all_anomalies
             if str(i.get("severity", "")).upper() in ("CRITICAL", "HIGH")
         ]
-
         if critical_items:
             from app.api.alert_router import sync_broadcast_alert
             for item in critical_items:
@@ -297,7 +295,7 @@ def run_daily_job(
                     db=db,
                 )
 
-        # --- 8. PDF 보고서 생성 ---
+        # --- 7. PDF 보고서 생성 ---
         logger.info("[6/7] PDF 보고서 생성")
         pdf_path = None
         pdf_ok   = False
@@ -313,7 +311,7 @@ def run_daily_job(
         except Exception as pdf_err:
             logger.error(f"PDF 생성 실패: {pdf_err}")
 
-        # --- 9. Slack + 이메일 발송 ---
+        # --- 8. Slack + 이메일 발송 ---
         slack_ok = False
         if pdf_ok:
             logger.info("[7/7] 알림 발송")
@@ -340,9 +338,6 @@ def run_daily_job(
                 write_analysis_result(df_analysis)
         except Exception as e:
             logger.warning(f"분석결과 시트 기록 실패(스킵): {e}")
-
-        # --- Sheets → DB 최종 동기화 ---
-        _sync_sheets_to_db()
 
         update_report_execution(db=db, record_id=execution_id, status=ExecutionStatus.SUCCESS, slack_sent=slack_ok)
         update_last_run(db, "daily_report")
