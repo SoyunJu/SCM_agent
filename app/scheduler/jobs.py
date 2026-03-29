@@ -90,6 +90,7 @@ def _sync_sheets_to_db() -> None:
                     "product_code": str(r.get("상품코드", "")),
                     "qty":          int(r.get("판매수량", 0) or 0),
                     "revenue":      float(r.get("매출액", 0) or 0),
+                    "cost":         float(r.get("매입액", 0) or 0),
                 }
                 for r in df_sales.to_dict("records")
                 if r.get("상품코드") and r.get("날짜")
@@ -170,6 +171,7 @@ def sync_sheets_to_db_incremental() -> dict:
                     "product_code": str(r.get("상품코드", "")),
                     "qty":          int(r.get("판매수량", 0) or 0),
                     "revenue":      float(r.get("매출액", 0) or 0),
+                    "cost":         float(r.get("매입액", 0) or 0),
                 }
                 for r in df_sales.to_dict("records")
                 if r.get("상품코드") and r.get("날짜")

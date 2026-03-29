@@ -68,11 +68,9 @@ def bulk_upsert_daily_sales(db: Session, records: list[dict]) -> dict:
         return {"inserted": 0, "updated": 0, "skipped": 0}
 
     sql = text("""
-               INSERT INTO daily_sales (date, product_code, qty, revenue)
+               INSERT INTO daily_sales (date, product_code, qty, revenue, cost)
                VALUES (:date, :product_code, :qty, :revenue)
-                   ON DUPLICATE KEY UPDATE
-                                        qty     = VALUES(qty),
-                                        revenue = VALUES(revenue)
+                   ON DUPLICATE KEY UPDATE qty=VALUES(qty), revenue=VALUES(revenue), cost=VALUES(cost)
                """)
 
     total = 0

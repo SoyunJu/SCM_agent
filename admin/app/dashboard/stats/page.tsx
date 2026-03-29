@@ -1,18 +1,31 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {useEffect, useState} from "react";
 import {
-    getSalesStats, getStockStats, getAbcStats, getDemandForecast,
-    getTurnoverStats, getTaskStatus, getSheetCategories
+    getAbcStats,
+    getDemandForecast,
+    getSalesStats,
+    getSheetCategories,
+    getStockStats,
+    getTaskStatus,
+    getTurnoverStats
 } from "@/lib/api";
-import { getDefaultPageSize } from "@/lib/utils";
-import { SalesStatItem } from "@/lib/types";
+import {getDefaultPageSize} from "@/lib/utils";
+import {SalesStatItem} from "@/lib/types";
 import {
-    LineChart, Line, BarChart, Bar,
-    XAxis, YAxis, CartesianGrid, Tooltip,
-    ResponsiveContainer, PieChart, Pie, Cell, Legend,
+    Bar,
+    BarChart,
+    CartesianGrid,
+    Cell,
+    Legend,
+    Pie,
+    PieChart,
+    ResponsiveContainer,
+    Tooltip,
+    XAxis,
+    YAxis,
 } from "recharts";
-import { Loader2, TrendingUp, TrendingDown, Minus, ChevronLeft, ChevronRight } from "lucide-react";
+import {ChevronLeft, ChevronRight, Loader2, Minus, Search, TrendingDown, TrendingUp, X} from "lucide-react";
 
 // ── 상수 및 스타일 설정 ──
 const PERIOD_LABELS = { daily: "일별", weekly: "주별", monthly: "월별" };
@@ -116,6 +129,8 @@ export default function StatsPage() {
     const [abcCategory, setAbcCategory] = useState("");
     const [demandCategory, setDemandCategory] = useState("");
     const [turnoverCategory, setTurnoverCategory] = useState("");
+    const [demandSearch, setDemandSearch] = useState<string>("");
+    const [turnoverSearch, setTurnoverSearch] = useState<string>("");
 
     // 카테고리 로드
     useEffect(() => {
@@ -328,16 +343,64 @@ export default function StatsPage() {
             {/* ── 수요 예측 ── */}
             {tab === "demand" && (
                 <div className="space-y-4">
-                    <div className="flex items-center gap-3 flex-wrap bg-white p-4 rounded-xl border border-gray-100">
-                        <span className="text-sm font-semibold text-gray-700 mr-auto">수요 예측 <span className="text-xs font-normal text-gray-400 ml-2">Total {demandTotal}</span></span>
-                        <select value={demandCategory} onChange={(e) => { setDemandCategory(e.target.value); setDemandPage(1); }} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm">
-                            <option value="">전체 카테고리</option>
-                            {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        <select value={demandPageSize} onChange={(e) => { setDemandPageSize(Number(e.target.value)); setDemandPage(1); }} className="border border-gray-200 rounded-lg px-2 py-1 text-xs">
-                            {[10, 25, 50].map(n => <option key={n} value={n}>{n}건씩</option>)}
-                        </select>
-                    </div>
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <span
+                            className="px-2 py-0.5 bg-red-50 text-red-600 rounded-full text-xs font-medium">재고 부족</span>
+                        <span className="text-sm text-gray-500">예측 기간 14일 기준 · 7일 이동평균</span>
+
+                        {/* 회전율 필터 */}
+                        <div className="flex items-center gap-3 flex-wrap">
+
+                            {/* 검색 */}
+                            <div
+                                className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-1.5 bg-white min-w-48">
+                                <Search size={13} className="text-gray-400 shrink-0"/>
+                                <input
+                                    type="text"
+                                    placeholder="상품코드 / 상품명 검색"
+                                    value={turnoverSearch}
+                                    onChange={(e) => {
+                                        setTurnoverSearch(e.target.value);
+                                        setTurnoverPage(1);
+                                    }}
+                                    className="text-sm outline-none w-full"
+                                />
+                                {turnoverSearch && (
+                                    <button onClick={() => {
+                                        setTurnoverSearch("");
+                                        setTurnoverPage(1);
+                                    }} className="text-gray-400 hover:text-gray-600">
+                                        <X size={12}/>
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* 카테고리 */}
+                            {turnoverCategories.length > 0 && (
+                                <select
+                                    value={turnoverCategory}
+                                    onChange={(e) => {
+                                        setTurnoverCategory(e.target.value);
+                                        setTurnoverPage(1);
+                                    }}
+                                    className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
+                                >
+                                    <option value="">전체 카테고리</option>
+                                    {turnoverCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            )}
+                            <span className="ml-auto text-xs text-gray-400">총 {turnoverTotal}건</span>
+                            <select
+                                value={turnoverPageSize}
+                                onChange={(e) => {
+                                    setTurnoverPageSize(Number(e.target.value));
+                                    setTurnoverPage(1);
+                                }}
+                                className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none"
+                            >
+                                {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n}건</option>)}
+                            </select>
+                        </div>
                     {loading ? <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-blue-500" /></div> : (
                         <>
                             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden overflow-x-auto">
@@ -353,8 +416,25 @@ export default function StatsPage() {
                                     </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-50">
-                                    {demandData.map((item, i) => (
-                                        <tr key={i} className="hover:bg-gray-50 transition">
+
+                                    {(() => {
+                                        const filteredDemand = demandSearch
+                                            ? demandData.filter((item: any) =>
+                                                (item.product_code ?? "").toLowerCase().includes(demandSearch.toLowerCase()) ||
+                                                (item.product_name ?? "").toLowerCase().includes(demandSearch.toLowerCase())
+                                            )
+                                            : demandData;
+
+                                        return filteredDemand.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={7}
+                                                    className="px-5 py-10 text-center text-gray-400 text-sm">
+                                                    {demandSearch ? `"${demandSearch}" 검색 결과 없음` : "데이터 없음"}
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            filteredDemand.map((item: any, i: number) => (
+                                                <tr key={i} className="hover:bg-gray-50 transition">
                                             <td className="px-5 py-3 font-mono text-xs">{item.product_code}</td>
                                             <td className="px-5 py-3 truncate max-w-[180px]">{item.product_name}</td>
                                             <td className="px-5 py-3 text-right">{item.current_stock?.toLocaleString()}</td>
@@ -362,7 +442,9 @@ export default function StatsPage() {
                                             <td className="px-5 py-3 text-right text-red-500 font-semibold">{item.shortage > 0 ? item.shortage.toLocaleString() : "-"}</td>
                                             <td className="px-5 py-3 flex justify-center"><TrendIcon trend={item.trend} /></td>
                                         </tr>
-                                    ))}
+                                            ))
+                                        );
+                                    })()}
                                     </tbody>
                                 </table>
                             </div>

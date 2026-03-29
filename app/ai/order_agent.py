@@ -43,25 +43,34 @@ def generate_order_proposals(
     # 상품코드 → 일평균 판매량
     avg_sales_map: dict[str, float] = {}
     unit_price_map: dict[str, float] = {}
-    if df_sales is not None and not df_sales.empty and "상품코드" in df_sales.columns and "판매수량" in df_sales.columns:
+    if df_sales is not None and not df_sales.empty and "상품코드" in df_sales.columns:
         import pandas as pd
         df_sales = df_sales.copy()
         df_sales["판매수량"] = pd.to_numeric(df_sales["판매수량"], errors="coerce").fillna(0)
         df_sales["매출액"] = pd.to_numeric(df_sales.get("매출액", 0), errors="coerce").fillna(0)
+        df_sales["매입액"] = pd.to_numeric(df_sales.get("매입액", 0), errors="coerce").fillna(0)
 
         grp = df_sales.groupby("상품코드").agg(
             avg_qty=("판매수량", "mean"),
             total_qty=("판매수량", "sum"),
             total_rev=("매출액", "sum"),
+            total_cost=("매입액", "sum"),
         )
         avg_sales_map = grp["avg_qty"].to_dict()
 
-        # 평균 단가 = 총매출액 / 총판매수량 (판매 없으면 0)
-        unit_price_map = {
-            code: round(row["total_rev"] / row["total_qty"], 0)
-            if row["total_qty"] > 0 else 0.0
-            for code, row in grp.iterrows()
-        }
+        for code, row in grp.iterrows():
+            total_qty = row["total_qty"]
+            total_cost = row["total_cost"]
+            total_rev = row["total_rev"]
+
+            if total_qty > 0 and total_cost > 0:
+                # 매입액 있으면 매입 단가 우선 사용
+                unit_price_map[code] = round(total_cost / total_qty, 0)
+            elif total_qty > 0 and total_rev > 0:
+                # 매입액 없으면 매출 단가 fallback
+                unit_price_map[code] = round(total_rev / total_qty, 0)
+            else:
+                unit_price_map[code] = 0.0
 
     # 상품코드 → 카테고리
     category_map: dict[str, str] = {}
