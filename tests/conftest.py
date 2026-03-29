@@ -115,8 +115,10 @@ def seed_products(db_session):
     ]
     db_session.add_all(products)
     db_session.commit()
-    db_session.expunge_all()
-    return products
+    # dict로 변환해서 반환 — 세션 분리 후에도 속성 접근 가능
+    return [{"code": p.code, "name": p.name, "category": p.category,
+             "safety_stock": p.safety_stock, "status": p.status.value}
+            for p in products]
 
 
 @pytest.fixture(scope="function")
@@ -129,8 +131,8 @@ def seed_stock(db_session, seed_products):
     ]
     db_session.add_all(stocks)
     db_session.commit()
-    db_session.expunge_all()
-    return stocks
+    return [{"product_code": s.product_code, "current_stock": s.current_stock}
+            for s in stocks]
 
 
 @pytest.fixture(scope="function")
@@ -147,8 +149,8 @@ def seed_sales(db_session, seed_products):
                                 qty=10, revenue=100000.0, cost=60000.0))
     db_session.add_all(sales)
     db_session.commit()
-    db_session.expunge_all()
-    return sales
+    return [{"date": str(s.date), "product_code": s.product_code, "qty": s.qty}
+            for s in sales]
 
 
 @pytest.fixture(scope="function")
@@ -174,8 +176,10 @@ def seed_anomalies(db_session, seed_products):
     ]
     db_session.add_all(anomalies)
     db_session.commit()
-    db_session.expunge_all()
-    return anomalies
+    return [{"id": a.id, "product_code": a.product_code,
+             "anomaly_type": a.anomaly_type.value, "severity": a.severity.value,
+             "is_resolved": a.is_resolved}
+            for a in anomalies]
 
 
 @pytest.fixture(scope="function")
@@ -198,5 +202,7 @@ def seed_proposals(db_session, seed_products):
     ]
     db_session.add_all(proposals)
     db_session.commit()
-    db_session.expunge_all()
-    return proposals
+    return [{"id": p.id, "product_code": p.product_code,
+             "status": p.status.value, "proposed_qty": p.proposed_qty,
+             "unit_price": p.unit_price}
+            for p in proposals]
