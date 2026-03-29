@@ -4,17 +4,19 @@
 from __future__ import annotations
 
 import io
+from datetime import date, timedelta
+
 import pandas as pd
 from fastapi.responses import StreamingResponse
-from loguru import logger
 from sqlalchemy.orm import Session
 
-from app.sheets.reader import read_product_master, read_sales, read_stock, read_orders
+from app.sheets.reader import read_product_master, read_sales, read_stock
+from app.sheets.writer import write_order_proposals
 
 
 class SheetService:
 
-    # Helper
+    # ── Helper ──────────────────────────────────────
 
     @staticmethod
     def _paginate(df: pd.DataFrame, page: int, page_size: int) -> dict:
@@ -56,69 +58,178 @@ class SheetService:
         col = next((c for c in ["카테고리", "category"] if c in df.columns), None)
         return df[df[col] == category] if col else df
 
-    # --- GET ---
+    # ── 조회 ──────────────────────────────────────
 
     @staticmethod
-    def get_categories() -> list[str]:
-        df  = read_product_master()
-        col = next((c for c in ["카테고리", "category"] if c in df.columns), None)
-        if not col:
-            return []
-        return sorted(c for c in df[col].dropna().unique() if c)
+    def get_categories(db: Session) -> list[str]:
+        from app.db.models import Product
+        rows = (
+            db.query(Product.category)
+            .filter(Product.category.isnot(None), Product.category != "")
+            .distinct()
+            .order_by(Product.category)
+            .all()
+        )
+        return [r.category for r in rows if r.category]
+
 
     @staticmethod
     def get_master(
+            db: Session,
             page: int, page_size: int,
             search: str | None, category: str | None, download: bool,
     ):
-        df = read_product_master()
-        df = SheetService._search_filter(df, search)
-        df = SheetService._category_filter(df, category)
+        from app.db.repository import get_products_paginated
+
+        result = get_products_paginated(
+            db, page=page, page_size=page_size,
+            search=search, category=category,
+        )
+
+        items = [
+            {
+                "상품코드":     p.code,
+                "상품명":       p.name,
+                "카테고리":     p.category or "",
+                "안전재고기준": p.safety_stock,
+                "상태":         p.status.value.lower(),
+            }
+            for p in result["items"]
+        ]
+
         if download:
-            return SheetService._to_csv(df, "master.csv")
-        return SheetService._paginate(df, page, page_size)
+            return SheetService._to_csv(pd.DataFrame(items), "master.csv")
+
+        return {
+            "total":       result["total"],
+            "page":        result["page"],
+            "page_size":   result["page_size"],
+            "total_pages": max(1, (result["total"] + page_size - 1) // page_size),
+            "items":       items,
+        }
+
 
     @staticmethod
     def get_sales(
+            db: Session,
             days: int, page: int, page_size: int,
             search: str | None, category: str | None, download: bool,
     ):
-        df = read_sales()
-        df["날짜"] = pd.to_datetime(df["날짜"])
-        df = df[df["날짜"] >= df["날짜"].max() - pd.Timedelta(days=days)].copy()
-        df = SheetService._search_filter(df, search)
-        df = SheetService._category_filter(df, category)
-        df["날짜"] = df["날짜"].dt.strftime("%Y-%m-%d")
+        """DB daily_sales + products JOIN 기반 조회"""
+        from app.db.models import DailySales, Product
+
+        cutoff = date.today() - timedelta(days=days)
+
+        query = (
+            db.query(DailySales, Product)
+            .outerjoin(Product, DailySales.product_code == Product.code)
+            .filter(DailySales.date >= cutoff)
+        )
+        if search:
+            query = query.filter(
+                DailySales.product_code.contains(search) |
+                Product.name.contains(search)
+            )
+        if category:
+            query = query.filter(Product.category == category)
+
+        total = query.count()
+        rows  = (
+            query.order_by(DailySales.date.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+
+        items = [
+            {
+                "날짜":       str(sale.date),
+                "상품코드":   sale.product_code,
+                "상품명":     prod.name   if prod else "",
+                "카테고리":   prod.category if prod else "",
+                "판매수량":   sale.qty,
+                "매출액":     sale.revenue,
+                "매입액":     sale.cost,
+                "차액(수익)": sale.revenue - sale.cost,
+            }
+            for sale, prod in rows
+        ]
+
         if download:
-            return SheetService._to_csv(df, "sales.csv")
-        return SheetService._paginate(df, page, page_size)
+            return SheetService._to_csv(pd.DataFrame(items), "sales.csv")
+
+        return {
+            "total":       total,
+            "page":        page,
+            "page_size":   page_size,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
+            "items":       items,
+        }
+
 
     @staticmethod
     def get_stock(
+            db: Session,
             page: int, page_size: int,
             search: str | None, category: str | None, download: bool,
     ):
-        df = read_stock()
-        df = SheetService._search_filter(df, search)
-        df = SheetService._category_filter(df, category)
+        """DB stock_levels + products JOIN 기반 조회"""
+        from app.db.models import StockLevel, Product
+
+        query = (
+            db.query(StockLevel, Product)
+            .outerjoin(Product, StockLevel.product_code == Product.code)
+        )
+        if search:
+            query = query.filter(
+                StockLevel.product_code.contains(search) |
+                Product.name.contains(search)
+            )
+        if category:
+            query = query.filter(Product.category == category)
+
+        total = query.count()
+        rows  = (
+            query.order_by(StockLevel.current_stock.asc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+
+        items = [
+            {
+                "상품코드":     sl.product_code,
+                "상품명":       prod.name     if prod else "",
+                "카테고리":     prod.category if prod else "",
+                "현재재고":     sl.current_stock,
+                "안전재고":     prod.safety_stock if prod else 0,
+                "입고예정일":   str(sl.restock_date) if sl.restock_date else "",
+                "입고예정수량": sl.restock_qty or 0,
+            }
+            for sl, prod in rows
+        ]
+
         if download:
-            return SheetService._to_csv(df, "stock.csv")
-        return SheetService._paginate(df, page, page_size)
+            return SheetService._to_csv(pd.DataFrame(items), "stock.csv")
+
+        return {
+            "total":       total,
+            "page":        page,
+            "page_size":   page_size,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
+            "items":       items,
+        }
+
 
     @staticmethod
     def get_orders(
-            status: str | None, days: int, page: int, page_size: int,
+            db: Session,
+            status: str | None, days: int,
+            page: int, page_size: int,
     ) -> dict:
-        df = read_orders()
-        if df.empty:
-            return {"total": 0, "page": 1, "page_size": page_size, "total_pages": 0, "items": []}
-        if "발주일" in df.columns:
-            df["발주일"] = pd.to_datetime(df["발주일"], errors="coerce")
-            df = df[df["발주일"] >= pd.Timestamp.now() - pd.Timedelta(days=days)].copy()
-            df["발주일"] = df["발주일"].dt.strftime("%Y-%m-%d")
-        if status:
-            df = df[df["상태"] == status]
-        return SheetService._paginate(df, page, page_size)
+        from app.services.order_service import OrderService
+        offset = (page - 1) * page_size
+        return OrderService.list_proposals(db, status, limit=page_size, offset=offset, days=days)
 
 
     # --- 통계 ---
@@ -248,7 +359,7 @@ class SheetService:
     @staticmethod
     def update_product(db: Session, code: str, body_dict: dict) -> dict:
         """상품 정보 수정 (name/category/safety_stock/status)"""
-        from app.db.models import Product, ProductStatus
+        from app.db.models import ProductStatus
         from app.db.repository import get_product_by_code
 
         product = get_product_by_code(db, code)

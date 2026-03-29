@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 
 from app.api.auth_router import get_current_user, require_admin, TokenData
 from app.db.connection import get_db
-from app.db.models import Product, ProductStatus
 from app.db.repository import get_setting
 from app.services.sheet_service import SheetService
 from app.services.sync_service import SyncService
@@ -56,9 +55,12 @@ async def update_product(
 # ── 조회 ───────────────────────────────────────────────────────────────────
 
 @router.get("/categories")
-async def get_categories(current_user: Annotated[TokenData, Depends(get_current_user)]):
+async def get_categories(
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),     # ← 추가
+):
     try:
-        return {"items": SheetService.get_categories()}
+        return {"items": SheetService.get_categories(db)}   # ← db 전달
     except Exception as e:
         logger.error(f"카테고리 조회 실패: {e}")
         return {"items": []}
@@ -67,11 +69,12 @@ async def get_categories(current_user: Annotated[TokenData, Depends(get_current_
 @router.get("/master")
 async def get_master(
         current_user: Annotated[TokenData, Depends(require_admin)],
+        db: Session = Depends(get_db),
         page: int = 1, page_size: int = 50,
         search: str | None = None, category: str | None = None, download: bool = False,
 ):
     try:
-        return SheetService.get_master(page, page_size, search, category, download)
+        return SheetService.get_master(db, page, page_size, search, category, download)
     except Exception as e:
         logger.error(f"상품마스터 조회 실패: {e}")
         return {"total": 0, "page": 1, "page_size": page_size, "total_pages": 0, "items": []}
@@ -80,11 +83,12 @@ async def get_master(
 @router.get("/sales")
 async def get_sales(
         current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),
         days: int = 30, page: int = 1, page_size: int = 50,
         category: str | None = None, search: str | None = None, download: bool = False,
 ):
     try:
-        return SheetService.get_sales(days, page, page_size, search, category, download)
+        return SheetService.get_sales(db, days, page, page_size, search, category, download)
     except Exception as e:
         logger.error(f"일별판매 조회 실패: {e}")
         return {"total": 0, "page": 1, "page_size": page_size, "total_pages": 0, "items": []}
@@ -93,11 +97,12 @@ async def get_sales(
 @router.get("/stock")
 async def get_stock(
         current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),
         page: int = 1, page_size: int = 50,
         category: str | None = None, search: str | None = None, download: bool = False,
 ):
     try:
-        return SheetService.get_stock(page, page_size, search, category, download)
+        return SheetService.get_stock(db, page, page_size, search, category, download)
     except Exception as e:
         logger.error(f"재고현황 조회 실패: {e}")
         return {"total": 0, "page": 1, "page_size": page_size, "total_pages": 0, "items": []}
@@ -106,11 +111,12 @@ async def get_stock(
 @router.get("/orders")
 async def get_orders(
         current_user: Annotated[TokenData, Depends(require_admin)],
+        db: Session = Depends(get_db),
         status: str | None = None, days: int = 90,
         page: int = 1, page_size: int = 50,
 ):
     try:
-        return SheetService.get_orders(status, days, page, page_size)
+        return SheetService.get_orders(db, status, days, page, page_size)
     except Exception as e:
         logger.error(f"주문 조회 실패: {e}")
         return {"total": 0, "page": 1, "page_size": page_size, "total_pages": 0, "items": []}

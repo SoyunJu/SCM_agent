@@ -184,3 +184,26 @@ class OrderService:
             "approved_at":  p.approved_at.isoformat() if p.approved_at else None,
             "approved_by":  p.approved_by,
         }
+
+
+    @staticmethod
+    def list_proposals(
+            db: Session, status: str | None, limit: int, offset: int,
+            days: int | None = None,    # ← 추가
+    ) -> dict:
+        from datetime import datetime, timedelta
+        query = db.query(OrderProposal)
+        if status:
+            try:
+                query = query.filter(OrderProposal.status == ProposalStatus(status.upper()))
+            except ValueError:
+                pass
+        if days is not None:            # ← 추가
+            cutoff = datetime.now() - timedelta(days=days)
+            query = query.filter(OrderProposal.created_at >= cutoff)
+        total = query.count()
+        items = query.order_by(OrderProposal.created_at.desc()).offset(offset).limit(limit).all()
+        return {
+            "total": total, "offset": offset, "limit": limit,
+            "items": [OrderService._serialize(p) for p in items],
+        }
