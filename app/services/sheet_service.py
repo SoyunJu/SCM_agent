@@ -7,6 +7,7 @@ import io
 import pandas as pd
 from fastapi.responses import StreamingResponse
 from loguru import logger
+from sqlalchemy.orm import Session
 
 from app.sheets.reader import read_product_master, read_sales, read_stock, read_orders
 
@@ -201,11 +202,11 @@ class SheetService:
     def get_demand_stats(
             forecast_days: int, page: int, page_size: int, category: str | None,
     ) -> dict:
-        from app.analyzer.demand_forecaster import run_demand_forecast
+        from app.analyzer.demand_forecaster import run_demand_forecast_all   # ← 수정
         df_master = read_product_master()
         df_sales  = read_sales()
         df_stock  = read_stock()
-        items = run_demand_forecast(df_master, df_sales, df_stock, forecast_days=forecast_days)
+        items = run_demand_forecast_all(df_master, df_sales, df_stock, forecast_days=forecast_days)
         categories = sorted({i.get("category","") for i in items if i.get("category")})
         if category:
             items = [i for i in items if i.get("category") == category]
@@ -241,4 +242,34 @@ class SheetService:
             "total": total, "page": page,
             "page_size": page_size, "total_pages": total_pages,
             "items": items[start:start + page_size],
+        }
+
+
+    @staticmethod
+    def update_product(db: Session, code: str, body_dict: dict) -> dict:
+        """상품 정보 수정 (name/category/safety_stock/status)"""
+        from app.db.models import Product, ProductStatus
+        from app.db.repository import get_product_by_code
+
+        product = get_product_by_code(db, code)
+        if not product:
+            raise ValueError(f"상품을 찾을 수 없습니다: {code}")
+
+        if body_dict.get("name")         is not None: product.name = body_dict["name"]
+        if body_dict.get("category")     is not None: product.category = body_dict["category"]
+        if body_dict.get("safety_stock") is not None: product.safety_stock = body_dict["safety_stock"]
+        if body_dict.get("status")       is not None:
+            try:
+                product.status = ProductStatus(body_dict["status"].upper())
+            except ValueError:
+                raise ValueError(f"유효하지 않은 상태값: {body_dict['status']}")
+
+        db.commit()
+        db.refresh(product)
+        return {
+            "code":         product.code,
+            "name":         product.name,
+            "category":     product.category,
+            "safety_stock": product.safety_stock,
+            "status":       product.status.value.lower(),
         }

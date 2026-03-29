@@ -43,26 +43,14 @@ async def update_product(
         _: Annotated[TokenData, Depends(require_admin)],
         db: Session = Depends(get_db),
 ):
-    product = db.query(Product).filter(Product.code == code).first()
-    if not product:
-        raise HTTPException(404, f"상품을 찾을 수 없습니다: {code}")
-    if body.name         is not None: product.name = body.name
-    if body.category     is not None: product.category = body.category
-    if body.safety_stock is not None: product.safety_stock = body.safety_stock
-    if body.status       is not None:
-        try:
-            product.status = ProductStatus(body.status.upper())
-        except ValueError:
-            raise HTTPException(400, f"유효하지 않은 상태값: {body.status}")
-    db.commit()
-    db.refresh(product)
-    return {
-        "code":         product.code,
-        "name":         product.name,
-        "category":     product.category,
-        "safety_stock": product.safety_stock,
-        "status":       product.status.value.lower(),
-    }
+    try:
+        return SheetService.update_product(db, code.strip(), body.model_dump(exclude_none=True))
+    except ValueError as e:
+        status_code = 400 if "유효하지 않은" in str(e) else 404
+        raise HTTPException(status_code, str(e))
+    except Exception as exc:
+        logger.error(f"[상품수정] 실패: code={code}, error={exc}")
+        raise HTTPException(status_code=500, detail=f"상품 수정 중 오류 발생: {exc}")
 
 
 # ── 조회 ───────────────────────────────────────────────────────────────────

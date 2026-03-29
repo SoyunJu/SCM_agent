@@ -1,0 +1,59 @@
+
+from loguru import logger
+from sqlalchemy.orm import Session
+
+from app.db.repository import get_setting, upsert_setting
+
+# 전체 설정 목록과 기본값/설명
+DEFAULT_SETTINGS: dict[str, tuple[str, str]] = {
+    "SAFETY_STOCK_DAYS":           ("7",    "안전재고 = 일평균판매량 × N일"),
+    "SAFETY_STOCK_DEFAULT":        ("10",   "판매 데이터 없을 때 기본 안전재고"),
+    "CHAT_HISTORY_DAYS":           ("7",    "챗봇 히스토리 보관/로드 일수"),
+    "LOW_STOCK_CRITICAL_DAYS":     ("1",    "긴급 경보 소진예상일 기준 (이하)"),
+    "LOW_STOCK_HIGH_DAYS":         ("3",    "높음 경보 소진예상일 기준 (이하)"),
+    "LOW_STOCK_MEDIUM_DAYS":       ("7",    "보통 경보 소진예상일 기준 (이하)"),
+    "SALES_SURGE_THRESHOLD":       ("50",   "판매 급등 기준 (%)"),
+    "SALES_DROP_THRESHOLD":        ("50",   "판매 급락 기준 (%)"),
+    "SHEETS_CACHE_TTL":            ("300",  "Google Sheets 캐시 유효 시간 (초)"),
+    "ALERT_CHANNEL":               ("slack","알림 채널 (slack | email | both)"),
+    "ALERT_MIN_SEVERITY":          ("high", "알림 최소 심각도 (low | medium | high | critical)"),
+    "AUTO_ORDER_MIN_SEVERITY":     ("high", "자동발주 에이전트 실행 최소 심각도 (low | medium | high | critical)"),
+    "DATA_RETENTION_SALES_DAYS":     ("365",  "매출 데이터 보존 기간 (일, 0=무제한)"),
+    "DATA_RETENTION_STOCK_DAYS":     ("180",  "재고 스냅샷 보존 기간 (일, 0=무제한)"),
+    "DATA_RETENTION_ANALYSIS_HOURS": ("24",   "분석 결과 캐시 보존 기간 (시간)"),
+    "EXCEL_MAX_SIZE_MB":             ("50",   "엑셀 업로드 최대 파일 크기 (MB, 1~200)"),
+    "DEFAULT_PAGE_SIZE":             ("50",   "테이블 기본 페이지당 표시 건수 (10 | 25 | 50 | 100)"),
+}
+
+
+class SettingsService:
+
+    @staticmethod
+    def get_all(db: Session) -> dict:
+        items = []
+        for key, (default_val, description) in DEFAULT_SETTINGS.items():
+            current_val = get_setting(db, key, default_val)
+            items.append({
+                "key":         key,
+                "value":       current_val,
+                "default":     default_val,
+                "description": description,
+            })
+        return {"items": items}
+
+    @staticmethod
+    def save(db: Session, body: dict, username: str) -> dict:
+        saved = 0
+        for key, value in body.items():
+            if key in DEFAULT_SETTINGS:
+                _, description = DEFAULT_SETTINGS[key]
+                upsert_setting(db, key, str(value), description)
+                saved += 1
+        logger.info(f"시스템 설정 저장: {saved}개, user={username}")
+        return {"saved": saved}
+
+    @staticmethod
+    def get_value(db: Session, key: str, default: str | None = None) -> str | None:
+        if default is None and key in DEFAULT_SETTINGS:
+            default = DEFAULT_SETTINGS[key][0]
+        return get_setting(db, key, default)
