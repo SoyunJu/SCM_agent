@@ -73,6 +73,7 @@ def send_daily_report_email(
         sales_anomaly_count: int,
         risk_level:         str,
         pdf_path:           Path | None = None,
+        to:                 list[str] | None = None,
 ) -> bool:
 
     risk_color = {
@@ -113,6 +114,7 @@ def send_daily_report_email(
         subject=f"[SCM Agent] 일일 보고서 - {report_date} | 위험도: {risk_level.upper()}",
         body_html=body,
         attachment=pdf_path,
+        to=to,
     )
 
 

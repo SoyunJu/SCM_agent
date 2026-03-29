@@ -1,14 +1,28 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {useEffect, useRef, useState} from "react";
 import {
-    deletePdf, downloadPdf, getPdfList,
-    getReportHistory, triggerReport, getReportStatus, getAnomalies,
+    deletePdf,
+    downloadPdf,
+    getAnomalies,
+    getPdfList,
+    getReportHistory,
+    getReportStatus,
+    triggerReport,
 } from "@/lib/api";
-import { PdfFile, ReportExecution } from "@/lib/types";
+import {PdfFile, ReportExecution} from "@/lib/types";
 import {
-    CheckCircle, Clock, ChevronLeft, ChevronRight,
-    Eye, EyeOff, Loader2, Play, Trash2, XCircle, Filter,
+    CheckCircle,
+    ChevronLeft,
+    ChevronRight,
+    Clock,
+    Eye,
+    EyeOff,
+    Filter,
+    Loader2,
+    Play,
+    Trash2,
+    XCircle,
 } from "lucide-react";
 
 const STATUS_INFO: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
@@ -275,20 +289,21 @@ export default function ReportsPage() {
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
-                                <tr className="bg-gray-50 text-gray-500 text-xs text-left">
-                                    <th className="px-4 py-3 whitespace-nowrap">시간</th>
-                                    <th className="px-4 py-3 whitespace-nowrap">유형</th>
-                                    <th className="px-4 py-3 whitespace-nowrap">상태</th>
-                                    <th className="px-4 py-3 whitespace-nowrap">생성자</th>
-                                    <th className="px-4 py-3 text-center whitespace-nowrap">Slack</th>
-                                    <th className="px-4 py-3 text-center whitespace-nowrap">이메일</th>
-                                    <th className="px-4 py-3 whitespace-nowrap"></th>
+                                <tr className="bg-gray-50 text-gray-500 text-xs">
+                                    <th className="px-6 py-3 text-left">ID</th>
+                                    <th className="px-6 py-3 text-left">실행일시</th>
+                                    <th className="px-6 py-3 text-left">유형</th>
+                                    <th className="px-6 py-3 text-left">생성자</th>
+                                    <th className="px-6 py-3 text-left">상태</th>
+                                    <th className="px-6 py-3 text-left">Slack</th>
+                                    <th className="px-6 py-3 text-left">이메일</th>
+                                    <th className="px-6 py-3 text-left">오류</th>
                                 </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
                                 {history.length === 0 ? (
                                     <tr>
-                                        <td colSpan={6} className="px-6 py-10 text-center text-gray-400">이력 없음</td>
+                                        <td colSpan={8} className="px-6 py-10 text-center text-gray-400">이력 없음</td>
                                     </tr>
                                 ) : (
                                     history.map((r) => {
@@ -298,24 +313,15 @@ export default function ReportsPage() {
                                                 <td className="px-6 py-3 text-gray-400">#{r.id}</td>
                                                 <td className="px-6 py-3 text-gray-700">{r.executed_at.slice(0, 16)}</td>
                                                 <td className="px-6 py-3 text-gray-600">{r.report_type}</td>
+                                                <td className="px-6 py-3 text-gray-500 text-xs">{r.triggered_by ?? "—"}</td>
                                                 <td className="px-6 py-3">
                                                     <span className={`flex items-center gap-1 text-xs font-medium ${s?.color}`}>
                                                         {s?.icon}{s?.label}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
-                                                    {(r as any).triggered_by ?? "-"}
-                                                </td>
-                                                <td className="px-4 py-3 text-center whitespace-nowrap">
-                                                    {(r as any).slack_sent
-                                                        ? <CheckCircle size={14} className="text-green-500 mx-auto" />
-                                                        : <span className="text-gray-300 text-xs">-</span>}
-                                                </td>
-                                                <td className="px-4 py-3 text-center whitespace-nowrap">
-                                                    {(r as any).email_sent
-                                                        ? <CheckCircle size={14} className="text-blue-500 mx-auto" />
-                                                        : <span className="text-gray-300 text-xs">-</span>}
-                                                </td>
+                                                <td className="px-6 py-3 text-xs">{r.slack_sent ? "✅" : "—"}</td>
+                                                <td className="px-6 py-3 text-xs">{r.email_sent ? "✅" : "—"}</td>
+                                                <td className="px-6 py-3 text-gray-400 text-xs max-w-xs truncate">{r.error_message ?? "—"}</td>
                                             </tr>
                                         );
                                     })

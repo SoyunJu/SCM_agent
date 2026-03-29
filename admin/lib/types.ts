@@ -5,6 +5,8 @@ export interface ReportExecution {
     report_type: "daily" | "weekly" | "manual";
     status: "success" | "failure" | "in_progress";
     slack_sent: boolean;
+    email_sent:    boolean;
+    triggered_by:  string | null;
     error_message: string | null;
     created_at: string;
 }

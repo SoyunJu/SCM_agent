@@ -84,14 +84,15 @@ class ReportService:
             "total": total, "offset": offset, "limit": limit,
             "items": [
                 {
-                    "id":           r.id,
-                    "executed_at":  str(r.executed_at)[:19] if r.executed_at else "",
-                    "report_type":  r.report_type.value if hasattr(r.report_type, "value") else str(r.report_type),
-                    "status":       r.status.value if hasattr(r.status, "value") else str(r.status),
-                    "slack_sent":   r.slack_sent,
-                    "email_sent":   getattr(r, "email_sent", False),
-                    "triggered_by": getattr(r, "triggered_by", None),
-                    "created_at":   str(r.created_at)[:19] if r.created_at else "",
+                    "id":            r.id,
+                    "executed_at":   str(r.executed_at),
+                    "report_type":   r.report_type.value if hasattr(r.report_type, "value") else str(r.report_type),
+                    "status":        r.status.value     if hasattr(r.status, "value")     else str(r.status),
+                    "slack_sent":    r.slack_sent,
+                    "email_sent":    getattr(r, "email_sent", False),
+                    "triggered_by":  getattr(r, "triggered_by", None),
+                    "error_message": r.error_message,
+                    "created_at":    str(r.created_at),
                 }
                 for r in records
             ],
@@ -120,3 +121,21 @@ class ReportService:
         except Exception as e:
             logger.warning(f"PDF 목록 조회 실패: {e}")
             return {"items": [], "total": 0}
+
+
+    # --- 삭제 ---
+    @staticmethod
+    def delete_pdf(filename: str) -> dict:
+        from fastapi import HTTPException
+        if ".." in filename or "/" in filename or "\\" in filename:
+            raise HTTPException(400, "잘못된 파일명입니다.")
+        pdf_path = Path("reports") / filename
+        if not pdf_path.exists():
+            raise HTTPException(404, "파일을 찾을 수 없습니다.")
+        try:
+            pdf_path.unlink()
+            logger.info(f"[ReportService] PDF 삭제: {filename}")
+            return {"status": "deleted", "filename": filename}
+        except Exception as e:
+            logger.error(f"[ReportService] PDF 삭제 실패: {e}")
+            raise HTTPException(500, f"삭제 실패: {e}")

@@ -88,7 +88,7 @@ export const getChatHistory = (sessionId: string, days = 7) =>
 export const getProposals = (status?: string, limit = 50, page = 1) => {
     const p = new URLSearchParams();
     if (status && status !== "all") p.append("status", status);
-    p.append("limit", String(limit));
+    p.append("limit",  String(limit));
     p.append("offset", String((page - 1) * limit));
     return apiClient.get(`/scm/orders/proposals?${p}`);
 };
@@ -253,11 +253,16 @@ export const saveSettings = (values: Record<string, string>) =>
     apiClient.put("/scm/settings", values);
 
 // --- Orders ---
-export const getOrders = (params?: { status?: string; days?: number; page?: number; page_size?: number }) => {
+export const getOrders = (params?: {
+    status?:    string;
+    days?:      number;
+    page?:      number;
+    page_size?: number;
+}) => {
     const p = new URLSearchParams();
-    if (params?.status) p.append("status", params.status);
-    if (params?.days) p.append("days", String(params.days));
-    if (params?.page) p.append("page", String(params.page));
+    if (params?.status)    p.append("status",    params.status);
+    if (params?.days)      p.append("days",      String(params.days));
+    if (params?.page)      p.append("page",      String(params.page));
     if (params?.page_size) p.append("page_size", String(params.page_size));
     return apiClient.get(`/scm/sheets/orders?${p}`);
 };
