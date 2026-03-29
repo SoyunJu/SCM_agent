@@ -1,6 +1,18 @@
+
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
+
+
+def _mock_user():
+    u = MagicMock()
+    u.id              = 1
+    u.username        = "admin"
+    u.role            = MagicMock()
+    u.role.value      = "superadmin"
+    u.is_active       = True
+    u.hashed_password = "hashed"
+    return u
 
 
 @pytest.fixture
@@ -9,21 +21,20 @@ def client():
             patch("app.main.init_db"), \
             patch("app.main._seed_superadmin"), \
             patch("app.main._warmup_sheets"):
-
         from app.main import app
         from app.db.connection import get_db
         app.dependency_overrides[get_db] = lambda: MagicMock()
-
-        with TestClient(app, raise_server_exceptions=False) as c:
-            yield c
+        return TestClient(app, raise_server_exceptions=False)
 
 
 @pytest.fixture
 def auth_token(client):
-    res = client.post("/scm/auth/login", data={
-        "username": "admin",
-        "password": "admin1!",
-    })
+    with patch("app.api.auth_router._authenticate_user", return_value=_mock_user()), \
+            patch("app.api.auth_router.update_last_login"):
+        res = client.post("/scm/auth/login", data={
+            "username": "admin",
+            "password": "admin1!",
+        })
     if res.status_code != 200:
         pytest.skip("로그인 실패")
     return res.json()["access_token"]
@@ -39,35 +50,51 @@ def test_slack_url_verification(client):
 
 
 def test_slack_bot_message_ignored(client):
-    res = client.post("/scm/chat/slack/webhook", json={
-        "type": "event_callback",
-        "event": {
-            "type": "message",
-            "bot_id": "B12345",
-            "text": "봇 메시지",
-            "channel": "C12345",
-            "ts": "1234567890.000001",
-        },
-    })
+    with patch("app.api.chat_router._verify_slack_signature", return_value=True):
+        res = client.post(
+            "/scm/chat/slack/webhook",
+            json={
+                "type": "event_callback",
+                "event": {
+                    "type": "message",
+                    "bot_id": "B12345",
+                    "text": "봇 메시지",
+                    "channel": "C12345",
+                    "ts": "1234567890.000001",
+                },
+            },
+            headers={
+                "X-Slack-Request-Timestamp": "1234567890",
+                "X-Slack-Signature": "v0=test",
+            },
+        )
     assert res.status_code == 200
     assert res.json()["status"] == "ignored"
 
 
 def test_slack_webhook_normal_message(client):
-    with patch("app.api.chat_router._run_agent_and_reply"), \
+    with patch("app.api.chat_router._verify_slack_signature", return_value=True), \
+            patch("app.api.chat_router._run_agent_and_reply"), \
             patch("app.api.chat_router.get_slack_client") as mock_slack:
         mock_slack.return_value.chat_postMessage.return_value = {"ok": True}
 
-        res = client.post("/scm/chat/slack/webhook", json={
-            "type": "event_callback",
-            "event": {
-                "type": "message",
-                "text": "재고 부족한 상품 알려줘",
-                "user": "U12345",
-                "channel": "C12345",
-                "ts": "1234567890.000001",
+        res = client.post(
+            "/scm/chat/slack/webhook",
+            json={
+                "type": "event_callback",
+                "event": {
+                    "type": "message",
+                    "text": "재고 부족한 상품 알려줘",
+                    "user": "U12345",
+                    "channel": "C12345",
+                    "ts": "1234567890.000001",
+                },
             },
-        })
+            headers={
+                "X-Slack-Request-Timestamp": "1234567890",
+                "X-Slack-Signature": "v0=test",
+            },
+        )
     assert res.status_code == 200
     assert res.json()["status"] == "ok"
 
