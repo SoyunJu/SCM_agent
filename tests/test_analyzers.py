@@ -52,12 +52,12 @@ def test_detect_low_stock_returns_correct_products(df_master, df_stock, df_sales
     assert "BK003" in codes
 
 
-def test_detect_low_stock_severity_BKitical(df_master, df_stock, df_sales):
-    """소진 임박 상품이 BKITICAL로 분류되는지 확인"""
+def test_detect_low_stock_severity_CRITICAL(df_master, df_stock, df_sales):
+    """소진 임박 상품이 CRITICAL로 분류되는지 확인"""
     results = detect_low_stock(df_master, df_stock, df_sales)
     BK001 = next(r for r in results if r["product_code"] == "BK001")
     # BK001: 현재재고 3, 일평균 약 1.4 → 약 2.1일 → HIGH
-    assert BK001["severity"] in [Severity.HIGH, Severity.BKITICAL, Severity.MEDIUM]
+    assert BK001["severity"] in [Severity.HIGH, Severity.CRITICAL, Severity.MEDIUM]
 
 
 # ###### 재고 과잉 테스트 #####################

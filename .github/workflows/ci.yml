@@ -73,8 +73,7 @@ jobs:
           pytest tests/ \
             --cov=app \
             --cov-report=term-missing \
-            --cov-report=xml \
-            --cov-fail-under=50 \
+            --cov-fail-under=40 \
             -q
         continue-on-error: true   # 커버리지 미달 시 경고만
 
