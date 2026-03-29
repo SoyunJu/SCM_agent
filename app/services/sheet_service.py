@@ -11,58 +11,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 
-# 내부 헬퍼
-def _build_dataframes(db) -> tuple:
-    from datetime import date, timedelta
-    import pandas as pd
-    from app.db.models import Product, ProductStatus
-    from app.db.repository import get_daily_sales_range, get_all_stock_levels
 
-    products = (
-        db.query(Product)
-        .filter(Product.status == ProductStatus.ACTIVE)
-        .all()
-    )
-    df_master = pd.DataFrame([
-        {
-            "상품코드": p.code,
-            "상품명": p.name,
-            "카테고리": p.category or "",
-            "안전재고기준": p.safety_stock,
-        }
-        for p in products
-    ]) if products else pd.DataFrame(columns=["상품코드", "상품명", "카테고리", "안전재고기준"])
-
-    sales_rows = get_daily_sales_range(
-        db,
-        start=date.today() - timedelta(days=90),
-        end=date.today(),
-    )
-    df_sales = pd.DataFrame([
-        {
-            "날짜": str(s.date),
-            "상품코드": s.product_code,
-            "판매수량": s.qty,
-            "매출액": s.revenue,
-        }
-        for s in sales_rows
-    ]) if sales_rows else pd.DataFrame(columns=["날짜", "상품코드", "판매수량", "매출액"])
-
-    stocks = get_all_stock_levels(db)
-    df_stock = pd.DataFrame([
-        {
-            "상품코드": s.product_code,
-            "현재재고": s.current_stock,
-            "입고예정일": str(s.restock_date) if s.restock_date else "",
-            "입고예정수량": s.restock_qty or 0,
-        }
-        for s in stocks
-    ]) if stocks else pd.DataFrame(columns=["상품코드", "현재재고", "입고예정일", "입고예정수량"])
-
-    return df_master, df_sales, df_stock
-
-
-# 클래스
 class SheetService:
 
     # ── Helper ──────────────────────────────────────
@@ -446,79 +395,164 @@ class SheetService:
             "stock_items":     stock_items,
         }
 
-
+    # abc 분석
     @staticmethod
     def get_abc_stats(
             db: Session,
             days: int, category: str | None = None,
     ) -> dict:
-        from app.analyzer.abc_analyzer import run_abc_analysis
+        from app.db.sync import make_params_hash
+        from app.cache.redis_client import cache_get, cache_set
+        from app.db.repository import get_analysis_cache
 
-        df_master, df_sales, _ = _build_dataframes(db)
-        if category and not df_master.empty:
-            df_master = SheetService._category_filter(df_master, category)
+        params_hash = make_params_hash({"days": days, "category": category})
+        cache_key   = f"analysis:abc:{params_hash}"
 
-        return {"days": days, "items": run_abc_analysis(df_master, df_sales, days=days)}
+        # Redis HIT
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return {"days": days, "items": cached, "from_cache": True}
+
+        # DB analysis_cache HIT
+        db_hit = get_analysis_cache(db, "abc", params_hash, max_age_minutes=30)
+        if db_hit:
+            import json
+            items = json.loads(db_hit.result_json).get("items", [])
+            cache_set(cache_key, items, ttl=60 * 30)
+            return {"days": days, "items": items, "from_cache": True}
+
+        # MISS → Celery task 발행
+        from app.celery_app.celery import celery_app
+        task = celery_app.send_task(
+            "app.celery_app.tasks.run_abc_analysis_task",
+            kwargs={"days": days},
+        )
+        return {"task_id": task.id, "status": "PENDING", "from_cache": False}
 
 
+    # 수요 예측
     @staticmethod
     def get_demand_stats(
             db: Session,
             forecast_days: int, page: int, page_size: int,
             category: str | None,
     ) -> dict:
-        from app.analyzer.demand_forecaster import run_demand_forecast_all
+        from app.db.sync import make_params_hash
+        from app.cache.redis_client import cache_get, cache_set
+        from app.db.repository import get_analysis_cache
 
-        df_master, df_sales, df_stock = _build_dataframes(db)
+        params_hash = make_params_hash({"forecast_days": forecast_days, "category": category})
+        cache_key   = f"analysis:demand:{params_hash}"
 
-        items = run_demand_forecast_all(df_master, df_sales, df_stock, forecast_days=forecast_days)
-        categories = sorted({i.get("category", "") for i in items if i.get("category")})
+        # Redis HIT
+        cached = cache_get(cache_key)
+        if cached is not None:
+            items = cached if category is None else [i for i in cached if i.get("category") == category]
+            total       = len(items)
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            start       = (page - 1) * page_size
+            return {
+                "forecast_days": forecast_days,
+                "categories":    sorted({i.get("category", "") for i in cached if i.get("category")}),
+                "total":         total,
+                "page":          page,
+                "page_size":     page_size,
+                "total_pages":   total_pages,
+                "items":         items[start:start + page_size],
+                "from_cache":    True,
+            }
 
-        if category:
-            items = [i for i in items if i.get("category") == category]
+        # DB analysis_cache HIT
+        db_hit = get_analysis_cache(db, "demand", params_hash, max_age_minutes=30)
+        if db_hit:
+            import json
+            all_items = json.loads(db_hit.result_json).get("items", [])
+            cache_set(cache_key, all_items, ttl=60 * 30)
+            items = all_items if category is None else [i for i in all_items if i.get("category") == category]
+            total       = len(items)
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            start       = (page - 1) * page_size
+            return {
+                "forecast_days": forecast_days,
+                "categories":    sorted({i.get("category", "") for i in all_items if i.get("category")}),
+                "total":         total,
+                "page":          page,
+                "page_size":     page_size,
+                "total_pages":   total_pages,
+                "items":         items[start:start + page_size],
+                "from_cache":    True,
+            }
 
-        total       = len(items)
-        total_pages = max(1, (total + page_size - 1) // page_size)
-        start       = (page - 1) * page_size
-        return {
-            "forecast_days": forecast_days,
-            "categories":    categories,
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": total_pages,
-            "items": items[start:start + page_size],
-        }
+        # MISS → Celery task 발행
+        from app.celery_app.celery import celery_app
+        task = celery_app.send_task(
+            "app.celery_app.tasks.run_demand_forecast",
+            kwargs={"forecast_days": forecast_days, "category": category},
+        )
+        return {"task_id": task.id, "status": "PENDING", "from_cache": False}
 
 
+
+    # --- 재고 회전율 (캐시 → Celery task) ---
     @staticmethod
     def get_turnover_stats(
             db: Session,
             days: int, page: int, page_size: int,
             category: str | None,
     ) -> dict:
-        from app.analyzer.turnover_analyzer import calc_inventory_turnover
+        from app.db.sync import make_params_hash
+        from app.cache.redis_client import cache_get, cache_set
+        from app.db.repository import get_analysis_cache
 
-        df_master, df_sales, df_stock = _build_dataframes(db)
+        params_hash = make_params_hash({"days": days, "category": category})
+        cache_key   = f"analysis:turnover:{params_hash}"
 
-        items = calc_inventory_turnover(df_master, df_sales, df_stock, days=days)
-        categories = sorted({i.get("카테고리", "") for i in items if i.get("카테고리")})
+        # Redis HIT
+        cached = cache_get(cache_key)
+        if cached is not None:
+            items = cached if category is None else [i for i in cached if i.get("카테고리") == category]
+            total       = len(items)
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            start       = (page - 1) * page_size
+            return {
+                "days":        days,
+                "categories":  sorted({i.get("카테고리", "") for i in cached if i.get("카테고리")}),
+                "total":       total,
+                "page":        page,
+                "page_size":   page_size,
+                "total_pages": total_pages,
+                "items":       items[start:start + page_size],
+                "from_cache":  True,
+            }
 
-        if category:
-            items = [i for i in items if i.get("카테고리") == category]
+        # DB analysis_cache HIT
+        db_hit = get_analysis_cache(db, "turnover", params_hash, max_age_minutes=30)
+        if db_hit:
+            import json
+            all_items = json.loads(db_hit.result_json).get("items", [])
+            cache_set(cache_key, all_items, ttl=60 * 30)
+            items = all_items if category is None else [i for i in all_items if i.get("카테고리") == category]
+            total       = len(items)
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            start       = (page - 1) * page_size
+            return {
+                "days":        days,
+                "categories":  sorted({i.get("카테고리", "") for i in all_items if i.get("카테고리")}),
+                "total":       total,
+                "page":        page,
+                "page_size":   page_size,
+                "total_pages": total_pages,
+                "items":       items[start:start + page_size],
+                "from_cache":  True,
+            }
 
-        total       = len(items)
-        total_pages = max(1, (total + page_size - 1) // page_size)
-        start       = (page - 1) * page_size
-        return {
-            "days":        days,
-            "categories":  categories,
-            "total":       total,
-            "page":        page,
-            "page_size":   page_size,
-            "total_pages": total_pages,
-            "items":       items[start:start + page_size],
-        }
+        # MISS → Celery task 발행
+        from app.celery_app.celery import celery_app
+        task = celery_app.send_task(
+            "app.celery_app.tasks.run_turnover_analysis",
+            kwargs={"days": days, "category": category},
+        )
+        return {"task_id": task.id, "status": "PENDING", "from_cache": False}
 
 
     @staticmethod
