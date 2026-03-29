@@ -13,9 +13,11 @@ from sqlalchemy.orm import Session
 from app.api.auth_router import get_current_user, require_admin, TokenData
 from app.db.connection import get_db
 from app.db.repository import get_setting
-from app.db.models import Product, ProductStatus
 from app.sheets.reader import read_product_master, read_sales, read_stock
 from app.sheets.writer import upsert_master_from_excel, write_sales, upsert_stock_from_excel
+from app.db.models import Product, ProductStatus, DailySales, StockLevel
+from app.db.repository import get_products_paginated
+from datetime import date as date_type, timedelta
 
 router = APIRouter(prefix="/scm/sheets", tags=["sheets"])
 
@@ -59,21 +61,25 @@ async def update_product(
     }
 
 
+
 @router.get("/categories")
 async def get_categories(
         current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),
 ):
-    """상품마스터의 고유 카테고리 목록 반환."""
     try:
-        df = read_product_master()
-        col = next((c for c in ["카테고리", "category"] if c in df.columns), None)
-        if col is None:
-            return {"items": []}
-        cats = sorted(df[col].dropna().unique().tolist())
-        return {"items": [c for c in cats if c]}
+        rows = (
+            db.query(Product.category)
+            .filter(Product.category.isnot(None), Product.category != "")
+            .distinct()
+            .order_by(Product.category)
+            .all()
+        )
+        return {"items": [r.category for r in rows]}
     except Exception as e:
         logger.error(f"카테고리 목록 조회 실패: {e}")
         return {"items": []}
+
 
 
 @router.get("/master")
@@ -84,30 +90,30 @@ async def get_master(
         search: str | None = None,
         category: str | None = None,
         download: bool = False,
+        db: Session = Depends(get_db),
 ):
-
     try:
-        df = read_product_master()
-
-        # 검색 필터
+        query = db.query(Product)
         if search:
-            mask = (
-                    df["상품명"].str.contains(search, case=False, na=False) |
-                    df["상품코드"].str.contains(search, case=False, na=False)
+            query = query.filter(
+                Product.name.contains(search) | Product.code.contains(search)
             )
-            df = df[mask]
-
-        # 카테고리 필터
         if category:
-            col = next((c for c in ["카테고리", "category"] if c in df.columns), None)
-            if col:
-                df = df[df[col] == category]
+            query = query.filter(Product.category == category)
 
-        # 다운로드 요청: CSV 반환 (UTF-8 BOM으로 Excel 한글 정상 표시)
+        # CSV 다운로드
         if download:
-            import io
+            import io, pandas as pd
+            rows = query.all()
+            df = pd.DataFrame([{
+                "상품코드":    p.code,
+                "상품명":      p.name,
+                "카테고리":    p.category or "",
+                "안전재고기준": p.safety_stock,
+                "status":    p.status.value.lower() if p.status else "active",
+            } for p in rows])
             buf = io.BytesIO()
-            buf.write(b'\xef\xbb\xbf')  # UTF-8 BOM
+            buf.write(b'\xef\xbb\xbf')
             df.to_csv(buf, index=False, encoding="utf-8")
             buf.seek(0)
             return StreamingResponse(
@@ -116,26 +122,28 @@ async def get_master(
                 headers={"Content-Disposition": 'attachment; filename="master.csv"'},
             )
 
-        page_size = min(page_size, 200)   # 최대 200건 제한
-        total = len(df)
+        page_size = min(page_size, 200)
+        total       = query.count()
         total_pages = max(1, (total + page_size - 1) // page_size)
-
-        # 페이징
-        start = (page - 1) * page_size
-        end   = start + page_size
-        page_df = df.iloc[start:end]
+        items = query.order_by(Product.code).offset((page - 1) * page_size).limit(page_size).all()
 
         return {
             "total": total,
             "page": page,
             "page_size": page_size,
             "total_pages": total_pages,
-            "items": page_df.to_dict(orient="records"),
+            "items": [{
+                "상품코드":    p.code,
+                "상품명":      p.name,
+                "카테고리":    p.category or "",
+                "안전재고기준": p.safety_stock,
+                "status":    p.status.value.lower() if p.status else "active",
+            } for p in items],
         }
     except Exception as e:
         logger.error(f"상품마스터 조회 실패: {e}")
-        return {"total": 0, "page": 1, "page_size": page_size,
-                "total_pages": 0, "items": [], "error": str(e)}
+        return {"total": 0, "page": 1, "page_size": page_size, "total_pages": 0, "items": [], "error": str(e)}
+
 
 
 @router.get("/sales")
@@ -147,28 +155,42 @@ async def get_sales(
         category: str | None = None,
         search: str | None = None,
         download: bool = False,
+        db: Session = Depends(get_db),
 ):
-
     try:
         import pandas as pd
-        df = read_sales()
-        df["날짜"] = pd.to_datetime(df["날짜"])
-        cutoff = df["날짜"].max() - pd.Timedelta(days=days)
-        df = df[df["날짜"] >= cutoff].copy()
+        cutoff = date_type.today() - timedelta(days=days)
 
-        if search and "상품코드" in df.columns:
-            mask = df["상품코드"].astype(str).str.contains(search, case=False, na=False)
-            if "상품명" in df.columns:
-                mask = mask | df["상품명"].astype(str).str.contains(search, case=False, na=False)
-            df = df[mask]
+        query = db.query(
+            DailySales.date,
+            DailySales.product_code,
+            DailySales.qty,
+            DailySales.revenue,
+            Product.name.label("상품명"),
+            Product.category.label("카테고리"),
+        ).join(Product, DailySales.product_code == Product.code, isouter=True) \
+            .filter(DailySales.date >= cutoff)
 
-        if category and "카테고리" in df.columns:
-            df = df[df["카테고리"] == category]
+        if search:
+            query = query.filter(
+                DailySales.product_code.contains(search) |
+                Product.name.contains(search)
+            )
+        if category:
+            query = query.filter(Product.category == category)
 
-        df["날짜"] = df["날짜"].dt.strftime("%Y-%m-%d")
-
+        # CSV 다운로드
         if download:
             import io
+            rows = query.order_by(DailySales.date.desc(), DailySales.product_code).all()
+            df = pd.DataFrame([{
+                "날짜":    str(r.date),
+                "상품코드": r.product_code,
+                "판매수량": r.qty,
+                "매출액":  r.revenue,
+                "상품명":  r.상품명 or "",
+                "카테고리": r.카테고리 or "",
+            } for r in rows])
             buf = io.BytesIO()
             buf.write(b'\xef\xbb\xbf')
             df.to_csv(buf, index=False, encoding="utf-8")
@@ -180,20 +202,29 @@ async def get_sales(
             )
 
         page_size   = min(page_size, 200)
-        total       = len(df)
+        total       = query.count()
         total_pages = max(1, (total + page_size - 1) // page_size)
-        start       = (page - 1) * page_size
-        page_df     = df.iloc[start:start + page_size]
+        rows = query.order_by(DailySales.date.desc(), DailySales.product_code) \
+            .offset((page - 1) * page_size).limit(page_size).all()
 
         return {
-            "total": total, "page": page, "page_size": page_size,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
             "total_pages": total_pages,
-            "items": page_df.to_dict(orient="records"),
+            "items": [{
+                "날짜":    str(r.date),
+                "상품코드": r.product_code,
+                "판매수량": r.qty,
+                "매출액":  r.revenue,
+                "상품명":  r.상품명 or "",
+                "카테고리": r.카테고리 or "",
+            } for r in rows],
         }
     except Exception as e:
         logger.error(f"일별판매 조회 실패: {e}")
-        return {"total": 0, "page": 1, "page_size": page_size,
-                "total_pages": 0, "items": [], "error": str(e)}
+        return {"total": 0, "page": 1, "page_size": page_size, "total_pages": 0, "items": [], "error": str(e)}
+
 
 
 @router.get("/stock")
@@ -204,22 +235,40 @@ async def get_stock(
         category: str | None = None,
         search: str | None = None,
         download: bool = False,
+        db: Session = Depends(get_db),
 ):
-
     try:
-        df = read_stock()
+        import pandas as pd
+        query = db.query(
+            StockLevel.product_code,
+            StockLevel.current_stock,
+            StockLevel.restock_date,
+            StockLevel.restock_qty,
+            Product.name.label("상품명"),
+            Product.category.label("카테고리"),
+            Product.safety_stock,
+        ).join(Product, StockLevel.product_code == Product.code, isouter=True)
 
-        if search and "상품코드" in df.columns:
-            mask = df["상품코드"].astype(str).str.contains(search, case=False, na=False)
-            if "상품명" in df.columns:
-                mask = mask | df["상품명"].astype(str).str.contains(search, case=False, na=False)
-            df = df[mask]
+        if search:
+            query = query.filter(
+                StockLevel.product_code.contains(search) |
+                Product.name.contains(search)
+            )
+        if category:
+            query = query.filter(Product.category == category)
 
-        if category and "카테고리" in df.columns:
-            df = df[df["카테고리"] == category]
-
+        # CSV 다운로드
         if download:
             import io
+            rows = query.order_by(StockLevel.product_code).all()
+            df = pd.DataFrame([{
+                "상품코드":     r.product_code,
+                "현재재고":     r.current_stock,
+                "입고예정일":   str(r.restock_date) if r.restock_date else "",
+                "입고예정수량": r.restock_qty or 0,
+                "상품명":       r.상품명 or "",
+                "카테고리":     r.카테고리 or "",
+            } for r in rows])
             buf = io.BytesIO()
             buf.write(b'\xef\xbb\xbf')
             df.to_csv(buf, index=False, encoding="utf-8")
@@ -231,20 +280,29 @@ async def get_stock(
             )
 
         page_size   = min(page_size, 200)
-        total       = len(df)
+        total       = query.count()
         total_pages = max(1, (total + page_size - 1) // page_size)
-        start       = (page - 1) * page_size
-        page_df     = df.iloc[start:start + page_size]
+        rows = query.order_by(StockLevel.product_code) \
+            .offset((page - 1) * page_size).limit(page_size).all()
 
         return {
-            "total": total, "page": page, "page_size": page_size,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
             "total_pages": total_pages,
-            "items": page_df.to_dict(orient="records"),
+            "items": [{
+                "상품코드":     r.product_code,
+                "현재재고":     r.current_stock,
+                "입고예정일":   str(r.restock_date) if r.restock_date else "",
+                "입고예정수량": r.restock_qty or 0,
+                "상품명":       r.상품명 or "",
+                "카테고리":     r.카테고리 or "",
+            } for r in rows],
         }
     except Exception as e:
         logger.error(f"재고현황 조회 실패: {e}")
-        return {"total": 0, "page": 1, "page_size": page_size,
-                "total_pages": 0, "items": [], "error": str(e)}
+        return {"total": 0, "page": 1, "page_size": page_size, "total_pages": 0, "items": [], "error": str(e)}
+
 
 
 @router.get("/stats/sales")
