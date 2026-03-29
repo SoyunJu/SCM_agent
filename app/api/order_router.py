@@ -18,6 +18,7 @@ class ProposalUpdate(BaseModel):
 
 class GenerateRequest(BaseModel):
     severity_override: Optional[str] = None
+    product_code:      Optional[str] = None
 
 
 @router.get("/proposals")
@@ -47,7 +48,7 @@ async def generate_proposals(
         _: TokenData = Depends(require_admin),
 ):
     try:
-        return OrderService.generate(db, body.severity_override)
+        return OrderService.generate(db, body.severity_override, body.product_code)
     except Exception as e:
         logger.error(f"발주 제안 생성 실패: {e}")
         from fastapi import HTTPException

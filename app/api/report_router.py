@@ -113,3 +113,12 @@ async def resolve_anomaly(
         db: Session = Depends(get_db),
 ):
     return AnomalyService.resolve(db, anomaly_id)
+
+
+@router.post("/anomalies/{anomaly_id}/auto-resolve")
+async def auto_resolve_anomaly(
+        anomaly_id: int,
+        current_user: Annotated[TokenData, Depends(require_admin)],
+        db: Session = Depends(get_db),
+):
+    return AnomalyService.auto_resolve(db, anomaly_id, current_user.username)

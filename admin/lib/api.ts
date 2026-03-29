@@ -65,9 +65,13 @@ export const getAnomalies = (
     isResolved?: boolean,
     pageSize = 50,
     page = 1,
+    severity?: string,
+    anomalyType?: string,
 ) => {
     const params = new URLSearchParams();
     if (isResolved !== undefined) params.append("is_resolved", String(isResolved));
+    if (severity)    params.append("severity",     severity);
+    if (anomalyType) params.append("anomaly_type", anomalyType);
     params.append("page",      String(page));
     params.append("page_size", String(pageSize));
     return apiClient.get(`/scm/report/anomalies?${params}`);
@@ -98,6 +102,11 @@ export const generateProposals = (severityOverride?: string) =>
         severityOverride ? { severity_override: severityOverride } : {}
     );
 
+export const generateProposalsForProduct = (productCode: string, severityOverride?: string) =>
+    apiClient.post("/scm/orders/proposals/generate",
+        { severity_override: severityOverride ?? "LOW", product_code: productCode }
+    );
+
 export const approveProposal = (id: number) =>
     apiClient.patch(`/scm/orders/proposals/${id}/approve`);
 
@@ -118,6 +127,9 @@ export const healthCheck = () =>
 // --- Anomaly ---
 export const resolveAnomaly = (id: number) =>
     apiClient.patch(`/scm/report/anomalies/${id}/resolve`);
+
+export const autoResolveAnomaly = (id: number) =>
+    apiClient.post(`/scm/report/anomalies/${id}/auto-resolve`);
 
 // --- Scheduler ---
 export const getSchedulerConfig = () =>
@@ -141,6 +153,15 @@ export const triggerCleanup = () =>
 
 export const triggerSync = () =>
     apiClient.post("/scm/scheduler/sync-trigger");
+
+export const triggerDemandForecast = () =>
+    apiClient.post("/scm/scheduler/trigger-demand-forecast");
+
+export const triggerTurnoverAnalysis = () =>
+    apiClient.post("/scm/scheduler/trigger-turnover-analysis");
+
+export const triggerAbcAnalysis = () =>
+    apiClient.post("/scm/scheduler/trigger-abc-analysis");
 
 // --- Sheets ---
 export const getSheetCategories = () =>
@@ -206,11 +227,13 @@ export const getSalesStats = (period: "daily" | "weekly" | "monthly", category?:
 
 export const getStockStats = (
     category?: string,
+    search?: string,
     page = 1,
     pageSize = 50,
 ) => {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (category) params.append("category", category);
+    if (search)   params.append("search",   search);
     return apiClient.get(`/scm/sheets/stats/stock?${params}`);
 };
 

@@ -61,6 +61,7 @@ def upsert_anomaly_log(
         product_name: str,
         anomaly_type,
         severity,
+        category: str | None = None,
         current_stock: int | None = None,
         daily_avg_sales: float | None = None,
         days_until_stockout: float | None = None,
@@ -78,6 +79,7 @@ def upsert_anomaly_log(
 
     if existing:
         existing.severity            = severity
+        existing.category            = category
         existing.current_stock       = current_stock
         existing.daily_avg_sales     = daily_avg_sales
         existing.days_until_stockout = days_until_stockout
@@ -87,6 +89,7 @@ def upsert_anomaly_log(
 
     record = AnomalyLog(
         product_code=product_code, product_name=product_name,
+        category=category,
         anomaly_type=anomaly_type, severity=severity,
         current_stock=current_stock, daily_avg_sales=daily_avg_sales,
         days_until_stockout=days_until_stockout,

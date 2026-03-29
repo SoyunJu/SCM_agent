@@ -85,12 +85,12 @@ class ReportService:
             "items": [
                 {
                     "id":            r.id,
-                    "executed_at":   str(r.executed_at),
+                    "executed_at":   str(r.executed_at) if r.executed_at else str(r.created_at),
                     "report_type":   r.report_type.value if hasattr(r.report_type, "value") else str(r.report_type),
+                    "triggered_by":  getattr(r, "triggered_by", None),
                     "status":        r.status.value     if hasattr(r.status, "value")     else str(r.status),
                     "slack_sent":    r.slack_sent,
-                    "email_sent":    getattr(r, "email_sent", False),
-                    "triggered_by":  getattr(r, "triggered_by", None),
+                    "email_sent":    getattr(r, "email_sent", False) or False,
                     "error_message": r.error_message,
                     "created_at":    str(r.created_at),
                 }
@@ -127,6 +127,7 @@ class ReportService:
     @staticmethod
     def delete_pdf(filename: str) -> dict:
         from fastapi import HTTPException
+        from pathlib import Path
         if ".." in filename or "/" in filename or "\\" in filename:
             raise HTTPException(400, "잘못된 파일명입니다.")
         pdf_path = Path("reports") / filename

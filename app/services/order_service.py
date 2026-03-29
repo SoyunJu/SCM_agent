@@ -16,13 +16,18 @@ class OrderService:
     @staticmethod
     def list_proposals(
             db: Session, status: str | None, limit: int, offset: int,
+            days: int | None = None,
     ) -> dict:
+        from datetime import datetime, timedelta
         query = db.query(OrderProposal)
         if status:
             try:
                 query = query.filter(OrderProposal.status == ProposalStatus(status.upper()))
             except ValueError:
                 pass
+        if days is not None:
+            cutoff = datetime.now() - timedelta(days=days)
+            query = query.filter(OrderProposal.created_at >= cutoff)
         total = query.count()
         items = query.order_by(OrderProposal.created_at.desc()).offset(offset).limit(limit).all()
         return {
@@ -66,7 +71,6 @@ class OrderService:
         logger.info(f"[OrderService] 발주 거절: id={proposal_id}, by={username}")
         return OrderService._serialize(p)
 
-
     @staticmethod
     def reset(db: Session, proposal_id: int, username: str) -> dict:
         p = OrderService._get_or_404(db, proposal_id)
@@ -80,7 +84,6 @@ class OrderService:
         db.refresh(p)
         logger.info(f"[OrderService] 발주 되돌리기: id={proposal_id}, by={username}")
         return OrderService._serialize(p)
-
 
     @staticmethod
     def update(db: Session, proposal_id: int,
@@ -98,11 +101,10 @@ class OrderService:
             SlackService.update_proposal_pending(p)
         return OrderService._serialize(p)
 
-
     # --- CREATE ---
 
     @staticmethod
-    def generate(db: Session, severity_override: str | None) -> dict:
+    def generate(db: Session, severity_override: str | None, product_code: str | None = None) -> dict:
         from app.db.models import Product, ProductStatus, StockLevel
         from app.db.repository import get_daily_sales_range, get_setting
         from app.ai.anomaly_detector import detect_stock_anomalies
@@ -120,8 +122,15 @@ class OrderService:
         )
         threshold_rank = SEVERITY_RANK[threshold]
 
-        # --- DB에서 분석 데이터 로드 (Sheets 제거) ---
+        # --- DB에서 분석 데이터 로드 ---
         products = db.query(Product).filter(Product.status == ProductStatus.ACTIVE).all()
+        # 특정 상품코드 필터
+        if product_code:
+            products = [p for p in products if p.code == product_code]
+            if not products:
+                from fastapi import HTTPException
+                raise HTTPException(404, f"상품코드 '{product_code}'를 찾을 수 없습니다.")
+
         df_master = pd.DataFrame([
             {"상품코드": p.code, "상품명": p.name,
              "카테고리": p.category or "", "안전재고기준": p.safety_stock}
@@ -188,9 +197,9 @@ class OrderService:
             obj = OrderProposal(**p_data)
 
             if auto_approve:
-                obj.status = ProposalStatus.APPROVED
+                obj.status      = ProposalStatus.APPROVED
                 obj.approved_by = "SYSTEM"
-                obj.approved_at = datetime.utcnow()
+                obj.approved_at = datetime.now()
                 db.add(obj)
                 db.flush()
                 try:
@@ -225,7 +234,6 @@ class OrderService:
             ],
         }
 
-
     # --- HELPER ---
 
     @staticmethod
@@ -254,27 +262,4 @@ class OrderService:
             "created_at":   p.created_at.isoformat() if p.created_at else "",
             "approved_at":  p.approved_at.isoformat() if p.approved_at else None,
             "approved_by":  p.approved_by,
-        }
-
-
-    @staticmethod
-    def list_proposals(
-            db: Session, status: str | None, limit: int, offset: int,
-            days: int | None = None,    # ← 추가
-    ) -> dict:
-        from datetime import datetime, timedelta
-        query = db.query(OrderProposal)
-        if status:
-            try:
-                query = query.filter(OrderProposal.status == ProposalStatus(status.upper()))
-            except ValueError:
-                pass
-        if days is not None:            # ← 추가
-            cutoff = datetime.now() - timedelta(days=days)
-            query = query.filter(OrderProposal.created_at >= cutoff)
-        total = query.count()
-        items = query.order_by(OrderProposal.created_at.desc()).offset(offset).limit(limit).all()
-        return {
-            "total": total, "offset": offset, "limit": limit,
-            "items": [OrderService._serialize(p) for p in items],
         }
