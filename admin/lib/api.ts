@@ -61,10 +61,14 @@ export const triggerReport = (filters?: { severity_filter?: string[] | null; cat
 export const getReportHistory = (limit = 5, offset = 0) =>
     apiClient.get(`/scm/report/history?limit=${limit}&offset=${offset}`);
 
-export const getAnomalies = (isResolved?: boolean, pageSize = 50, page = 1) => {
+export const getAnomalies = (
+    isResolved?: boolean,
+    pageSize = 50,
+    page = 1,
+) => {
     const params = new URLSearchParams();
     if (isResolved !== undefined) params.append("is_resolved", String(isResolved));
-    params.append("page", String(page));
+    params.append("page",      String(page));
     params.append("page_size", String(pageSize));
     return apiClient.get(`/scm/report/anomalies?${params}`);
 };
