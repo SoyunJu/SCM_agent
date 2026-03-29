@@ -233,17 +233,24 @@ crawler:results
 
 ## 8. DB 동기화 규칙
 
-Google Sheets → MariaDB 동기화 흐름:
+Google Sheets → MariaDB 동기화는 `SyncService`를 통해 일원화됩니다.
+```python
+# 올바른 방법 — 어디서든 SyncService 호출
+from app.services.sync_service import SyncService
+SyncService.sync_all_from_sheets(db)   # 전체 동기화
+SyncService.sync_sales(db, df)         # 일별판매만
+SyncService.sync_stock(db, df)         # 재고현황만
 
-1. `read_product_master()` / `read_sales()` / `read_stock()` 로 DataFrame 읽기
-2. 한국어 컬럼명 → 영어 필드명 매핑 (상세는 `data-model.md` 참조)
-3. `bulk_upsert_products()` / `bulk_upsert_daily_sales()` / `bulk_upsert_stock_levels()` 호출
-4. 함수 위치: `app/db/sync.py`
+# 잘못된 방법 (사용 금지) — bulk_upsert 직접 호출
+from app.db.sync import bulk_upsert_daily_sales
+bulk_upsert_daily_sales(db, records)   # ← 매핑 로직 중복 발생
+```
 
 동기화 실행 시점:
-- 앱 시작 시 (`lifespan` → `_warmup_sheets` → `_sync_sheets_to_db`)
-- 수동 동기화 API: `POST /scm/sheets/sync`
-- 일일 스케줄 작업 내 포함
+- 앱 시작 시: `lifespan` → `_warmup_sheets` → `SyncService.sync_all_from_sheets`
+- 수동 동기화: `POST /scm/sheets/sync` → `SyncService.sync_all_from_sheets`
+- 일일 스케줄: `jobs.py` → `_sync_sheets_to_db` (SyncService 래퍼)
+- 엑셀 업로드: `upload_excel` → `SyncService.sync_master/sales/stock`
 
 ---
 

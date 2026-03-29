@@ -15,11 +15,11 @@ export interface AnomalyLog {
     product_code: string;
     product_name: string;
     category?: string;
-    anomaly_type: "low_stock" | "over_stock" | "sales_surge" | "sales_drop" | "long_term_stock";
+    anomaly_type: "LOW_STOCK" | "OVER_STOCK" | "SALES_SURGE" | "SALES_DROP" | "LONG_TERM_STOCK";
     current_stock: number | null;
     daily_avg_sales: number | null;
     days_until_stockout: number | null;
-    severity: "low" | "check" | "medium" | "high" | "critical";
+    severity: "LOW" | "CHECK" | "MEDIUM" | "HIGH" | "CRITICAL";
     is_resolved: boolean;
 }
 
@@ -90,7 +90,7 @@ export interface OrderProposal {
     proposed_qty: number;
     unit_price: number;
     reason: string | null;
-    status: "pending" | "approved" | "rejected";
+    status: "PENDING" | "APPROVED" | "REJECTED";
     created_at: string;
     approved_at: string | null;
     approved_by: string | null;

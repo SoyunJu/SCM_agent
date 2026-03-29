@@ -184,16 +184,17 @@ class Product(Base):
 class DailySales(Base):
     __tablename__ = "daily_sales"
 
-    id            = Column(Integer, primary_key=True, autoincrement=True)
-    date          = Column(Date,        nullable=False)
-    product_code  = Column(String(20),  nullable=False)
-    qty           = Column(Integer,     nullable=False, default=0)
-    revenue       = Column(Float,       nullable=False, default=0.0)
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    date         = Column(Date, nullable=False)
+    product_code = Column(String(100), nullable=False)
+    qty          = Column(Integer, nullable=False, default=0)
+    revenue      = Column(Float, nullable=False, default=0)
+    cost         = Column(Float, nullable=False, default=0)   # ← 추가: 매입액
 
     __table_args__ = (
-        UniqueConstraint("date", "product_code", name="uq_daily_sales_date_code"),
-        Index("ix_daily_sales_date",         "date"),
-        Index("ix_daily_sales_product_code", "product_code"),
+        UniqueConstraint("date", "product_code", name="uq_date_code"),
+        Index("idx_date", "date"),
+        Index("idx_product_code", "product_code"),
     )
 
 class StockLevel(Base):

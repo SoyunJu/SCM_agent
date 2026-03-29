@@ -23,12 +23,12 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 const PROPOSAL_STATUS_COLOR: Record<string, string> = {
-    pending:  "text-yellow-600 bg-yellow-50",
-    approved: "text-green-600 bg-green-50",
-    rejected: "text-red-500 bg-red-50",
+    PENDING:  "text-yellow-600 bg-yellow-50",
+    APPROVED: "text-green-600 bg-green-50",
+    REJECTED: "text-red-500 bg-red-50",
 };
 const PROPOSAL_STATUS_LABEL: Record<string, string> = {
-    pending: "대기", approved: "승인", rejected: "거절",
+    PENDING: "대기", APPROVED: "승인", REJECTED: "거절",
 };
 
 // --- 주문현황 탭 ---

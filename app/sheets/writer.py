@@ -85,25 +85,32 @@ def upsert_master_from_excel(df_source: pd.DataFrame) -> None:
 def write_stock_upsert(df_crawled: pd.DataFrame) -> None:
     with _get_lock("재고현황"):
         try:
-            ws       = get_spreadsheet().worksheet("재고현황")
-            existing = ws.get_all_records()
-            crawled_codes = set(df_crawled["상품코드"].tolist())
-            existing_codes = {r["상품코드"] for r in existing} if existing else set()
-            new_codes = crawled_codes - existing_codes
+            spreadsheet = get_spreadsheet()
+            ws_stock  = spreadsheet.worksheet("재고현황")
+            ws_master = spreadsheet.worksheet("상품마스터")
+
+            master_records  = ws_master.get_all_records()
+            master_codes    = {str(r["상품코드"]) for r in master_records} if master_records else set()
+
+            existing        = ws_stock.get_all_records()
+            existing_codes  = {str(r["상품코드"]) for r in existing} if existing else set()
+            crawled_codes   = {str(c) for c in df_crawled["상품코드"].tolist()}
+
+            new_codes = (crawled_codes & master_codes) - existing_codes
             if not new_codes:
                 return
 
             default_restock = (date.today() + timedelta(days=14)).strftime("%Y-%m-%d")
             new_rows = [[code, 0, default_restock, 100] for code in sorted(new_codes)]
             if not existing:
-                _clear_and_write(ws, pd.DataFrame(new_rows, columns=["상품코드", "현재재고", "입고예정일", "입고예정수량"]))
+                _clear_and_write(ws_stock, pd.DataFrame(new_rows, columns=["상품코드", "현재재고", "입고예정일", "입고예정수량"]))
             else:
-                ws.append_rows(new_rows, value_input_option="USER_ENTERED")
+                ws_stock.append_rows(new_rows, value_input_option="USER_ENTERED")
             _invalidate("재고현황")
-            logger.info(f"재고현황: 신규 {len(new_rows)}개 추가")
+            logger.info(f"재고현황: 신규 {len(new_rows)}개 추가 (마스터 기준 필터 적용)")
         except Exception as e:
             logger.error(f"재고현황 upsert 실패: {e}")
-            raise
+
 
 
 def upsert_stock_from_excel(df_stock_excel: pd.DataFrame) -> None:
@@ -118,7 +125,12 @@ def upsert_stock_from_excel(df_stock_excel: pd.DataFrame) -> None:
                 return
 
             new_df = df_stock_excel[df_stock_excel["상품코드"].astype(str).isin(new_codes)]
-            cols   = [c for c in ["상품코드", "현재재고", "입고예정일", "입고예정수량"] if c in new_df.columns]
+
+            cols = [c for c in [
+                "상품코드", "상품명", "카테고리",
+                "현재재고", "안전재고", "입고예정일", "입고예정수량"
+            ] if c in new_df.columns]
+
             new_df = new_df[cols].fillna("")
             if not existing:
                 _clear_and_write(ws, new_df)

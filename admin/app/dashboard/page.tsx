@@ -210,7 +210,7 @@ export default function DashboardPage() {
                                     <YAxis yAxisId="qty" orientation="left" tick={{ fontSize: 11 }} />
                                     <YAxis yAxisId="rev" orientation="right" tick={{ fontSize: 11 }}
                                                tickFormatter={(v: number) => v >= 10000 ? `${(v / 10000).toFixed(0)}만` : v.toLocaleString()} />
-                                    <Tooltip formatter={(v: number, name: string) =>
+                                    <Tooltip formatter={(v: any, name: any): any =>
                                         name === "매출액" ? [`${Number(v).toLocaleString()}원`, name] : [v, name]
                                     } />
                                     <Legend />

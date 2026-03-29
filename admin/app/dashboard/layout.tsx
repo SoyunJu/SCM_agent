@@ -107,7 +107,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         localStorage.removeItem("access_token");
         localStorage.removeItem("user_role");
         localStorage.removeItem("username");
-        router.push("/login");
+        window.location.href = "/login";
     };
 
     const toggleAlerts = () => {
@@ -250,16 +250,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                     {alerts.length === 0 ? (
                                         <p className="text-center text-gray-400 text-sm py-6">알림 없음</p>
                                     ) : (
-                                        alerts.map((a, i) => (
-                                            <div key={i} className={`px-4 py-3 border-b border-gray-50 text-sm ${
-                                                a.severity === "CRITICAL" ? "bg-red-50" : "bg-orange-50"
-                                            }`}>
-                                                <p className="font-medium text-gray-700">{a.message}</p>
-                                                <p className="text-xs text-gray-400 mt-0.5">
-                                                    {a.product_code} | {a.anomaly_type}
-                                                </p>
-                                            </div>
-                                        ))
+                                        alerts.map((a, i) => {
+
+                                            const sev = (a.severity ?? "").toUpperCase();
+                                            const bgColor = sev === "CRITICAL" ? "bg-red-50" :
+                                                sev === "HIGH"     ? "bg-orange-50" :
+                                                    "bg-gray-50";
+
+                                            return (
+                                                <div key={i} className={`px-4 py-3 border-b border-gray-50 text-sm ${bgColor}`}>
+                                                    <p className="font-medium text-gray-700">{a.message}</p>
+                                                    <p className="text-xs text-gray-400 mt-0.5">
+                                                        {a.product_code} | {a.anomaly_type}
+                                                    </p>
+                                                </div>
+                                            );
+                                        })
                                     )}
                                 </div>
                             </div>

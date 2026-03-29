@@ -4,32 +4,38 @@
 
 ## Google Sheets 컬럼 정의
 
-### 상품마스터 (Product Master)
+### 상품마스터
+| 컬럼명 | DB 필드 |
+|--------|---------|
+| 상품코드 | products.code |
+| 상품명 | products.name |
+| 카테고리 | products.category |
+| 안전재고기준 | products.safety_stock |
+| **현재재고** | stock_levels.current_stock (읽기 전용 미러) |
 
-| 컬럼명 (Sheets) | 타입 | 설명 | DB 필드 (products) |
-|----------------|------|------|-------------------|
-| `상품코드` | string | 고유 식별자 (PK) | `code` |
-| `상품명` | string | 상품 이름 | `name` |
-| `카테고리` | string | 분류 (예: 상의, 하의, 아우터) | `category` |
-| `안전재고기준` | integer | 안전재고 수량 임계값 | `safety_stock` |
+### 일별판매
+| 컬럼명 | DB 필드 |
+|--------|---------|
+| 날짜 | daily_sales.date |
+| 상품코드 | daily_sales.product_code |
+| 상품명 | products.name (JOIN) |
+| 카테고리 | products.category (JOIN) |
+| 판매수량 | daily_sales.qty |
+| 단가 | 계산값 (revenue/qty) |
+| 매출액 | daily_sales.revenue |
+| **매입액** | daily_sales.cost |
+| **차액(수익)** | revenue - cost (계산값) |
 
-### 일별판매 (Daily Sales)
-
-| 컬럼명 (Sheets) | 타입 | 설명 | DB 필드 (daily_sales) |
-|----------------|------|------|----------------------|
-| `날짜` | string | 판매일 (YYYY-MM-DD) | `date` |
-| `상품코드` | string | 상품 식별자 | `product_code` |
-| `판매수량` | integer | 해당일 판매 수량 | `qty` |
-| `매출액` | float | 해당일 매출 금액 (원) | `revenue` |
-
-### 재고현황 (Stock Status)
-
-| 컬럼명 (Sheets) | 타입 | 설명 | DB 필드 (stock_levels) |
-|----------------|------|------|----------------------|
-| `상품코드` | string | 상품 식별자 (PK) | `product_code` |
-| `현재재고` | integer | 현재 재고 수량 | `current_stock` |
-| `입고예정일` | string | 입고 예정 날짜 (YYYY-MM-DD, 선택) | `restock_date` |
-| `입고예정수량` | integer | 입고 예정 수량 (선택) | `restock_qty` |
+### 재고현황
+| 컬럼명 | DB 필드 |
+|--------|---------|
+| 상품코드 | stock_levels.product_code |
+| 상품명 | products.name (JOIN) |
+| 카테고리 | products.category (JOIN) |
+| 현재재고 | stock_levels.current_stock |
+| **안전재고** | products.safety_stock (JOIN) |
+| 입고예정일 | stock_levels.restock_date |
+| 입고예정수량 | stock_levels.restock_qty |
 
 ### 분석결과 (Analysis Results) — 앱이 자동 생성
 
