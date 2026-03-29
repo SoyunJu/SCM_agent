@@ -249,26 +249,32 @@ def run_daily_job(
 
         # --- 6. DB 저장 ---
         for item in stock_anomalies:
-            upsert_anomaly_log(
-                db=db,
-                product_code=item["product_code"],
-                product_name=item.get("product_name", ""),
-                category=item.get("category"),
-                anomaly_type=AnomalyType(str(item["anomaly_type"]).upper()),
-                severity=Severity(str(item["severity"]).upper()),
-                current_stock=item.get("current_stock"),
-                daily_avg_sales=item.get("daily_avg_sales"),
-                days_until_stockout=item.get("days_until_stockout"),
-            )
+            try:
+                upsert_anomaly_log(
+                    db=db,
+                    product_code=item["product_code"],
+                    product_name=item.get("product_name", ""),
+                    category=item.get("category"),
+                    anomaly_type=AnomalyType(str(item["anomaly_type"]).upper()),
+                    severity=Severity(str(item["severity"]).upper()),
+                    current_stock=item.get("current_stock"),
+                    daily_avg_sales=item.get("daily_avg_sales"),
+                    days_until_stockout=item.get("days_until_stockout"),
+                )
+            except Exception as upsert_err:
+                logger.warning(f"[jobs] stock anomaly upsert 스킵: {item.get('product_code')} — {upsert_err}")
         for item in sales_anomalies:
-            upsert_anomaly_log(
-                db=db,
-                product_code=item["product_code"],
-                product_name=item["product_name"],
-                category=item.get("category"),
-                anomaly_type=AnomalyType(item["anomaly_type"]),
-                severity=Severity(item["severity"]),
-            )
+            try:
+                upsert_anomaly_log(
+                    db=db,
+                    product_code=item["product_code"],
+                    product_name=item.get("product_name", ""),
+                    category=item.get("category"),
+                    anomaly_type=AnomalyType(str(item["anomaly_type"]).upper()),
+                    severity=Severity(str(item["severity"]).upper()),
+                )
+            except Exception as upsert_err:
+                logger.warning(f"[jobs] sales anomaly upsert 스킵: {item.get('product_code')} — {upsert_err}")
 
         # --- SSE + 이상징후 알림 ---
         all_anomalies  = list(stock_anomalies) + list(sales_anomalies)

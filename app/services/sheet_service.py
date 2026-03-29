@@ -385,6 +385,7 @@ class SheetService:
     def get_stock_stats(
             db: Session,
             category: str | None = None,
+            search: str | None = None,
             page: int = 1,
             page_size: int = 50,
     ) -> dict:
@@ -404,6 +405,12 @@ class SheetService:
         )
         if category:
             products = [p for p in products if p.category == category]
+        if search:
+            kw = search.lower()
+            products = [
+                p for p in products
+                if kw in (p.code or "").lower() or kw in (p.name or "").lower()
+            ]
 
         product_codes = [p.code for p in products]
 

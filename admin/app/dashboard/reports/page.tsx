@@ -311,7 +311,7 @@ export default function ReportsPage() {
                                         return (
                                             <tr key={r.id} className="hover:bg-gray-50 transition">
                                                 <td className="px-6 py-3 text-gray-400">#{r.id}</td>
-                                                <td className="px-6 py-3 text-gray-700">{r.executed_at.slice(0, 16)}</td>
+                                                <td className="px-6 py-3 text-gray-700">{(r.executed_at ?? r.created_at ?? "—").slice(0, 16)}</td>
                                                 <td className="px-6 py-3 text-gray-600">{r.report_type}</td>
                                                 <td className="px-6 py-3 text-gray-500 text-xs">{r.triggered_by ?? "—"}</td>
                                                 <td className="px-6 py-3">

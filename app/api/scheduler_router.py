@@ -1,6 +1,6 @@
 from typing import Annotated
 
-import logger
+from loguru import logger
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -171,4 +171,40 @@ async def trigger_cleanup(
     try:
         return SchedulerService.trigger_cleanup()
     except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/trigger-demand-forecast")
+async def trigger_demand_forecast(
+        current_user: Annotated[TokenData, Depends(require_admin)],
+):
+    try:
+        from app.celery_app.tasks import run_demand_forecast
+        result = run_demand_forecast.delay()
+        return {"status": "triggered", "task_id": result.id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/trigger-turnover-analysis")
+async def trigger_turnover_analysis(
+        current_user: Annotated[TokenData, Depends(require_admin)],
+):
+    try:
+        from app.celery_app.tasks import run_turnover_analysis
+        result = run_turnover_analysis.delay()
+        return {"status": "triggered", "task_id": result.id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/trigger-abc-analysis")
+async def trigger_abc_analysis(
+        current_user: Annotated[TokenData, Depends(require_admin)],
+):
+    try:
+        from app.celery_app.tasks import run_abc_analysis_task
+        result = run_abc_analysis_task.delay()
+        return {"status": "triggered", "task_id": result.id}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

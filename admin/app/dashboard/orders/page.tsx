@@ -33,7 +33,7 @@ const PROPOSAL_STATUS_LABEL: Record<string, string> = {
 
 // --- 주문현황 탭 ---
 function OrdersTab() {
-    const [orders, setOrders]         = useState<OrderItem[]>([]);
+    const [orders, setOrders]         = useState<OrderProposal[]>([]);
     const [tab, setTab]               = useState<string>("전체");
     const [loading, setLoading]       = useState(false);
     const [page, setPage]             = useState(1);
@@ -43,17 +43,22 @@ function OrdersTab() {
     const [isReadonly, setIsReadonly] = useState(false);
     const [summaryCounts, setSummaryCounts] = useState<Record<string, number>>({});
 
-    // 마운트 시 각 상태별 총계 조회 (필터 변경과 무관하게 고정)
+    // 상태별 총계 (APPROVED = 발주완료, 입고 대기 의미)
     useEffect(() => {
         const loadCounts = async () => {
             try {
-                const statuses = ["발주완료", "입고중", "입고완료", "반품"] as const;
-                const results = await Promise.all(
-                    statuses.map((s) => getOrders({ status: s, page: 1, page_size: 1 }))
-                );
-                const counts: Record<string, number> = {};
-                statuses.forEach((s, i) => { counts[s] = results[i].data.total ?? 0; });
-                setSummaryCounts(counts);
+                const [all, approved, pending, rejected] = await Promise.all([
+                    getOrders({ page: 1, page_size: 1 }),
+                    getOrders({ status: "APPROVED", page: 1, page_size: 1 }),
+                    getOrders({ status: "PENDING",  page: 1, page_size: 1 }),
+                    getOrders({ status: "REJECTED", page: 1, page_size: 1 }),
+                ]);
+                setSummaryCounts({
+                    전체:   all.data.total      ?? 0,
+                    승인:   approved.data.total ?? 0,
+                    대기:   pending.data.total  ?? 0,
+                    거절:   rejected.data.total ?? 0,
+                });
             } catch {
                 // 카드 숫자 없이 표시
             }
@@ -64,11 +69,19 @@ function OrdersTab() {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const status = tab === "전체" ? undefined : tab;
-            const res = await getOrders({ status, page, page_size: pageSize });
+            const statusMap: Record<string, string | undefined> = {
+                전체: undefined, 승인: "APPROVED", 대기: "PENDING", 거절: "REJECTED",
+            };
+            const res = await getOrders({ status: statusMap[tab], page, page_size: pageSize });
             setOrders(res.data.items ?? []);
             setTotalPages(res.data.total_pages ?? 1);
             setTotal(res.data.total ?? 0);
+        } catch (e: any) {
+            if (e?.response?.status !== 401 && e?.response?.status !== 403) {
+                setOrders([]);
+                setTotalPages(1);
+                setTotal(0);
+            }
         } finally {
             setLoading(false);
         }
@@ -80,14 +93,24 @@ function OrdersTab() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tab, page, pageSize]);
 
+    const STATUS_TABS = ["전체", "승인", "대기", "거절"] as const;
+    const STATUS_COLOR: Record<string, string> = {
+        APPROVED: "text-green-600 bg-green-50",
+        PENDING:  "text-yellow-600 bg-yellow-50",
+        REJECTED: "text-red-500 bg-red-50",
+    };
+    const STATUS_KOR: Record<string, string> = {
+        APPROVED: "승인", PENDING: "대기", REJECTED: "거절",
+    };
+
     return (
         <div className="space-y-6">
             {/* 상태 카드 */}
             <div className="grid grid-cols-4 gap-4">
-                {(["발주완료", "입고중", "입고완료", "반품"] as const).map((s) => (
+                {(["전체", "승인", "대기", "거절"] as const).map((s) => (
                     <button
                         key={s}
-                        onClick={() => setTab(s)}
+                        onClick={() => { setTab(s); setPage(1); }}
                         className={`bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-left transition hover:border-blue-200 ${tab === s ? "border-blue-400 ring-1 ring-blue-400" : ""}`}
                     >
                         <p className="text-xs text-gray-400 mb-1">{s}</p>
@@ -97,7 +120,7 @@ function OrdersTab() {
             </div>
 
             {/* 탭 필터 */}
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap items-center">
                 {STATUS_TABS.map((t) => (
                     <button
                         key={t}
@@ -146,30 +169,34 @@ function OrdersTab() {
                 <table className="w-full text-sm">
                     <thead>
                     <tr className="bg-gray-50 text-gray-500 text-xs">
-                        <th className="px-6 py-3 text-left">주문코드</th>
                         <th className="px-6 py-3 text-left">상품코드</th>
                         <th className="px-6 py-3 text-left">상품명</th>
+                        <th className="px-6 py-3 text-left">카테고리</th>
                         <th className="px-6 py-3 text-right">발주수량</th>
-                        <th className="px-6 py-3 text-left">발주일</th>
-                        <th className="px-6 py-3 text-left">예정납기일</th>
-                        <th className="px-6 py-3 text-left">상태</th>
+                        <th className="px-6 py-3 text-right">단가</th>
+                        <th className="px-6 py-3 text-left">생성일시</th>
+                        <th className="px-6 py-3 text-center">상태</th>
                     </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                     {loading ? (
                         <tr><td colSpan={7} className="px-6 py-12 text-center"><Loader2 size={24} className="animate-spin text-blue-500 mx-auto" /></td></tr>
                     ) : orders.length === 0 ? (
-                        <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-400"><Package size={32} className="mx-auto mb-2 text-gray-300" />주문 데이터가 없습니다</td></tr>
+                        <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-400"><Package size={32} className="mx-auto mb-2 text-gray-300" />데이터가 없습니다</td></tr>
                     ) : orders.map((order) => (
-                        <tr key={order.주문코드} className="hover:bg-gray-50 transition">
-                            <td className="px-6 py-3 font-mono text-gray-400 text-xs">{order.주문코드}</td>
-                            <td className="px-6 py-3 font-mono text-gray-600">{order.상품코드}</td>
-                            <td className="px-6 py-3 text-gray-700">{order.상품명}</td>
-                            <td className="px-6 py-3 text-right text-gray-700 font-medium">{order.발주수량.toLocaleString()}</td>
-                            <td className="px-6 py-3 text-gray-500">{order.발주일}</td>
-                            <td className="px-6 py-3 text-gray-500">{order.예정납기일}</td>
-                            <td className="px-6 py-3">
-                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[order.상태] ?? "bg-gray-100 text-gray-500"}`}>{order.상태}</span>
+                        <tr key={order.id} className="hover:bg-gray-50 transition">
+                            <td className="px-6 py-3 font-mono text-gray-600 text-xs">{order.product_code}</td>
+                            <td className="px-6 py-3 text-gray-700">{order.product_name ?? "—"}</td>
+                            <td className="px-6 py-3 text-gray-500 text-xs">{order.category ?? "—"}</td>
+                            <td className="px-6 py-3 text-right font-medium text-gray-700">{(order.proposed_qty ?? 0).toLocaleString()}</td>
+                            <td className="px-6 py-3 text-right text-gray-600">
+                                {order.unit_price > 0 ? `${order.unit_price.toLocaleString()}원` : "—"}
+                            </td>
+                            <td className="px-6 py-3 text-gray-500 text-xs">{order.created_at?.slice(0, 16) ?? "—"}</td>
+                            <td className="px-6 py-3 text-center">
+                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[order.status] ?? "bg-gray-100 text-gray-500"}`}>
+                                    {STATUS_KOR[order.status] ?? order.status}
+                                </span>
                             </td>
                         </tr>
                     ))}

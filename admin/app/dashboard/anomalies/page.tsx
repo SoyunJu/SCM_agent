@@ -2,11 +2,11 @@
 
 import { useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getAnomalies, resolveAnomaly } from "@/lib/api";
+import { getAnomalies, resolveAnomaly, autoResolveAnomaly } from "@/lib/api";
 import { getDefaultPageSize } from "@/lib/utils";
 import {
     AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
-    Loader2, X, ShieldCheck,
+    Loader2, X, ShieldCheck, Zap, Tag,
 } from "lucide-react";
 
 // ── 상수 ─────────────────────────────────────────────────────────────────────
@@ -28,78 +28,168 @@ const SEVERITY_KOR: Record<string, string> = {
     CRITICAL: "긴급", HIGH: "높음", MEDIUM: "보통", LOW: "낮음", CHECK: "확인",
 };
 
-// 유형별 처리 방법 제안
+// 자동처리 유형 분류
+const ORDER_TYPES    = ["LOW_STOCK", "SALES_SURGE"];
+const DISCOUNT_TYPES = ["OVER_STOCK", "LONG_TERM_STOCK", "SALES_DROP"];
+
+// 유형별 가이드
 const RESOLVE_GUIDE: Record<string, { title: string; steps: string[] }> = {
     LOW_STOCK: {
-        title: "재고 부족 처리 방법",
+        title: "재고 부족 — 자동 발주 처리",
         steps: [
-            "발주 관리 탭에서 발주 제안 생성을 통해 자동 발주 수량을 산출하세요.",
-            "긴급 발주가 필요한 경우 공급업체에 즉시 연락하세요.",
-            "리드타임 동안 판매 가능 수량을 조정하는 것을 검토하세요.",
-        ],
-    },
-    OVER_STOCK: {
-        title: "과재고 처리 방법",
-        steps: [
-            "프로모션 또는 할인 행사를 통해 재고를 소진하세요.",
-            "다른 판매 채널(온라인/오프라인)로 재고를 분산 이동하세요.",
-            "향후 발주 수량을 줄이도록 안전재고 기준을 재검토하세요.",
-        ],
-    },
-    LONG_TERM_STOCK: {
-        title: "장기 재고 처리 방법",
-        steps: [
-            "판매 가능 여부를 확인하고 가격을 인하하여 판매를 유도하세요.",
-            "공급업체 반품이 가능한지 확인하세요.",
-            "폐기 또는 기부 처리가 필요한 경우 승인 절차를 진행하세요.",
+            "일평균 판매량 기준으로 발주 수량을 자동 산출합니다.",
+            "발주 제안이 즉시 승인 처리됩니다.",
+            "기존 대기 중인 발주 제안이 있으면 처리되지 않습니다.",
         ],
     },
     SALES_SURGE: {
-        title: "판매 급등 처리 방법",
+        title: "판매 급등 — 긴급 발주 처리",
         steps: [
-            "현재 재고 수준이 수요를 충족할 수 있는지 즉시 확인하세요.",
-            "재고 부족이 예상되면 긴급 발주를 진행하세요.",
-            "급등 원인(이벤트, 시즌 등)을 파악하여 향후 수요를 예측하세요.",
+            "급등 일평균 판매량 × 리드타임(14일) 기준으로 수량을 산출합니다.",
+            "발주 제안이 즉시 승인 처리됩니다.",
+            "기존 대기 중인 발주 제안이 있으면 처리되지 않습니다.",
+        ],
+    },
+    OVER_STOCK: {
+        title: "과재고 — 할인 판매 처리",
+        steps: [
+            "안전재고 초과분 수량을 최대 할인율로 판매 처리합니다.",
+            "매입단가 기준 최대 할인율이 자동 산출됩니다.",
+            "판매 이력이 구글 시트에 기록됩니다.",
+        ],
+    },
+    LONG_TERM_STOCK: {
+        title: "장기 재고 — 할인 판매 처리",
+        steps: [
+            "안전재고 초과분 수량을 최대 할인율로 판매 처리합니다.",
+            "판매 이력이 없으면 기본 30% 할인율이 적용됩니다.",
+            "판매 이력이 구글 시트에 기록됩니다.",
         ],
     },
     SALES_DROP: {
-        title: "판매 급락 처리 방법",
+        title: "판매 급락 — 할인 판매 처리",
         steps: [
-            "판매 채널 오류나 상품 노출 이상 여부를 먼저 확인하세요.",
-            "경쟁사 가격 변동 또는 대체 상품 등장 여부를 조사하세요.",
-            "마케팅 프로모션 또는 가격 조정을 통한 수요 회복을 검토하세요.",
+            "안전재고 초과분 수량을 최대 할인율로 판매 처리합니다.",
+            "매입단가 기준 최대 할인율이 자동 산출됩니다.",
+            "판매 이력이 구글 시트에 기록됩니다.",
         ],
     },
 };
 
-// ── 해결 확인 모달 ────────────────────────────────────────────────────────────
+// ── 결과 표시 컴포넌트 ────────────────────────────────────────────────────────
+function ActionResult({ result, anomalyType }: { result: any; anomalyType: string }) {
+    if (!result) return null;
+
+    if (ORDER_TYPES.includes(anomalyType)) {
+        return (
+            <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-100 text-xs space-y-1">
+                <p className="font-semibold text-green-700">✅ 발주 자동 승인 완료</p>
+                <p className="text-green-600">제안 ID: #{result.proposal_id}</p>
+                <p className="text-green-600">발주 수량: {result.proposed_qty?.toLocaleString()}개</p>
+                <p className="text-green-600">
+                    단가: {result.unit_price > 0 ? `${result.unit_price?.toLocaleString()}원` : "단가 정보 없음"}
+                </p>
+                <p className="text-gray-500 mt-1">{result.reason}</p>
+            </div>
+        );
+    }
+
+    if (DISCOUNT_TYPES.includes(anomalyType)) {
+        return (
+            <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100 text-xs space-y-1">
+                <p className="font-semibold text-blue-700">✅ 할인 판매 처리 완료</p>
+                <p className="text-blue-600">처리 수량: {result.over_qty?.toLocaleString()}개</p>
+                <p className="text-blue-600">최대 할인율: {result.max_discount}%</p>
+                {result.unit_sell > 0 && (
+                    <p className="text-blue-600">
+                        할인가: {Math.round(result.unit_sell * (1 - result.max_discount / 100)).toLocaleString()}원
+                    </p>
+                )}
+                {!result.sheet_ok && (
+                    <p className="text-amber-600 mt-1">
+                        ⚠️ 시트 기록 실패 (해결 처리는 완료됨): {result.sheet_error}
+                    </p>
+                )}
+            </div>
+        );
+    }
+
+    return null;
+}
+
+// ── 해결 모달 ────────────────────────────────────────────────────────────────
 function ResolveModal({
                           anomaly,
-                          onConfirm,
-                          onCancel,
-                          resolving,
+                          onClose,
+                          onResolved,
                       }: {
     anomaly: any;
-    onConfirm: () => void;
-    onCancel: () => void;
-    resolving: boolean;
+    onClose: () => void;
+    onResolved: () => void;
 }) {
-    const typeKey = (anomaly.anomaly_type as string)?.toUpperCase();
-    const guide   = RESOLVE_GUIDE[typeKey] ?? {
+    const [autoLoading,   setAutoLoading]   = useState(false);
+    const [manualLoading, setManualLoading] = useState(false);
+    const [actionResult,  setActionResult]  = useState<any>(null);
+    const [errorMsg,      setErrorMsg]      = useState<string | null>(null);
+    const [done,          setDone]          = useState(false);
+
+    const typeKey  = (anomaly.anomaly_type as string)?.toUpperCase();
+    const canAuto  = ORDER_TYPES.includes(typeKey) || DISCOUNT_TYPES.includes(typeKey);
+    const guide    = RESOLVE_GUIDE[typeKey] ?? {
         title: "처리 방법",
         steps: ["해당 이상징후를 검토 후 적절한 조치를 취하세요."],
+    };
+
+    const autoIcon = ORDER_TYPES.includes(typeKey)
+        ? <Zap size={14} />
+        : <Tag size={14} />;
+    const autoLabel = ORDER_TYPES.includes(typeKey)
+        ? "발주 자동 처리"
+        : "할인 판매 자동 처리";
+
+    // 자동 처리
+    const handleAutoResolve = async () => {
+        setAutoLoading(true);
+        setErrorMsg(null);
+        try {
+            const res = await autoResolveAnomaly(anomaly.id);
+            setActionResult(res.data);
+            setDone(true);
+            onResolved();
+        } catch (e: any) {
+            const detail = e?.response?.data?.detail ?? "자동 처리에 실패했습니다.";
+            setErrorMsg(detail);
+        } finally {
+            setAutoLoading(false);
+        }
+    };
+
+    // 직접 해결
+    const handleManualResolve = async () => {
+        setManualLoading(true);
+        setErrorMsg(null);
+        try {
+            await resolveAnomaly(anomaly.id);
+            setDone(true);
+            onResolved();
+        } catch (e: any) {
+            const detail = e?.response?.data?.detail ?? "처리에 실패했습니다.";
+            setErrorMsg(detail);
+        } finally {
+            setManualLoading(false);
+        }
     };
 
     return (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-                {/* 모달 헤더 */}
+                {/* 헤더 */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                     <div className="flex items-center gap-2">
                         <ShieldCheck size={18} className="text-blue-600" />
-                        <h3 className="font-semibold text-gray-800">이상징후 해결 처리</h3>
+                        <h3 className="font-semibold text-gray-800">이상징후 처리</h3>
                     </div>
-                    <button onClick={onCancel} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
+                    <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
                         <X size={16} />
                     </button>
                 </div>
@@ -113,8 +203,8 @@ function ResolveModal({
                                 ({anomaly.product_code})
                             </span>
                         </span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SEVERITY_COLOR[anomaly.severity?.toUpperCase()] ?? "bg-gray-100 text-gray-500"}`}>
-                            {SEVERITY_KOR[anomaly.severity?.toUpperCase()] ?? anomaly.severity}
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SEVERITY_COLOR[typeKey] ?? "bg-gray-100 text-gray-500"}`}>
+                            {SEVERITY_KOR[typeKey] ?? anomaly.severity}
                         </span>
                     </div>
                     <p className="text-xs text-gray-500">
@@ -125,7 +215,7 @@ function ResolveModal({
                     </p>
                 </div>
 
-                {/* 처리 방법 제안 */}
+                {/* 처리 가이드 */}
                 <div className="px-6 py-4">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
                         {guide.title}
@@ -140,26 +230,62 @@ function ResolveModal({
                             </li>
                         ))}
                     </ol>
+
+                    {/* 처리 결과 */}
+                    {actionResult && <ActionResult result={actionResult} anomalyType={typeKey} />}
+
+                    {/* 에러 메시지 */}
+                    {errorMsg && (
+                        <p className="mt-3 text-xs text-red-500 bg-red-50 px-3 py-2 rounded-lg">
+                            ❌ {errorMsg}
+                        </p>
+                    )}
                 </div>
 
                 {/* 액션 버튼 */}
-                <div className="px-6 py-4 border-t border-gray-100 flex gap-2 justify-end">
-                    <button
-                        onClick={onCancel}
-                        className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition"
-                    >
-                        취소
-                    </button>
-                    <button
-                        onClick={onConfirm}
-                        disabled={resolving}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
-                    >
-                        {resolving
-                            ? <Loader2 size={13} className="animate-spin" />
-                            : <CheckCircle2 size={13} />}
-                        해결 완료 처리
-                    </button>
+                <div className="px-6 py-4 border-t border-gray-100">
+                    {done ? (
+                        /* 처리 완료 후 닫기만 */
+                        <button
+                            onClick={onClose}
+                            className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition"
+                        >
+                            닫기
+                        </button>
+                    ) : (
+                        <div className="flex gap-2 justify-end">
+                            <button
+                                onClick={onClose}
+                                className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition"
+                            >
+                                취소
+                            </button>
+                            {/* 직접 해결 */}
+                            <button
+                                onClick={handleManualResolve}
+                                disabled={manualLoading || autoLoading}
+                                className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition disabled:opacity-50"
+                            >
+                                {manualLoading
+                                    ? <Loader2 size={13} className="animate-spin" />
+                                    : <CheckCircle2 size={13} />}
+                                직접 해결
+                            </button>
+                            {/* 자동 처리 */}
+                            {canAuto && (
+                                <button
+                                    onClick={handleAutoResolve}
+                                    disabled={autoLoading || manualLoading}
+                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
+                                >
+                                    {autoLoading
+                                        ? <Loader2 size={13} className="animate-spin" />
+                                        : autoIcon}
+                                    {autoLabel}
+                                </button>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -170,34 +296,31 @@ function ResolveModal({
 export default function AnomaliesPage() {
     const qc = useQueryClient();
 
-    const [page,     setPage]     = useState(1);
-    const [pageSize]              = useState(getDefaultPageSize);
-    const [showResolved, setShowResolved] = useState(false);
+    const [page,           setPage]           = useState(1);
+    const [pageSize]                          = useState(getDefaultPageSize);
+    // "all" | "unresolved" | "resolved"
+    const [resolvedFilter, setResolvedFilter] = useState<"all" | "unresolved" | "resolved">("unresolved");
     const [severityFilter, setSeverityFilter] = useState("");
     const [typeFilter,     setTypeFilter]     = useState("");
-
-    // 해결 모달
     const [selectedAnomaly, setSelectedAnomaly] = useState<any | null>(null);
-    const [resolving, setResolving] = useState(false);
 
-    const queryKey = ["anomalies", page, pageSize, showResolved, severityFilter, typeFilter];
+    // resolvedFilter → is_resolved 변환
+    const isResolved =
+        resolvedFilter === "unresolved" ? false :
+            resolvedFilter === "resolved"   ? true  : undefined;
 
-    const { data, isLoading, refetch } = useQuery({
+    const queryKey = ["anomalies", page, pageSize, resolvedFilter, severityFilter, typeFilter];
+
+    const { data, isLoading } = useQuery({
         queryKey,
-        queryFn: () => {
-            const params = new URLSearchParams({
-                page:      String(page),
-                page_size: String(pageSize),
-            });
-            if (!showResolved) params.append("is_resolved", "false");
-            if (severityFilter) params.append("severity", severityFilter);
-            if (typeFilter)     params.append("anomaly_type", typeFilter);
-            return getAnomalies(
-                showResolved ? undefined : false,
+        queryFn: () =>
+            getAnomalies(
+                isResolved,
                 pageSize,
                 page,
-            ).then(r => r.data);
-        },
+                severityFilter || undefined,
+                typeFilter     || undefined,
+            ).then(r => r.data),
         staleTime: 30_000,
         placeholderData: (prev) => prev,
     });
@@ -206,17 +329,9 @@ export default function AnomaliesPage() {
     const total      = data?.total      ?? 0;
     const totalPages = data?.total_pages ?? 1;
 
-    const handleResolveConfirm = useCallback(async () => {
-        if (!selectedAnomaly) return;
-        setResolving(true);
-        try {
-            await resolveAnomaly(selectedAnomaly.id);
-            setSelectedAnomaly(null);
-            qc.invalidateQueries({ queryKey: ["anomalies"] });
-        } finally {
-            setResolving(false);
-        }
-    }, [selectedAnomaly, qc]);
+    const handleResolved = useCallback(() => {
+        qc.invalidateQueries({ queryKey: ["anomalies"] });
+    }, [qc]);
 
     return (
         <div className="space-y-5">
@@ -232,17 +347,16 @@ export default function AnomaliesPage() {
 
             {/* 필터 바 */}
             <div className="flex flex-wrap gap-2 items-center bg-white px-4 py-3 rounded-xl border border-gray-100 shadow-sm">
-                {/* 해결 여부 토글 */}
-                <button
-                    onClick={() => { setShowResolved(v => !v); setPage(1); }}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                        showResolved
-                            ? "bg-gray-800 text-white"
-                            : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
-                    }`}
+                {/* 해결 여부 드롭다운 */}
+                <select
+                    value={resolvedFilter}
+                    onChange={(e) => { setResolvedFilter(e.target.value as any); setPage(1); }}
+                    className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none"
                 >
-                    {showResolved ? "전체" : "미해결만"}
-                </button>
+                    <option value="unresolved">미해결</option>
+                    <option value="resolved">해결됨</option>
+                    <option value="all">전체</option>
+                </select>
 
                 {/* 심각도 필터 */}
                 <select
@@ -268,7 +382,16 @@ export default function AnomaliesPage() {
                     ))}
                 </select>
 
-                {/* 페이지 크기 */}
+                {/* 필터 초기화 */}
+                {(severityFilter || typeFilter || resolvedFilter !== "unresolved") && (
+                    <button
+                        onClick={() => { setSeverityFilter(""); setTypeFilter(""); setResolvedFilter("unresolved"); setPage(1); }}
+                        className="px-2.5 py-1.5 rounded-lg text-xs text-gray-400 border border-gray-200 hover:bg-gray-50 transition"
+                    >
+                        초기화
+                    </button>
+                )}
+
                 <select
                     value={pageSize}
                     onChange={() => setPage(1)}
@@ -307,8 +430,8 @@ export default function AnomaliesPage() {
                         </thead>
                         <tbody className="divide-y divide-gray-50">
                         {items.map((a: any) => {
-                            const typeKey  = (a.anomaly_type_kor ? null : a.anomaly_type?.toUpperCase());
-                            const typeLabel = a.anomaly_type_kor ?? ANOMALY_KOR[a.anomaly_type?.toUpperCase()] ?? a.anomaly_type;
+                            const tk       = (a.anomaly_type as string)?.toUpperCase();
+                            const typeLabel = a.anomaly_type_kor ?? ANOMALY_KOR[tk] ?? a.anomaly_type;
                             const sevKey   = a.severity?.toUpperCase();
                             const sevLabel = a.severity_kor ?? SEVERITY_KOR[sevKey] ?? a.severity;
                             const days     = a.days_until_stockout;
@@ -325,18 +448,16 @@ export default function AnomaliesPage() {
                                         {a.product_name}
                                     </td>
                                     <td className="px-5 py-3 text-gray-500 text-xs">
-                                        {a.category || "-"}
+                                        {a.category || "—"}
                                     </td>
                                     <td className="px-5 py-3 text-gray-600 whitespace-nowrap text-xs">
                                         {typeLabel}
                                     </td>
                                     <td className="px-5 py-3 text-right text-gray-600">
-                                        {a.current_stock != null ? a.current_stock.toLocaleString() : "-"}
+                                        {a.current_stock != null ? a.current_stock.toLocaleString() : "—"}
                                     </td>
                                     <td className="px-5 py-3 text-right text-gray-600 whitespace-nowrap">
-                                        {days != null && days < 999
-                                            ? `${days.toFixed(1)}일`
-                                            : "-"}
+                                        {days != null && days < 999 ? `${days.toFixed(1)}일` : "—"}
                                     </td>
                                     <td className="px-5 py-3 text-center">
                                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SEVERITY_COLOR[sevKey] ?? "bg-gray-100 text-gray-500"}`}>
@@ -391,13 +512,12 @@ export default function AnomaliesPage() {
                 </div>
             )}
 
-            {/* 해결 확인 모달 */}
+            {/* 모달 */}
             {selectedAnomaly && (
                 <ResolveModal
                     anomaly={selectedAnomaly}
-                    onConfirm={handleResolveConfirm}
-                    onCancel={() => setSelectedAnomaly(null)}
-                    resolving={resolving}
+                    onClose={() => setSelectedAnomaly(null)}
+                    onResolved={handleResolved}
                 />
             )}
         </div>

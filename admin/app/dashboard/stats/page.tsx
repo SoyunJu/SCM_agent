@@ -189,6 +189,7 @@ export default function StatsPage() {
     const [stockTotalPages, setStockTotalPages] = useState(1);
     const [stockTotal, setStockTotal] = useState(0);
     const [stockCategory, setStockCategory] = useState("");
+    const [stockSearch,   setStockSearch]   = useState("");
 
     // ABC 분석
     const [abcData, setAbcData]         = useState<any[]>([]);
@@ -230,7 +231,7 @@ export default function StatsPage() {
                     setSalesData(res.data.items ?? []);
 
                 } else if (tab === "stock") {
-                    const res = await getStockStats(stockCategory || undefined, stockPage, stockPageSize);
+                    const res = await getStockStats(stockCategory || undefined, stockSearch || undefined, stockPage, stockPageSize);
                     setStockStats(res.data);
                     setStockTotal(res.data.total ?? 0);
                     setStockTotalPages(res.data.total_pages ?? 1);
@@ -269,7 +270,7 @@ export default function StatsPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         tab, period,
-        salesCategory, stockCategory, stockPage, stockPageSize,
+        salesCategory, stockCategory, stockSearch, stockPage, stockPageSize,
         abcCategory,
         demandPage, demandPageSize, demandCategory,
         turnoverPage, turnoverPageSize, turnoverCategory,
@@ -403,19 +404,35 @@ export default function StatsPage() {
             {/* ──────────────────────────────────────────────────────── 재고 통계 */}
             {tab === "stock" && (
                 <div className="space-y-4">
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap items-center gap-2 justify-end">
+                        {/* 검색창 */}
+                        <input
+                            type="text"
+                            value={stockSearch}
+                            onChange={(e) => { setStockSearch(e.target.value); setStockPage(1); setStockStats(null); }}
+                            placeholder="상품코드 / 상품명 검색"
+                            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-300 w-52"
+                        />
                         <select
                             value={stockCategory}
-                            onChange={(e) => { setStockCategory(e.target.value); setStockStats(null); }}
+                            onChange={(e) => { setStockCategory(e.target.value); setStockPage(1); setStockStats(null); }}
                             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none bg-white"
                         >
                             <option value="">전체 카테고리</option>
                             {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
                         </select>
+                        {(stockSearch || stockCategory) && (
+                            <button
+                                onClick={() => { setStockSearch(""); setStockCategory(""); setStockPage(1); setStockStats(null); }}
+                                className="px-2.5 py-1.5 rounded-lg text-xs text-gray-400 border border-gray-200 hover:bg-gray-50 transition"
+                            >
+                                초기화
+                            </button>
+                        )}
                         <select
                             value={stockPageSize}
                             onChange={(e) => { setStockPageSize(Number(e.target.value)); setStockPage(1); }}
-                            className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none ml-auto"
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none"
                         >
                             {[10, 25, 50, 100].map((n) => (
                                 <option key={n} value={n}>{n}건</option>

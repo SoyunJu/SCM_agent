@@ -212,3 +212,51 @@ def write_analysis_result(df_result: pd.DataFrame) -> None:
         except Exception as e:
             logger.error(f"분석결과 갱신 실패: {e}")
             raise
+
+
+def append_discount_sales(
+        product_code: str,
+        product_name: str,
+        over_qty: int,
+        unit_sell: float,
+        unit_cost: float,
+        max_discount: float,
+) -> None:
+
+    # 가정: 할인된 가격으로 over_qty 전량 당일 판매된다고 가정.
+    with _get_lock("일별판매"):
+        try:
+            from datetime import date as _date
+            today       = _date.today().strftime("%Y-%m-%d")
+            disc_rate   = max_discount / 100.0
+            sell_price  = round(unit_sell * (1 - disc_rate), 0)
+            revenue     = round(sell_price * over_qty, 0)
+            cost        = round(unit_cost  * over_qty, 0)
+
+            ws = get_spreadsheet().worksheet("일별판매")
+            existing = ws.get_all_records()
+
+            # 헤더 기준으로 컬럼 순서 맞추기
+            if existing:
+                headers = list(existing[0].keys())
+            else:
+                headers = ["날짜", "상품코드", "상품명", "카테고리", "판매수량", "매출액", "매입액"]
+
+            row_map = {
+                "날짜":    today,
+                "상품코드": product_code,
+                "상품명":  product_name,
+                "판매수량": over_qty,
+                "매출액":  revenue,
+                "매입액":  cost,
+            }
+            row = [row_map.get(h, "") for h in headers]
+            ws.append_rows([row], value_input_option="USER_ENTERED")
+            _invalidate("일별판매")
+            logger.info(
+                f"[할인판매] {product_code} {over_qty}개 "
+                f"@ {sell_price:,.0f}원 (할인율 {max_discount:.1f}%) append"
+            )
+        except Exception as e:
+            logger.error(f"[할인판매] 시트 append 실패: {e}")
+            raise
