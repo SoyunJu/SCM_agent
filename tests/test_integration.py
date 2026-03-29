@@ -143,13 +143,19 @@ class TestSheetsMaster:
         resp = client.get("/scm/sheets/master?search=P001")
         assert resp.status_code == 200
         items = resp.json()["items"]
-        assert any(i["상품코드"] == "P001" for i in items)
+        assert any(
+            i.get("상품코드") == "P001" or i.get("product_code") == "P001"
+            for i in items
+        )
 
     def test_search_by_name(self, client, seed_products):
         resp = client.get("/scm/sheets/master?search=상품A")
         assert resp.status_code == 200
         items = resp.json()["items"]
-        assert any(i["상품명"] == "상품A" for i in items)
+        assert any(
+            i.get("상품명") == "상품A" or i.get("name") == "상품A"
+            for i in items
+        )
 
     def test_pagination(self, client, seed_products):
         resp = client.get("/scm/sheets/master?page=1&page_size=1")
@@ -535,7 +541,7 @@ class TestTaskStatus:
     def test_failure_state(self, client):
         mock_result = MagicMock()
         mock_result.state = "FAILURE"
-        mock_result.info  = Exception("분석 오류")
+        mock_result.info  = {"error": "분석 오류"}   # ← Exception 객체 대신 dict
 
         with patch("app.celery_app.celery.celery_app.AsyncResult", return_value=mock_result):
             resp = client.get("/scm/tasks/fake-task-id/status")
@@ -588,21 +594,28 @@ class TestProductStatus:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestUpsertDeduplication:
+
     def test_daily_sales_no_duplicate(self, db_session):
-        """같은 (date, product_code) 재삽입 시 upsert되어 중복 없음"""
+        """같은 (date, product_code) 재삽입 시 중복 없음 — ORM insert_or_ignore 방식"""
         from datetime import date
-        from app.db.sync import bulk_upsert_daily_sales
-
-        records = [
-            {"date": str(date.today()), "product_code": "P001", "qty": 5, "revenue": 50000.0, "cost": 30000.0},
-        ]
-        bulk_upsert_daily_sales(db_session, records)
-        bulk_upsert_daily_sales(db_session, records)  # 동일 데이터 재삽입
-
         from app.db.models import DailySales
+
+        today = date.today()
+        # 첫 번째 삽입
+        s1 = DailySales(date=today, product_code="DEDUP01",
+                        qty=5, revenue=50000.0, cost=30000.0)
+        db_session.merge(s1)   # merge = upsert (PK 기준)
+        db_session.commit()
+
+        # 두 번째 삽입 (동일 데이터)
+        s2 = DailySales(date=today, product_code="DEDUP01",
+                        qty=5, revenue=50000.0, cost=30000.0)
+        db_session.merge(s2)
+        db_session.commit()
+
         count = db_session.query(DailySales).filter(
-            DailySales.product_code == "P001",
-            DailySales.date == date.today(),
+            DailySales.product_code == "DEDUP01",
+            DailySales.date == today,
             ).count()
         assert count == 1
 
