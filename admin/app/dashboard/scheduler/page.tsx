@@ -1,16 +1,29 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {useEffect, useRef, useState} from "react";
+import {useMutation, useQuery, useQueryClient} from "@tanstack/react-query";
 import {
-    getSchedulerConfig, updateSchedulerConfig,
-    getSchedulerStatus, triggerReport, getReportStatus, apiClient,
+    apiClient,
+    getReportStatus,
+    getSchedulerConfig,
+    getSchedulerStatus,
+    triggerReport,
+    updateSchedulerConfig,
 } from "@/lib/api";
-import { ScheduleConfig } from "@/lib/types";
+import {ScheduleConfig} from "@/lib/types";
 import {
-    Clock, Play, RefreshCw, Save, Loader2,
-    CheckCircle2, XCircle, Activity, CalendarClock,
-    Zap, AlertTriangle, CheckCheck,
+    Activity,
+    AlertTriangle,
+    CalendarClock,
+    CheckCheck,
+    CheckCircle2,
+    Clock,
+    Loader2,
+    Play,
+    RefreshCw,
+    Save,
+    XCircle,
+    Zap,
 } from "lucide-react";
 
 // ── Beat 스케줄 한글 라벨 ──────────────────────────────────────────────────
@@ -305,16 +318,16 @@ export default function SchedulerPage() {
                     ) : (
                         <div className="space-y-1.5">
                             {Object.entries(beatSchedule).map(([key, schedule]) => {
-                                const info = BEAT_LABELS[key] ?? { label: key, desc: schedule };
+                                const info = BEAT_LABELS[key] ?? {label: key};
                                 return (
                                     <div key={key}
                                          className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
                                         <div className="min-w-0">
                                             <p className="text-sm font-medium text-gray-700">{info.label}</p>
-                                            <p className="text-xs text-gray-400 mt-0.5">{info.desc}</p>
+                                            <p className="text-xs text-gray-400 mt-0.5">{schedule as string}</p>
                                         </div>
                                         <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full shrink-0 ml-2 font-mono whitespace-nowrap">
-                                            {schedule}
+                                            자동
                                         </span>
                                     </div>
                                 );

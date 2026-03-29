@@ -24,7 +24,7 @@ export interface AnomalyLog {
 }
 
 export interface ChatMessage {
-    role: "user" | "assistant";
+    role: "USER" | "ASSISTANT";
     content: string;
     timestamp: Date;
 }

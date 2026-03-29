@@ -61,44 +61,6 @@ def bulk_upsert_daily_sales(db: Session, records: list[dict]) -> dict:
 
 
 
-# 일별 매출
-def bulk_upsert_daily_sales(db: Session, records: list[dict]) -> dict:
-    if not records:
-        return {"inserted": 0, "updated": 0, "skipped": 0}
-
-    sql = text("""
-               INSERT INTO daily_sales (date, product_code, qty, revenue, cost)
-               VALUES (:date, :product_code, :qty, :revenue)
-                   ON DUPLICATE KEY UPDATE qty=VALUES(qty), revenue=VALUES(revenue), cost=VALUES(cost)
-               """)
-
-    total = 0
-    for batch in _batched(records, _BATCH):
-        params = []
-        for r in batch:
-            raw_date = r.get("date")
-            if isinstance(raw_date, str):
-                try:
-                    raw_date = date.fromisoformat(raw_date)
-                except ValueError:
-                    continue
-            params.append({
-                "date":         raw_date,
-                "product_code": r["product_code"],
-                "qty":          int(r.get("qty", 0)),
-                "revenue":      float(r.get("revenue", 0.0)),
-            })
-        if not params:
-            continue
-        db.execute(sql, params)
-        db.commit()
-        total += len(params)
-
-    logger.info(f"일별매출 업데이트 성공: total={total}")
-    return {"inserted": total, "updated": 0, "skipped": len(records) - total}
-
-
-
 # 재고
 def bulk_upsert_stock_levels(db: Session, records: list[dict]) -> dict:
     if not records:

@@ -68,6 +68,32 @@ class SchedulerService:
 
 
     # --- Celery Worker/Beat 상태 조회 ---
+
+    @staticmethod
+    def _format_schedule(schedule) -> str:
+        from celery.schedules import crontab
+        from datetime import timedelta
+        try:
+            if isinstance(schedule, crontab):
+                hour   = str(schedule.hour)
+                minute = str(schedule.minute)
+                # 단순 케이스만 처리 (0 or 숫자)
+                h = hour.replace("{", "").replace("}", "")
+                m = minute.replace("{", "").replace("}", "")
+                return f"매일 {h.zfill(2)}:{m.zfill(2)}"
+            elif isinstance(schedule, timedelta):
+                total = int(schedule.total_seconds())
+                if total < 60:
+                    return f"{total}초 주기"
+                elif total < 3600:
+                    return f"{total // 60}분 주기"
+                else:
+                    return f"{total // 3600}시간 주기"
+        except Exception:
+            pass
+        return str(schedule)
+
+
     @staticmethod
     def get_status() -> dict:
         try:
@@ -89,7 +115,7 @@ class SchedulerService:
             beat_schedule = {}
             try:
                 beat_schedule = {
-                    k: str(v.get("schedule"))
+                    k: SchedulerService._format_schedule(v.get("schedule"))
                     for k, v in celery_app.conf.beat_schedule.items()
                 }
             except Exception:
