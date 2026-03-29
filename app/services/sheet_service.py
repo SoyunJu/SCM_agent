@@ -235,70 +235,163 @@ class SheetService:
     # --- 통계 ---
 
     @staticmethod
-    def get_sales_stats(period: str, category: str | None = None) -> dict:
-        df = read_sales()
-        df["날짜"] = pd.to_datetime(df["날짜"])
+    def get_sales_stats(
+            db: Session,
+            period: str, category: str | None = None,
+    ) -> dict:
+        from datetime import date, timedelta
+        from sqlalchemy import func
+        from app.db.models import DailySales, Product
+
+        # category 필터가 있으면 products JOIN 필요
         if category:
-            df = SheetService._category_filter(df, category)
+            query = (
+                db.query(
+                    DailySales.date,
+                    func.sum(DailySales.qty).label("판매수량"),
+                    func.sum(DailySales.revenue).label("매출액"),
+                )
+                .join(Product, DailySales.product_code == Product.code, isouter=True)
+                .filter(Product.category == category)
+            )
+        else:
+            query = db.query(
+                DailySales.date,
+                func.sum(DailySales.qty).label("판매수량"),
+                func.sum(DailySales.revenue).label("매출액"),
+            )
+
+        today = date.today()
 
         if period == "daily":
-            cutoff = df["날짜"].max() - pd.Timedelta(days=29)
-            agg = (
-                df[df["날짜"] >= cutoff]
-                .groupby("날짜").agg(판매수량=("판매수량","sum"), 매출액=("매출액","sum"))
-                .reset_index().sort_values("날짜")
+            cutoff = today - timedelta(days=29)
+            rows = (
+                query.filter(DailySales.date >= cutoff)
+                .group_by(DailySales.date)
+                .order_by(DailySales.date)
+                .all()
             )
-            agg["날짜"] = agg["날짜"].dt.strftime("%Y-%m-%d")
+            items = [
+                {"날짜": str(r.date), "판매수량": r.판매수량 or 0, "매출액": r.매출액 or 0}
+                for r in rows
+            ]
 
         elif period == "weekly":
-            cutoff = df["날짜"].max() - pd.Timedelta(weeks=12)
-            df = df[df["날짜"] >= cutoff]
-            df["주"] = df["날짜"].dt.to_period("W").dt.start_time
-            agg = (
-                df.groupby("주").agg(판매수량=("판매수량","sum"), 매출액=("매출액","sum"))
-                .reset_index().rename(columns={"주":"날짜"}).sort_values("날짜")
+            cutoff = today - timedelta(weeks=12)
+            rows = (
+                query.filter(DailySales.date >= cutoff)
+                .group_by(DailySales.date)
+                .order_by(DailySales.date)
+                .all()
             )
-            agg["날짜"] = agg["날짜"].dt.strftime("%Y-%m-%d")
+            # 주 단위 집계 (Monday 기준)
+            weekly: dict[str, dict] = {}
+            for r in rows:
+                week_start = r.date - timedelta(days=r.date.weekday())
+                key = str(week_start)
+                if key not in weekly:
+                    weekly[key] = {"날짜": key, "판매수량": 0, "매출액": 0}
+                weekly[key]["판매수량"] += r.판매수량 or 0
+                weekly[key]["매출액"]   += r.매출액   or 0
+            items = sorted(weekly.values(), key=lambda x: x["날짜"])
 
         elif period == "monthly":
-            df["월"] = df["날짜"].dt.to_period("M").dt.start_time
-            agg = (
-                df.groupby("월").agg(판매수량=("판매수량","sum"), 매출액=("매출액","sum"))
-                .reset_index().rename(columns={"월":"날짜"}).sort_values("날짜")
+            rows = (
+                query
+                .group_by(DailySales.date)
+                .order_by(DailySales.date)
+                .all()
             )
-            agg["날짜"] = agg["날짜"].dt.strftime("%Y-%m")
+            # 월 단위 집계 (YYYY-MM)
+            monthly: dict[str, dict] = {}
+            for r in rows:
+                key = r.date.strftime("%Y-%m")
+                if key not in monthly:
+                    monthly[key] = {"날짜": key, "판매수량": 0, "매출액": 0}
+                monthly[key]["판매수량"] += r.판매수량 or 0
+                monthly[key]["매출액"]   += r.매출액   or 0
+            items = sorted(monthly.values(), key=lambda x: x["날짜"])
+
         else:
             return {"error": "period는 daily/weekly/monthly 중 하나"}
 
-        return {"period": period, "items": agg.to_dict(orient="records")}
+        return {"period": period, "items": items}
+
 
     @staticmethod
-    def get_stock_stats(category: str | None = None) -> dict:
+    def get_stock_stats(
+            db: Session,
+            category: str | None = None,
+    ) -> dict:
+        from app.db.models import StockLevel, Product
         from app.analyzer.stock_analyzer import run_stock_analysis
-        df_master = read_product_master()
-        df_sales  = read_sales()
-        df_stock  = read_stock()
-        if category:
-            df_master = SheetService._category_filter(df_master, category)
-
-        anomalies = run_stock_analysis(df_master, df_stock, df_sales)
         from app.utils.severity import norm
+
+        query = (
+            db.query(StockLevel, Product)
+            .outerjoin(Product, StockLevel.product_code == Product.code)
+        )
+        if category:
+            query = query.filter(Product.category == category)
+
+        rows = query.order_by(StockLevel.current_stock.desc()).all()
+
+        stock_items = [
+            {
+                "상품코드":     sl.product_code,
+                "상품명":       prod.name     if prod else "",
+                "카테고리":     prod.category if prod else "",
+                "현재재고":     sl.current_stock,
+                "안전재고":     prod.safety_stock if prod else 0,
+                "입고예정일":   str(sl.restock_date) if sl.restock_date else "",
+                "입고예정수량": sl.restock_qty or 0,
+            }
+            for sl, prod in rows
+        ]
+
+        # 이상징후 분석
+        import pandas as pd
+        all_products = db.query(Product).all()
+        all_stock    = db.query(StockLevel).all()
+
+        df_master = pd.DataFrame([
+            {"상품코드": p.code, "상품명": p.name, "카테고리": p.category or "", "안전재고기준": p.safety_stock}
+            for p in all_products
+        ]) if all_products else pd.DataFrame()
+
+        df_stock = pd.DataFrame([
+            {"상품코드": s.product_code, "현재재고": s.current_stock,
+             "입고예정일": str(s.restock_date) if s.restock_date else "",
+             "입고예정수량": s.restock_qty or 0}
+            for s in all_stock
+        ]) if all_stock else pd.DataFrame()
+
+        # 판매 데이터 조회
+        from app.db.repository import get_daily_sales_range
+        from datetime import date, timedelta
+        sales_rows = get_daily_sales_range(
+            db,
+            start=date.today() - timedelta(days=30),
+            end=date.today(),
+        )
+        df_sales = pd.DataFrame([
+            {"날짜": str(s.date), "상품코드": s.product_code, "판매수량": s.qty, "매출액": s.revenue}
+            for s in sales_rows
+        ]) if sales_rows else pd.DataFrame(columns=["날짜", "상품코드", "판매수량", "매출액"])
+
+        anomalies = run_stock_analysis(df_master, df_stock, df_sales) if not df_master.empty else []
+
         severity_counts: dict[str, int] = {}
         for a in anomalies:
             sev = norm(a.get("severity", ""))
             severity_counts[sev] = severity_counts.get(sev, 0) + 1
 
-        df_stock_filtered = SheetService._category_filter(df_stock, category)
-        stock_items = (
-            df_stock_filtered.sort_values("현재재고", ascending=False)
-            .to_dict(orient="records")
-            if not df_stock_filtered.empty else []
-        )
         return {
             "total_anomalies": len(anomalies),
             "severity_counts": severity_counts,
             "stock_items":     stock_items,
         }
+
 
     @staticmethod
     def get_abc_stats(days: int, category: str | None = None) -> dict:

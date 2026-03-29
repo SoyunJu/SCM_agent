@@ -127,25 +127,29 @@ async def get_orders(
 @router.get("/stats/sales")
 async def get_sales_stats(
         current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),
         period: str = "daily", category: str | None = None,
 ):
     try:
-        return SheetService.get_sales_stats(period, category)
+        return SheetService.get_sales_stats(db, period, category)
     except Exception as e:
         logger.error(f"판매통계 조회 실패: {e}")
         return {"items": []}
 
 
+
 @router.get("/stats/stock")
 async def get_stock_stats(
         current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),
         category: str | None = None,
 ):
     try:
-        return SheetService.get_stock_stats(category)
+        return SheetService.get_stock_stats(db, category)
     except Exception as e:
         logger.error(f"재고통계 조회 실패: {e}")
         return {"total_anomalies": 0, "severity_counts": {}, "stock_items": []}
+
 
 
 @router.get("/stats/abc")
