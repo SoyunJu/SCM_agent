@@ -274,3 +274,17 @@ def run_cleanup():
         raise
     finally:
         db.close()
+
+
+# 시트 -> DB 동기화
+@celery_app.task(name="app.celery_app.tasks.run_sync_sheets_to_db")
+def run_sync_sheets_to_db():
+    logger.info("[Sync] Sheets→DB 동기화 시작")
+    try:
+        from app.scheduler.jobs import sync_sheets_to_db_incremental
+        result = sync_sheets_to_db_incremental()
+        logger.info(f"[Sync] 완료: {result}")
+        return result
+    except Exception as exc:
+        logger.error(f"[Sync] 태스크 실패: {exc}")
+        raise
