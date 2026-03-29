@@ -51,6 +51,7 @@ def _authenticate_user(db: Session, username: str, password: str):
     user = get_admin_user_by_username(db, username)
     if not user:
         return None
+    # 프론트에서 SHA-256 해싱 후 전송 → bcrypt verify
     if not pwd_context.verify(password, user.hashed_password):
         return None
     return user

@@ -22,10 +22,9 @@ export default function LoginPage() {
         setLoading(true);
         setError("");
         try {
-            const hashed = await hashSHA256(password);   // 평문 대신 sha256 전송
+            const hashed = await hashSHA256(password);
             const data   = await login(username, hashed);
             localStorage.setItem("access_token", data.access_token);
-            // role/username은 login() 내부에서 /me 호출 후 저장됨
             router.push("/dashboard");
         } catch {
             setError("아이디 또는 비밀번호가 올바르지 않습니다.");
