@@ -70,14 +70,13 @@ def _sync_sheets_to_db() -> None:
         if not df_master.empty:
             products = [
                 {
-                    "code":         str(r.get("상품코드", "")),
-                    "name":         str(r.get("상품명", "")),
-                    "category":     r.get("카테고리"),
+                    "code": str(r.get("상품코드", "")),
+                    "name": str(r.get("상품명", "")),
+                    "category": r.get("카테고리"),
                     "safety_stock": int(r.get("안전재고기준", 0) or 0),
-                    "source":       "sheets",
+                    "source": "sheets",
                 }
                 for r in df_master.to_dict("records")
-                if r.get("상품코드")
             ]
             res = bulk_upsert_products(db, products)
             logger.info(f"DB 상품 동기화: {res}")

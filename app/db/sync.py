@@ -20,45 +20,44 @@ def _batched(lst: list, size: int):
 
 
 # 상품 마스터
-def bulk_upsert_products(db: Session, records: list[dict]) -> dict:
+def bulk_upsert_daily_sales(db: Session, records: list[dict]) -> dict:
     if not records:
         return {"inserted": 0, "updated": 0, "skipped": 0}
 
-    inserted = updated = 0
     sql = text("""
-               INSERT INTO products (code, name, category, safety_stock, status, source, updated_at)
-               VALUES (:code, :name, :category, :safety_stock, :status, :source, NOW())
+               INSERT INTO daily_sales (date, product_code, qty, revenue, cost)
+               VALUES (:date, :product_code, :qty, :revenue, :cost)
                    ON DUPLICATE KEY UPDATE
-                                        name          = VALUES(name),
-                                        category      = VALUES(category),
-                                        safety_stock  = VALUES(safety_stock),
-                                        status        = VALUES(status),
-                                        source        = VALUES(source),
-                                        updated_at    = NOW()
+                                        qty     = VALUES(qty),
+                                        revenue = VALUES(revenue),
+                                        cost    = VALUES(cost)
                """)
 
+    total = 0
     for batch in _batched(records, _BATCH):
-        params = [
-            {
-                "code":         r["code"],
-                "name":         r.get("name", ""),
-                "category":     r.get("category"),
-                "safety_stock": int(r.get("safety_stock", 0)),
-                "status":       r.get("status", "active"),
-                "source":       r.get("source", "sheets"),
-            }
-            for r in batch
-            if r.get("code")
-        ]
+        params = []
+        for r in batch:
+            raw_date = r.get("date")
+            if isinstance(raw_date, str):
+                try:
+                    raw_date = date.fromisoformat(raw_date)
+                except ValueError:
+                    continue
+            params.append({
+                "date":         raw_date,
+                "product_code": r["product_code"],
+                "qty":          int(r.get("qty", 0)),
+                "revenue":      float(r.get("revenue", 0.0)),
+                "cost":         float(r.get("cost", 0.0)),
+            })
         if not params:
             continue
-        result = db.execute(sql, params)
-
-        inserted += sum(1 for _ in range(result.rowcount) if result.rowcount > 0)
+        db.execute(sql, params)
         db.commit()
+        total += len(params)
 
-    logger.info(f"데이터 입력 성공: total={len(records)}")
-    return {"inserted": inserted, "updated": updated, "skipped": 0}
+    logger.info(f"일별매출 업데이트 성공: total={total}")
+    return {"inserted": total, "updated": 0, "skipped": len(records) - total}
 
 
 

@@ -125,7 +125,12 @@ def upsert_stock_from_excel(df_stock_excel: pd.DataFrame) -> None:
                 return
 
             new_df = df_stock_excel[df_stock_excel["상품코드"].astype(str).isin(new_codes)]
-            cols   = [c for c in ["상품코드", "현재재고", "입고예정일", "입고예정수량"] if c in new_df.columns]
+
+            cols = [c for c in [
+                "상품코드", "상품명", "카테고리",
+                "현재재고", "안전재고", "입고예정일", "입고예정수량"
+            ] if c in new_df.columns]
+
             new_df = new_df[cols].fillna("")
             if not existing:
                 _clear_and_write(ws, new_df)

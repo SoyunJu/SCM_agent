@@ -1,6 +1,5 @@
-
-import os
 import tempfile
+from datetime import date as date_type, timedelta
 from typing import Annotated, Optional
 
 import pandas as pd
@@ -12,12 +11,10 @@ from sqlalchemy.orm import Session
 
 from app.api.auth_router import get_current_user, require_admin, TokenData
 from app.db.connection import get_db
+from app.db.models import Product, ProductStatus, DailySales, StockLevel
 from app.db.repository import get_setting
 from app.sheets.reader import read_product_master, read_sales, read_stock
 from app.sheets.writer import upsert_master_from_excel, write_sales, upsert_stock_from_excel
-from app.db.models import Product, ProductStatus, DailySales, StockLevel
-from app.db.repository import get_products_paginated
-from datetime import date as date_type, timedelta
 
 router = APIRouter(prefix="/scm/sheets", tags=["sheets"])
 
@@ -59,7 +56,6 @@ async def update_product(
         "safety_stock": product.safety_stock,
         "status": product.status.value.lower(),
     }
-
 
 
 @router.get("/categories")
@@ -609,57 +605,57 @@ async def upload_excel(
         if total == 0:
             raise HTTPException(422, "파일에 데이터 행이 없습니다.")
 
-        # 6. DB 반영
+        # 6. DB + Google Sheets 반영
         db_result = {"inserted": 0, "updated": 0, "skipped": 0}
 
         if sheet_type == "master":
-            products = [
+            upsert_master_from_excel(df)
+            from app.db.sync import bulk_upsert_products
+            master_records = [
                 {
                     "code":         str(r.get("상품코드", "")),
-                    "name":         str(r.get("상품명", "데이터 없음")),
-                    "category":     r.get("카테고리") or "Default",
-                    "safety_stock": int(r.get("안전재고기준", 10) or 10),
+                    "name":         str(r.get("상품명", "")),
+                    "category":     r.get("카테고리"),
+                    "safety_stock": int(r.get("안전재고기준", 0) or 0),
                     "source":       "excel",
                 }
-                for r in df.to_dict("records") if r.get("상품코드")
+                for r in df.to_dict("records")
+                if r.get("상품코드")
             ]
-            from app.db.sync import bulk_upsert_products
-            db_result = bulk_upsert_products(db, products)
-            # Sheets 반영
-            upsert_master_from_excel(df)
+            db_result = bulk_upsert_products(db, master_records)
 
         elif sheet_type == "sales":
             if "날짜" in df.columns:
                 df["날짜"] = pd.to_datetime(df["날짜"], errors="coerce").dt.strftime("%Y-%m-%d")
-            # DB upsert
-            sales = [
+            write_sales(df)
+            from app.db.sync import bulk_upsert_daily_sales
+            sales_records = [
                 {
                     "date":         str(r.get("날짜", "")),
                     "product_code": str(r.get("상품코드", "")),
                     "qty":          int(r.get("판매수량", 0) or 0),
                     "revenue":      float(r.get("매출액", 0) or 0),
+                    "cost":         float(r.get("매입액", 0) or 0),   # ← 매입액 반영
                 }
-                for r in df.to_dict("records") if r.get("상품코드") and r.get("날짜")
+                for r in df.to_dict("records")
+                if r.get("상품코드") and r.get("날짜")
             ]
-            from app.db.sync import bulk_upsert_daily_sales
-            db_result = bulk_upsert_daily_sales(db, sales)
-            # Sheets 반영
-            write_sales(df)
+            db_result = bulk_upsert_daily_sales(db, sales_records)
 
         else:
-            stock = [
+            upsert_stock_from_excel(df)
+            from app.db.sync import bulk_upsert_stock_levels
+            stock_records = [
                 {
                     "product_code":  str(r.get("상품코드", "")),
                     "current_stock": int(r.get("현재재고", 0) or 0),
                     "restock_date":  r.get("입고예정일") or None,
                     "restock_qty":   r.get("입고예정수량"),
                 }
-                for r in df.to_dict("records") if r.get("상품코드")
+                for r in df.to_dict("records")
+                if r.get("상품코드")
             ]
-            from app.db.sync import bulk_upsert_stock_levels
-            db_result = bulk_upsert_stock_levels(db, stock)
-            # Sheets 반영
-            upsert_stock_from_excel(df)
+            db_result = bulk_upsert_stock_levels(db, stock_records)
 
         logger.info(f"엑셀 업로드 완료: sheet_type={sheet_type}, rows={total}, db={db_result}, user={current_user.username}")
         return {
@@ -671,6 +667,8 @@ async def upload_excel(
             "skipped":    db_result.get("skipped", 0),
             "message":    f"{sheet_type} {total}건 처리 완료",
         }
+
+
 
     except HTTPException:
         raise
