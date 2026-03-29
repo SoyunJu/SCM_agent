@@ -1,8 +1,11 @@
 .git
 .idea
 .venv
-__pycache__
 *.pyc
 *.log
 node_modules/
+__pycache__/
 .next/
+
+
+

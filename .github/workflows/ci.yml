@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    name: 단위 + 통합 테스트
+    runs-on: ubuntu-latest
+
+    env:
+      # 테스트용 더미 환경변수 (실제 서비스 연결 없음)
+      DATABASE_URL:               "sqlite:///:memory:"
+      REDIS_URL:                  "redis://localhost:6379/0"
+      OPENAI_API_KEY:             "sk-test-dummy"
+      SLACK_BOT_TOKEN:            "xoxb-test-dummy"
+      SLACK_CHANNEL_ID:           "C0TEST"
+      SLACK_SIGNING_SECRET:       "test-secret"
+      SPREADSHEET_ID:             "test-spreadsheet-id"
+      JWT_SECRET_KEY:             "test-jwt-secret-key-for-ci"
+      ADMIN_USERNAME:             "admin"
+      ADMIN_PASSWORD:             "admin1!"
+      CELERY_BROKER_URL:          "memory://"
+      CELERY_RESULT_BACKEND:      "cache+memory://"
+      GOOGLE_SERVICE_ACCOUNT_JSON: "{}"
+      SMTP_HOST:                  ""
+      ALERT_EMAIL_TO:             ""
+
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: 의존성 설치
+        run: |
+          python -m pip install --upgrade pip
+          # torch CPU 버전 (CI 속도 최적화)
+          pip install torch==2.3.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx
+
+      - name: 린트 (ruff)
+        run: |
+          pip install ruff
+          ruff check app/ tests/ --select E,F,W --ignore E501,W503
+        continue-on-error: true   # 린트는 경고만, 실패 차단 안 함
+
+      - name: 단위 테스트
+        run: |
+          pytest tests/test_analyzers.py \
+                 tests/test_analyzers_vectorized.py \
+                 tests/test_report.py \
+                 tests/test_celery_tasks.py \
+                 -v --tb=short
+
+      - name: 통합 테스트
+        run: |
+          pytest tests/test_integration.py \
+                 -v --tb=short \
+                 --timeout=60
+
+      - name: 전체 테스트 커버리지
+        run: |
+          pip install pytest-cov
+          pytest tests/ \
+            --cov=app \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=50 \
+            -q
+        continue-on-error: true   # 커버리지 미달 시 경고만
+
+      - name: 커버리지 리포트 업로드 (선택)
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+        continue-on-error: true

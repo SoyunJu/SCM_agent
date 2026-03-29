@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
-# 의존성
+RUN sed -i 's/deb.debian.org/mirror.kakao.com/g' /etc/apt/sources.list.d/debian.sources
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     pkg-config \
@@ -11,7 +12,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# uv 설치 및 의존성 캐싱 레이어 분리
 RUN pip install uv
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/uv \
