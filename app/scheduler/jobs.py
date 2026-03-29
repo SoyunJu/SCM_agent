@@ -89,7 +89,7 @@ def sync_sheets_only() -> dict:
 
 
 def sync_sheets_to_db_incremental() -> dict:
-    logger.info("===== [1분주기] Sheets → DB 동기화 시작 =====")
+    logger.info("===== [5분주기] Sheets → DB 동기화 시작 =====")
     result = {"products": 0, "sales": 0, "stock": 0, "error": None}
     db = SessionLocal()
     try:
@@ -144,10 +144,10 @@ def sync_sheets_to_db_incremental() -> dict:
             res = bulk_upsert_stock_levels(db, stock)
             result["stock"] = res.get("inserted", 0) + res.get("updated", 0)
 
-        logger.info(f"[1분주기] DB 동기화 완료: {result}")
+        logger.info(f"[5분주기] DB 동기화 완료: {result}")
     except Exception as e:
         result["error"] = str(e)
-        logger.error(f"[1분주기] DB 동기화 실패: {e}")
+        logger.error(f"[5분주기] DB 동기화 실패: {e}")
     finally:
         db.close()
     return result

@@ -5,14 +5,11 @@ from sqlalchemy.orm import Session
 
 from app.db.repository import get_schedule_config, upsert_schedule_config
 
-# APScheduler 인스턴스 — 모듈 레벨 전역 (프로세스 1개에 1개 보장)
-_sync_scheduler: Any = None
 
 
 class SchedulerService:
 
-    # ── 보고서 스케줄 설정 조회 ──────────────────────────────────────────
-
+    # --- 보고서 스케줄 설정 조회 ---
     @staticmethod
     def get_config(db: Session) -> dict:
         record = get_schedule_config(db, "daily_report")
@@ -34,8 +31,8 @@ class SchedulerService:
             "last_run_at":     str(record.last_run_at) if record.last_run_at else None,
         }
 
-    # ── 보고서 스케줄 설정 저장 + Celery Beat 즉시 반영 ─────────────────
 
+    # --- 보고서 스케줄 설정 저장 + Celery Beat 즉시 반영 ---
     @staticmethod
     def update_config(db: Session, schedule_hour: int, schedule_minute: int,
                       timezone: str, is_active: bool, username: str) -> dict:
@@ -69,8 +66,8 @@ class SchedulerService:
             "is_active":       is_active,
         }
 
-    # ── Celery Worker/Beat 상태 조회 ─────────────────────────────────────
 
+    # --- Celery Worker/Beat 상태 조회 ---
     @staticmethod
     def get_status() -> dict:
         try:
@@ -113,8 +110,8 @@ class SchedulerService:
                 "error":         str(e),
             }
 
-    # ── 수동 보고서 즉시 실행 ────────────────────────────────────────────
 
+    # --- 수동 보고서 즉시 실행 ---
     @staticmethod
     def trigger_daily_report() -> dict:
         try:
@@ -126,57 +123,44 @@ class SchedulerService:
             logger.error(f"보고서 즉시 실행 실패: {e}")
             raise RuntimeError(f"보고서 태스크 실행 실패: {e}")
 
-    # ── Sheets→DB 동기화 스케줄 조회 ─────────────────────────────────────
 
+    # --- Sheets→DB 동기화 설정 조회 ---
     @staticmethod
-    def get_sync_config() -> dict:
-        global _sync_scheduler
-        is_running = False
-        try:
-            if _sync_scheduler:
-                is_running = getattr(_sync_scheduler, "running", False)
-        except Exception:
-            pass
+    def get_sync_config(db: Session) -> dict:
+        from app.db.repository import get_setting
+        enabled  = get_setting(db, "SHEETS_SYNC_ENABLED", "true").lower() == "true"
+        interval = int(get_setting(db, "SHEETS_SYNC_INTERVAL_MINUTES", "15"))
         return {
-            "is_active":        is_running,
-            "interval_seconds": 60,
-            "description":      "Sheets(화면SoT) → DB(실제SoT) 단방향 동기화",
+            "enabled":          enabled,
+            "interval_minutes": interval,
+            "description":      "Celery Beat 자동 동기화 (Beat 재시작 후 주기 변경 적용)",
         }
 
-    # ── Sheets→DB 동기화 시작 ────────────────────────────────────────────
 
+    # --- Sheets→DB 동기화 설정 저장 ---
     @staticmethod
-    def start_sync(interval_seconds: int) -> dict:
-        global _sync_scheduler
-        from app.scheduler.jobs import sync_sheets_to_db_incremental
+    def update_sync_config(db: Session, enabled: bool, username: str) -> dict:
+        from app.db.repository import upsert_setting
+        upsert_setting(db, "SHEETS_SYNC_ENABLED", "true" if enabled else "false",
+                       "Sheets→DB 자동 동기화 활성화")
+        logger.info(f"Sheets→DB 동기화 {'활성화' if enabled else '비활성화'}: by {username}")
+        return {"enabled": enabled, "message": "동기화 설정이 저장되었습니다."}
 
+
+    # --- 수동 즉시 동기화 ---
+    @staticmethod
+    def trigger_sync() -> dict:
         try:
-            from apscheduler.schedulers.background import BackgroundScheduler
-            from apscheduler.triggers.interval import IntervalTrigger
+            from app.celery_app.celery import celery_app
+            task = celery_app.send_task("app.celery_app.tasks.run_sync_sheets_to_db")
+            logger.info(f"수동 동기화 요청: task_id={task.id}")
+            return {"task_id": task.id, "message": "동기화 태스크가 시작되었습니다."}
+        except Exception as e:
+            logger.error(f"수동 동기화 요청 실패: {e}")
+            raise RuntimeError(f"동기화 태스크 실행 실패: {e}")
 
-            if _sync_scheduler and getattr(_sync_scheduler, "running", False):
-                _sync_scheduler.shutdown(wait=False)
 
-            _sync_scheduler = BackgroundScheduler(timezone="Asia/Seoul")
-            _sync_scheduler.add_job(
-                func=sync_sheets_to_db_incremental,
-                trigger=IntervalTrigger(seconds=max(30, interval_seconds)),
-                id="sheets_to_db_sync",
-                replace_existing=True,
-            )
-            _sync_scheduler.start()
-            logger.info(f"Sheets→DB 주기 동기화 시작: {interval_seconds}초 간격")
-            return {"status": "started", "interval_seconds": interval_seconds}
-
-        except ImportError:
-            logger.warning("apscheduler 미설치 — Celery Beat sync task 사용 권장")
-            return {
-                "status":  "unavailable",
-                "message": "apscheduler 미설치. Celery Beat의 sync-db task를 사용하세요.",
-            }
-
-    # ── Sheets→DB 동기화 중지 ────────────────────────────────────────────
-
+    # --- Sheets→DB 동기화 중지 ---
     @staticmethod
     def stop_sync() -> dict:
         global _sync_scheduler

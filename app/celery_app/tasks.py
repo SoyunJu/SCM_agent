@@ -13,8 +13,43 @@ from app.cache.redis_client import cache_get, cache_set
 from app.db.connection import SessionLocal
 from app.db.sync import make_params_hash
 
-ANALYSIS_CACHE_TTL = 60 * 30   # Redis 30분
-ANALYSIS_CACHE_MAX_AGE = 30    # DB 캐시 30분
+def _get_cache_ttl(db) -> int:
+    from app.db.repository import get_setting
+    return int(get_setting(db, "ANALYSIS_CACHE_REDIS_MINUTES", "120")) * 60
+
+
+def _get_cache_max_age(db) -> int:
+    from app.db.repository import get_setting
+    return int(get_setting(db, "ANALYSIS_CACHE_DB_MINUTES", "120"))
+
+
+def _get_cached(cache_key: str, analysis_type: str, params_hash: str, db) -> list | None:
+    from app.db.repository import get_analysis_cache
+
+    redis_hit = cache_get(cache_key)
+    if redis_hit is not None:
+        logger.debug(f"[{analysis_type}] Redis 캐시 히트")
+        return redis_hit
+
+    db_hit = get_analysis_cache(db, analysis_type, params_hash, max_age_minutes=_get_cache_max_age(db))
+    if db_hit:
+        items = json.loads(db_hit.result_json).get("items", [])
+        cache_set(cache_key, items, ttl=_get_cache_ttl(db))
+        logger.debug(f"[{analysis_type}] DB 캐시 히트 → Redis 워밍업")
+        return items
+
+    return None
+
+
+def _store_cache(cache_key: str, analysis_type: str, params_hash: str, items: list, db) -> None:
+    from app.db.repository import upsert_analysis_cache
+
+    payload = json.dumps({"items": items}, ensure_ascii=False, default=str)
+    try:
+        upsert_analysis_cache(db, analysis_type, params_hash, payload)
+    except Exception as exc:
+        logger.warning(f"[{analysis_type}] DB 캐시 저장 실패 (Redis만 유지): {exc}")
+    cache_set(cache_key, items, ttl=_get_cache_ttl(db))
 
 
 
@@ -279,6 +314,16 @@ def run_cleanup():
 # 시트 -> DB 동기화
 @celery_app.task(name="app.celery_app.tasks.run_sync_sheets_to_db")
 def run_sync_sheets_to_db():
+    db = SessionLocal()
+    try:
+        from app.db.repository import get_setting
+        enabled = get_setting(db, "SHEETS_SYNC_ENABLED", "true").lower()
+        if enabled != "true":
+            logger.info("[Sync] SHEETS_SYNC_ENABLED=false — 동기화 skip")
+            return {"skipped": True}
+    finally:
+        db.close()
+
     logger.info("[Sync] Sheets→DB 동기화 시작")
     try:
         from app.scheduler.jobs import sync_sheets_to_db_incremental

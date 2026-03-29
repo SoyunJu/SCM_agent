@@ -23,6 +23,10 @@ DEFAULT_SETTINGS: dict[str, tuple[str, str]] = {
     "DATA_RETENTION_ANALYSIS_HOURS": ("24",   "분석 결과 캐시 보존 기간 (시간)"),
     "EXCEL_MAX_SIZE_MB":             ("50",   "엑셀 업로드 최대 파일 크기 (MB, 1~200)"),
     "DEFAULT_PAGE_SIZE":             ("50",   "테이블 기본 페이지당 표시 건수 (10 | 25 | 50 | 100)"),
+    "ANALYSIS_CACHE_REDIS_MINUTES":  ("120",   "분석 결과 Redis TTL (분, 기본 2시간)"),
+    "ANALYSIS_CACHE_DB_MINUTES":     ("120",   "분석 결과 DB cache 유효 시간 (분, 기본 2시간)"),
+    "SHEETS_SYNC_INTERVAL_MINUTES":  ("15",    "Sheets→DB 자동 동기화 주기 (분, Beat 재시작 후 적용)"),
+    "SHEETS_SYNC_ENABLED":           ("true",  "Sheets→DB 자동 동기화 활성화 (true | false)"),
 }
 
 
