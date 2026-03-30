@@ -263,14 +263,12 @@ def run_daily_job(
         ]
 
         # --- 6. DB 저장 ---
-        for item in stock_anomalies:
+        for item in filtered_stock:   # stock_anomalies → filtered_stock
             try:
                 raw_type = str(item["anomaly_type"])
-                if "." in raw_type:
-                    raw_type = raw_type.split(".")[-1]
-                raw_sev = str(item["severity"])
-                if "." in raw_sev:
-                    raw_sev = raw_sev.split(".")[-1]
+                if "." in raw_type: raw_type = raw_type.split(".")[-1]
+                raw_sev  = str(item["severity"])
+                if "." in raw_sev:  raw_sev  = raw_sev.split(".")[-1]
                 upsert_anomaly_log(
                     db=db,
                     product_code=item["product_code"],
@@ -284,15 +282,12 @@ def run_daily_job(
                 )
             except Exception as upsert_err:
                 logger.warning(f"[jobs] stock anomaly upsert 스킵: {item.get('product_code')} — {upsert_err}")
-        for item in sales_anomalies:
+        for item in filtered_sales:
             try:
-                # "AnomalyType.SALES_SURGE" → "SALES_SURGE" 추출
                 raw_type = str(item["anomaly_type"])
-                if "." in raw_type:
-                    raw_type = raw_type.split(".")[-1]
-                raw_sev = str(item["severity"])
-                if "." in raw_sev:
-                    raw_sev = raw_sev.split(".")[-1]
+                if "." in raw_type: raw_type = raw_type.split(".")[-1]
+                raw_sev  = str(item["severity"])
+                if "." in raw_sev:  raw_sev  = raw_sev.split(".")[-1]
                 upsert_anomaly_log(
                     db=db,
                     product_code=item["product_code"],

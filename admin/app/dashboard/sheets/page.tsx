@@ -179,7 +179,7 @@ export default function SheetsPage() {
     const allColumns  = data.length > 0 ? Object.keys(data[0]) : [];
     const columns     = isMasterTab
         ? allColumns.filter((c) => c !== "status" && c !== "lead_time_days")
-        : allColumns;
+        : allColumns.filter((c) => c !== "상품명" && c !== "카테고리");
 
     return (
         <div className="space-y-5" ref={topRef}>

@@ -138,7 +138,7 @@ async function resolveAnalysis(apiRes: any): Promise<any> {
     if (!apiRes.data?.task_id) return apiRes.data;
     let data = apiRes.data;
     const MAX_POLLS = 20;       // 최대 20회
-    const INTERVAL  = 3000;     // 3초 간격 (기존 1.5초 → 2배)
+    const INTERVAL  = 2000;     // 2초 간격
     let count = 0;
     while (data.state !== "SUCCESS" && data.state !== "FAILURE") {
         if (count >= MAX_POLLS) {
@@ -760,6 +760,34 @@ export default function StatsPage() {
                                 total={demandTotalPages}
                                 onPageChange={setDemandPage}
                             />
+                            {/* 수요 예측 추세 차트 */}
+                            {filteredDemand.length > 0 && (
+                                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 mt-4">
+                                    <h3 className="text-sm font-semibold text-gray-700 mb-4">
+                                        부족분 상위 상품 (예측 14일)
+                                    </h3>
+                                    <ResponsiveContainer width="100%" height={280}>
+                                        <BarChart
+                                            data={filteredDemand.slice(0, 15).map((item: any) => ({
+                                                name: item.product_name?.slice(0, 8) ?? item.product_code,
+                                                부족분: item.shortage ?? 0,
+                                                현재재고: item.current_stock ?? 0,
+                                                예측수요: item.forecast_qty ?? 0,
+                                            }))}
+                                            margin={{ top: 4, right: 16, left: 0, bottom: 40 }}
+                                        >
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                                            <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" />
+                                            <YAxis tick={{ fontSize: 10 }} />
+                                            <Tooltip />
+                                            <Legend wrapperStyle={{ fontSize: 11 }} />
+                                            <Bar dataKey="현재재고" fill="#93c5fd" radius={[3,3,0,0]} />
+                                            <Bar dataKey="예측수요" fill="#fbbf24" radius={[3,3,0,0]} />
+                                            <Bar dataKey="부족분"   fill="#f87171" radius={[3,3,0,0]} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
                         </>
                     )}
                 </div>

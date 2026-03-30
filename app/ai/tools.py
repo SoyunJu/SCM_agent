@@ -310,10 +310,6 @@ def _get_demand_forecast(input: str = "") -> str:
 
 # --- 이상징후 기반 발주 자동 승인 ---
 def _approve_anomaly_orders(input: str = "") -> str:
-    """
-    입력: 상품코드(쉼표 구분) 또는 빈값(전체 CRITICAL/HIGH LOW_STOCK 대상)
-    동작: 해당 상품의 미해결 LOW_STOCK/SALES_SURGE 이상징후 → 발주 제안 생성 + 즉시 승인
-    """
     try:
         from datetime import datetime
         from app.db.connection import SessionLocal
@@ -322,48 +318,60 @@ def _approve_anomaly_orders(input: str = "") -> str:
 
         db = SessionLocal()
         try:
-            # 대상 상품코드 파싱
             target_codes = [c.strip() for c in input.split(",") if c.strip()] if input.strip() else []
+            results   = []
+            processed = 0
+            skipped   = 0
 
-            # 처리 대상 이상징후 조회 (LOW_STOCK / SALES_SURGE, 미해결)
+            # 미해결 이상징후 기반 발주 생성 + 승인
             query = db.query(AnomalyLog).filter(
                 AnomalyLog.is_resolved == False,
                 AnomalyLog.anomaly_type.in_([AnomalyType.LOW_STOCK, AnomalyType.SALES_SURGE]),
                 )
             if target_codes:
                 query = query.filter(AnomalyLog.product_code.in_(target_codes))
-
             anomalies = query.all()
-            if not anomalies:
-                return "처리 대상 이상징후(재고부족/판매급등)가 없습니다."
-
-            results   = []
-            processed = 0
-            skipped   = 0
 
             for anomaly in anomalies:
                 try:
-                    result = AnomalyService.auto_resolve(
-                        db, anomaly.id, username="SCM-Agent"
-                    )
+                    result     = AnomalyService.auto_resolve(db, anomaly.id, username="SCM-Agent")
                     proposal_id = result.get("proposal_id")
                     if proposal_id:
-                        results.append(
-                            f"✅ {anomaly.product_name} ({anomaly.product_code}) "
-                            f"→ 발주 제안 #{proposal_id} 자동 승인"
-                        )
+                        results.append(f"✅ {anomaly.product_name} ({anomaly.product_code}) → 발주 #{proposal_id} 신규 승인")
                     else:
-                        results.append(
-                            f"✅ {anomaly.product_name} ({anomaly.product_code}) → 해결 처리"
-                        )
+                        results.append(f"✅ {anomaly.product_name} ({anomaly.product_code}) → 해결 처리")
                     processed += 1
                 except Exception as e:
-                    results.append(
-                        f"⚠️ {anomaly.product_name} ({anomaly.product_code}) → 스킵: {e}"
-                    )
+                    # auto_resolve 실패 시 → PENDING 발주가 있으면 그걸 승인
+                    results.append(f"ℹ️ {anomaly.product_name} ({anomaly.product_code}) → auto_resolve 스킵, PENDING 발주 확인 중")
                     skipped += 1
 
-            lines = [f"발주 자동 처리 완료: {processed}건 성공 / {skipped}건 스킵"]
+            # 기존 PENDING 발주 제안 일괄 승인 (이상징후 연결 여부 무관)
+            pending_query = db.query(OrderProposal).filter(
+                OrderProposal.status == ProposalStatus.PENDING
+            )
+            if target_codes:
+                pending_query = pending_query.filter(OrderProposal.product_code.in_(target_codes))
+            pending_proposals = pending_query.all()
+
+            for p in pending_proposals:
+                try:
+                    p.status      = ProposalStatus.APPROVED
+                    p.approved_by = "SCM-Agent"
+                    p.approved_at = datetime.utcnow()
+                    processed += 1
+                    results.append(f"✅ {p.product_name} ({p.product_code}) → 기존 발주 #{p.id} 승인")
+                except Exception as e:
+                    results.append(f"⚠️ {p.product_code} 발주 #{p.id} 승인 실패: {e}")
+                    skipped += 1
+
+            if pending_proposals:
+                db.commit()
+
+            if processed == 0:
+                return "처리 대상 이상징후 및 PENDING 발주가 없습니다."
+
+            lines = [f"발주 자동 처리 완료: {processed}건 승인 / {skipped}건 스킵"]
             lines.extend(results)
             logger.info(f"[Tool] approve_anomaly_orders: {processed}건 처리")
             return "\n".join(lines)
@@ -522,8 +530,10 @@ approve_anomaly_orders = StructuredTool.from_function(
     name="approve_anomaly_orders",
     description=(
         "이상징후(재고부족/판매급등) 기반 발주를 자동 생성하고 즉시 승인 처리. "
+        "이미 PENDING 상태인 발주 제안도 함께 즉시 승인. "
         "입력: 상품코드 쉼표 구분(예: P001,P002) 또는 빈값(전체 대상). "
-        "사용 예: 긴급 재고 발주해줘, P001 발주 처리해, 재고 부족 상품 전부 발주"
+        "사용 예: 긴급 재고 발주해줘, P001 발주 처리해, 재고 부족 상품 전부 발주, "
+        "무조건 승인, 기존 발주 승인, PENDING 발주 전부 처리"
     ),
     args_schema=SingleStrInput,
 )
