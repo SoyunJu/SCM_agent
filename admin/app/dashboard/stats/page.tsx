@@ -107,6 +107,7 @@ function DemandChart({ items }: { items: any[] }) {
 function TrendIcon({ trend }: { trend: string }) {
     if (trend === "up"   || trend === "increasing") return <TrendingUp   size={14} className="text-red-500" />;
     if (trend === "down" || trend === "decreasing") return <TrendingDown size={14} className="text-blue-500" />;
+    if (!trend || trend === "unknown")              return <span className="text-gray-300 text-xs">-</span>;
     return <Minus size={14} className="text-gray-400" />;
 }
 
