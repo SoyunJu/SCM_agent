@@ -1,11 +1,33 @@
+// sheets/page.tsx
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getSheetsMaster, getSheetsSales, getSheetsStock, updateProductStatus, updateProduct, uploadExcel, getSheetCategories, downloadSheetCsv } from "@/lib/api";
-import { getDefaultPageSize } from "@/lib/utils";
-import { RefreshCw, Loader2, ArrowUp, ChevronLeft, ChevronRight, Upload, Pencil, X, Check, Search, Download } from "lucide-react";
-import { ProductStatus } from "@/lib/types";
+import {useCallback, useEffect, useRef, useState} from "react";
+import {useQuery, useQueryClient} from "@tanstack/react-query";
+import {
+    downloadSheetCsv,
+    getSheetCategories,
+    getSheetsMaster,
+    getSheetsSales,
+    getSheetsStock,
+    updateProduct,
+    updateProductStatus,
+    uploadExcel
+} from "@/lib/api";
+import {getDefaultPageSize} from "@/lib/utils";
+import {
+    ArrowUp,
+    Check,
+    ChevronLeft,
+    ChevronRight,
+    Download,
+    Loader2,
+    Pencil,
+    RefreshCw,
+    Search,
+    Upload,
+    X
+} from "lucide-react";
+import {ProductStatus} from "@/lib/types";
 
 const ALL_TABS = ["일별판매", "재고현황", "상품마스터"] as const;
 const READONLY_TABS = ["일별판매", "재고현황"] as const;
@@ -173,6 +195,9 @@ export default function SheetsPage() {
             setEditSaving(false);
         }
     };
+
+    const MONEY_COLS = new Set(["매출액", "매입액", "차액(수익)"]);
+    const NUMBER_COLS = new Set(["판매수량", "현재재고", "안전재고", "입고예정수량", "안전재고기준"]);
 
     // 상품마스터 탭 전용: status 컬럼 제외하고 일반 컬럼만 표시
     const isMasterTab = tab === "상품마스터";
@@ -392,11 +417,25 @@ export default function SheetsPage() {
                             const currentStatus: ProductStatus = (row["status"] as ProductStatus) ?? "active";
                             return (
                                 <tr key={i} className="hover:bg-gray-50 transition">
-                                    {columns.map((col) => (
-                                        <td key={col} className="px-5 py-2.5 text-gray-700 whitespace-nowrap">
-                                            {String(row[col] ?? "-")}
-                                        </td>
-                                    ))}
+                                    {columns.map((col) => {
+                                        const val = row[col];
+                                        let display: string;
+                                        if (val == null || val === "") {
+                                            display = "-";
+                                        } else if (MONEY_COLS.has(col) && !isNaN(Number(val))) {
+                                            display = `${Number(val).toLocaleString("ko-KR")}원`;
+                                        } else if (NUMBER_COLS.has(col) && !isNaN(Number(val))) {
+                                            display = Number(val).toLocaleString("ko-KR");
+                                        } else {
+                                            display = String(val);
+                                        }
+                                        return (
+                                            <td key={col}
+                                                className={`px-5 py-2.5 text-gray-700 whitespace-nowrap ${MONEY_COLS.has(col) ? "text-right" : ""}`}>
+                                                {display}
+                                            </td>
+                                        );
+                                    })}
                                     {isMasterTab && (
                                         <td className="px-4 py-2.5 text-right whitespace-nowrap">
                                             {(row["lead_time_days"] as number | null) != null

@@ -273,6 +273,7 @@ def run_daily_job(
                     current_stock=item.get("current_stock"),
                     daily_avg_sales=item.get("daily_avg_sales"),
                     days_until_stockout=item.get("days_until_stockout"),
+                    change_rate=item.get("change_rate"),
                 )
             except Exception as upsert_err:
                 logger.warning(f"[jobs] stock anomaly upsert 스킵: {item.get('product_code')} — {upsert_err}")
@@ -292,6 +293,7 @@ def run_daily_job(
                     current_stock=item.get("current_stock"),
                     daily_avg_sales=item.get("daily_avg_sales"),
                     days_until_stockout=item.get("days_until_stockout"),
+                    change_rate=item.get("change_rate"),
                 )
             except Exception as upsert_err:
                 logger.warning(f"[jobs] sales anomaly upsert 스킵: {item.get('product_code')} — {upsert_err}")

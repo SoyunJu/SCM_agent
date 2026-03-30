@@ -1,10 +1,11 @@
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from loguru import logger
+from datetime import datetime
 from typing import Optional, Any
-from datetime import datetime, timedelta
-from app.db.models import AdminUser, AdminRole
 
+from loguru import logger
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
+from app.db.models import AdminUser, AdminRole
 from app.db.models import (
     ReportExecution, AnomalyLog, ScheduleConfig, ChatHistory, SystemSettings,
     ReportType, ExecutionStatus, AnomalyType, Severity, ChatRole
@@ -65,8 +66,8 @@ def upsert_anomaly_log(
         current_stock: int | None = None,
         daily_avg_sales: float | None = None,
         days_until_stockout: float | None = None,
+        change_rate: float | None = None,
 ) -> AnomalyLog:
-    # 미해결 동일 이상징후가 있으면 최신 데이터로 업데이트 (날짜 무관)
     existing = db.query(AnomalyLog).filter(
         AnomalyLog.product_code == product_code,
         AnomalyLog.anomaly_type == anomaly_type,
@@ -80,6 +81,7 @@ def upsert_anomaly_log(
         existing.current_stock       = current_stock
         existing.daily_avg_sales     = daily_avg_sales
         existing.days_until_stockout = days_until_stockout
+        existing.change_rate = change_rate
         existing.detected_at         = datetime.now()
         db.commit()
         db.refresh(existing)
@@ -91,6 +93,7 @@ def upsert_anomaly_log(
         anomaly_type=anomaly_type, severity=severity,
         current_stock=current_stock, daily_avg_sales=daily_avg_sales,
         days_until_stockout=days_until_stockout,
+        change_rate=change_rate,
         is_resolved=False,
     )
     db.add(record)
@@ -114,7 +117,6 @@ def get_anomaly_logs(
         page: int = 1,
         page_size: int = 50,
 ) -> dict:
-    from sqlalchemy import func as sqlfunc
     query = db.query(AnomalyLog)
     if is_resolved is not None:
         query = query.filter(AnomalyLog.is_resolved == is_resolved)

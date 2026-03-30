@@ -89,6 +89,7 @@ class AnomalyService:
                     "current_stock":       r.current_stock,
                     "daily_avg_sales":     round(r.daily_avg_sales, 1) if r.daily_avg_sales is not None else None,
                     "days_until_stockout": round(r.days_until_stockout, 1) if r.days_until_stockout is not None else None,
+                    "change_rate":         round(r.change_rate, 1) if r.change_rate is not None else None,
                     "is_resolved":         r.is_resolved,
                 }
                 for r in result["items"]

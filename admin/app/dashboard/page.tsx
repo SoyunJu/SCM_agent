@@ -1,3 +1,4 @@
+// admin/app/page.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -51,7 +52,7 @@ export default function DashboardPage() {
         setLoading(true);
         try {
             const [anomRes, histRes, statsRes, stockRes] = await Promise.all([
-                getAnomalies(false, 200),
+                getAnomalies(false, 10),
                 getReportHistory(5),
                 getSalesStats(period),
                 getStockStats(),
