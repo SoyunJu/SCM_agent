@@ -166,3 +166,86 @@ def notify_anomaly_alert(
             from app.notifier.email_notifier import send_daily_report_email
         except Exception as e:
             logger.error(f"이메일 알림 발송 실패: {e}")
+
+
+
+def notify_anomaly_batch(
+        items: list,
+        db=None,
+        sev_str_fn=None,
+) -> None:
+    """이상징후 다건을 묶어서 Slack 1회 발송"""
+    if not items:
+        return
+
+    def _s(v) -> str:
+        if sev_str_fn:
+            return sev_str_fn(v)
+        s = str(v)
+        return s.split(".")[-1].upper() if "." in s else s.upper()
+
+    min_severity = _get_min_severity(db)
+    # 임계값 이상인 것만 필터
+    filtered = [i for i in items if _should_alert(_s(i.get("severity", "")), min_severity)]
+    if not filtered:
+        return
+
+    channel = _get_channel(db)
+    top_sev  = "CRITICAL" if any(_s(i.get("severity", "")) == "CRITICAL" for i in filtered) else "HIGH"
+    icon     = "🔴" if top_sev == "CRITICAL" else "🟠"
+
+    logger.info(f"[배치알림] {len(filtered)}건 — channel={channel}, top={top_sev}")
+
+    if channel in ("slack", "both"):
+        try:
+            from app.notifier.slack_notifier import get_slack_client
+            from app.config import settings as app_settings
+
+            admin_ids   = _get_admin_slack_ids(db)
+            mention_str = " ".join(f"<@{uid}>" for uid in admin_ids) + " " if admin_ids else ""
+
+            # 헤더 블록
+            blocks = [
+                {
+                    "type": "header",
+                    "text": {"type": "plain_text", "text": f"{icon} SCM Agent | 긴급 이상징후 {len(filtered)}건"},
+                },
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": f"{mention_str}*{len(filtered)}건*의 이상징후가 감지되었습니다."},
+                },
+                {"type": "divider"},
+            ]
+
+            # 건별 섹션 (최대 10건, 초과 시 생략)
+            for item in filtered[:10]:
+                sev  = _s(item.get("severity", ""))
+                atype = _s(item.get("anomaly_type", ""))
+                sev_icon = "🔴" if sev == "CRITICAL" else "🟠"
+                blocks.append({
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": (
+                            f"{sev_icon} *{item.get('product_name', '')}* "
+                            f"`{item.get('product_code', '')}` — {atype} / {sev}"
+                        ),
+                    },
+                })
+
+            if len(filtered) > 10:
+                blocks.append({
+                    "type": "context",
+                    "elements": [{"type": "mrkdwn", "text": f"외 {len(filtered) - 10}건 추가 감지"}],
+                })
+
+            get_slack_client().chat_postMessage(
+                channel=app_settings.slack_channel_id,
+                text=f"{icon} 긴급 이상징후 {len(filtered)}건 감지",
+                blocks=blocks,
+            )
+            logger.info(f"[배치알림] Slack 발송 완료: {len(filtered)}건")
+        except Exception as e:
+            logger.error(f"[배치알림] Slack 발송 실패: {e}")
+
+

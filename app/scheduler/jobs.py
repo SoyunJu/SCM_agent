@@ -5,7 +5,6 @@ from datetime import date, timedelta
 
 import pandas as pd
 from loguru import logger
-from pathlib import Path
 
 from app.ai.insight_generator import generate_daily_insight
 from app.ai.sentiment_analyzer import batch_analyze_sales_anomalies
@@ -58,7 +57,7 @@ def _load_dataframes_from_db(db) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFra
             "상품명":       p.name,
             "카테고리":     p.category or "",
             "안전재고기준": p.safety_stock,
-            "status":       p.status.value,  # analyzer inactive/sample 제외용
+            "status":       p.status.value.lower(),  # "ACTIVE" → "active"
         }
         for p in products
     ]) if products else pd.DataFrame(columns=["상품코드", "상품명", "카테고리", "안전재고기준", "status"])
@@ -250,13 +249,19 @@ def run_daily_job(
         # --- 6. DB 저장 ---
         for item in stock_anomalies:
             try:
+                raw_type = str(item["anomaly_type"])
+                if "." in raw_type:
+                    raw_type = raw_type.split(".")[-1]
+                raw_sev = str(item["severity"])
+                if "." in raw_sev:
+                    raw_sev = raw_sev.split(".")[-1]
                 upsert_anomaly_log(
                     db=db,
                     product_code=item["product_code"],
                     product_name=item.get("product_name", ""),
                     category=item.get("category"),
-                    anomaly_type=AnomalyType(str(item["anomaly_type"]).upper()),
-                    severity=Severity(str(item["severity"]).upper()),
+                    anomaly_type=AnomalyType(raw_type.upper()),
+                    severity=Severity(raw_sev.upper()),
                     current_stock=item.get("current_stock"),
                     daily_avg_sales=item.get("daily_avg_sales"),
                     days_until_stockout=item.get("days_until_stockout"),
@@ -265,41 +270,68 @@ def run_daily_job(
                 logger.warning(f"[jobs] stock anomaly upsert 스킵: {item.get('product_code')} — {upsert_err}")
         for item in sales_anomalies:
             try:
+                # "AnomalyType.SALES_SURGE" → "SALES_SURGE" 추출
+                raw_type = str(item["anomaly_type"])
+                if "." in raw_type:
+                    raw_type = raw_type.split(".")[-1]
+                raw_sev = str(item["severity"])
+                if "." in raw_sev:
+                    raw_sev = raw_sev.split(".")[-1]
                 upsert_anomaly_log(
                     db=db,
                     product_code=item["product_code"],
                     product_name=item.get("product_name", ""),
                     category=item.get("category"),
-                    anomaly_type=AnomalyType(str(item["anomaly_type"]).upper()),
-                    severity=Severity(str(item["severity"]).upper()),
+                    anomaly_type=AnomalyType(raw_type.upper()),
+                    severity=Severity(raw_sev.upper()),
                 )
             except Exception as upsert_err:
                 logger.warning(f"[jobs] sales anomaly upsert 스킵: {item.get('product_code')} — {upsert_err}")
 
         # --- SSE + 이상징후 알림 ---
         all_anomalies  = list(stock_anomalies) + list(sales_anomalies)
+
+        def _sev_str(v) -> str:
+            s = str(v)
+            return s.split(".")[-1].upper() if "." in s else s.upper()
+
         critical_items = [
             i for i in all_anomalies
-            if str(i.get("severity", "")).upper() in ("CRITICAL", "HIGH")
+            if _sev_str(i.get("severity", "")) in ("CRITICAL", "HIGH")
         ]
+
         if critical_items:
-            from app.api.alert_router import sync_broadcast_alert
-            for item in critical_items:
-                sync_broadcast_alert({
-                    "type":         "critical_anomaly",
-                    "severity":     str(item.get("severity", "")),
-                    "product_code": item.get("product_code", ""),
-                    "product_name": item.get("product_name", ""),
-                    "anomaly_type": str(item.get("anomaly_type", "")),
-                    "message":      f"[긴급] {item.get('product_name')} - {item.get('anomaly_type')}",
-                })
-                notify_anomaly_alert(
-                    product_name=item.get("product_name", ""),
-                    anomaly_type=str(item.get("anomaly_type", "")),
-                    severity=str(item.get("severity", "")),
-                    message=f"{item.get('product_name')} ({item.get('product_code')}) 이상 감지",
-                    db=db,
-                )
+            # SSE — 묶음으로 1번만 전송
+            try:
+                from app.api.alert_router import sync_broadcast_alert
+                batch_payload = {
+                    "type":     "critical_anomaly_batch",
+                    "count":    len(critical_items),
+                    "severity": "CRITICAL" if any(
+                        _sev_str(i.get("severity", "")) == "CRITICAL"
+                        for i in critical_items
+                    ) else "HIGH",
+                    "items": [
+                        {
+                            "product_code": i.get("product_code", ""),
+                            "product_name": i.get("product_name", ""),
+                            "anomaly_type": _sev_str(i.get("anomaly_type", "")),
+                            "severity":     _sev_str(i.get("severity", "")),
+                        }
+                        for i in critical_items
+                    ],
+                    "message": f"긴급 이상징후 {len(critical_items)}건 감지",
+                }
+                sync_broadcast_alert(batch_payload)
+            except Exception as e:
+                logger.warning(f"SSE 배치 알림 실패(스킵): {e}")
+
+            # Slack — 묶음으로 1번만 발송
+            try:
+                from app.notifier.notifier import notify_anomaly_batch
+                notify_anomaly_batch(critical_items, db=db, sev_str_fn=_sev_str)
+            except Exception as e:
+                logger.warning(f"Slack 배치 알림 실패(스킵): {e}")
 
         # --- 7. PDF 보고서 생성 ---
         logger.info("[6/7] PDF 보고서 생성")

@@ -57,5 +57,5 @@ async def get_task_status(
         return base
 
     except Exception as exc:
-        logger.warning(f"[태스크상태] 조회 실패 task_id={task_id}: {exc}")
+        logger.debug(f"[태스크상태] 조회 실패 task_id={task_id}: {exc}")
         return {"task_id": task_id, "state": "PENDING", "message": "분석 대기 중"}

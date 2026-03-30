@@ -96,3 +96,26 @@ class ProductService:
                     logger.debug(f"[상품상태변경] 분석 캐시 무효화: {pattern} ({len(keys)}건)")
         except Exception as cache_exc:
             logger.warning(f"[상품상태변경] 캐시 무효화 실패 (무시): {cache_exc}")
+
+
+
+    @staticmethod
+    def update_lead_time(db: Session, code: str, lead_time_days: int | None, username: str) -> dict:
+        from app.db.models import Product
+        product = db.query(Product).filter(Product.code == code).first()
+        if not product:
+            raise ValueError(f"상품을 찾을 수 없습니다: {code}")
+        if lead_time_days is not None and lead_time_days < 1:
+            raise ValueError("리드타임은 1일 이상이어야 합니다.")
+
+        product.lead_time_days = lead_time_days
+        db.commit()
+        db.refresh(product)
+
+        msg = (
+            f"리드타임이 {lead_time_days}일로 설정되었습니다."
+            if lead_time_days else
+            "리드타임이 전역 설정으로 초기화되었습니다."
+        )
+        logger.info(f"[리드타임] code={code}, lead_time_days={lead_time_days}, by={username}")
+        return {"code": code, "lead_time_days": lead_time_days, "message": msg}

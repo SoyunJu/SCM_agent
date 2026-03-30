@@ -116,7 +116,6 @@ def bulk_upsert_products(db: Session, records: list[dict]) -> dict:
                    ON DUPLICATE KEY UPDATE
                                         name         = VALUES(name),
                                         category     = VALUES(category),
-                                        safety_stock = VALUES(safety_stock),
                                         source       = VALUES(source),
                                         updated_at   = NOW()
                """)

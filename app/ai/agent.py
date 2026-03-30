@@ -14,6 +14,10 @@ from app.ai.tools import (
     get_sales_trend_tool,
     get_anomalies,
     generate_report,
+    get_demand_forecast_tool,
+    approve_anomaly_orders,
+    resolve_anomaly_tool,
+    generate_order_proposals,
 )
 from app.db.connection import SessionLocal
 from app.db.repository import save_chat_message, get_chat_history
@@ -28,6 +32,10 @@ TOOLS = [
     get_sales_trend_tool,
     get_anomalies,
     generate_report,
+    get_demand_forecast_tool,
+    approve_anomaly_orders,
+    resolve_anomaly_tool,
+    generate_order_proposals,
 ]
 
 

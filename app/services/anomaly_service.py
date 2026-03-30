@@ -177,25 +177,27 @@ class AnomalyService:
         avg_sales  = total_qty / days_cnt  # 일평균 판매량
         unit_price = round(total_cost / total_qty, 0) if total_qty > 0 else 0.0
 
+        # 리드타임 조회 (상품별 > 전역)
+        from app.db.repository import get_setting
+        global_lead_time = int(get_setting(db, "DEFAULT_LEAD_TIME_DAYS", "14"))
+        lead_time = product.lead_time_days if product.lead_time_days else global_lead_time
+
         safety_stock = product.safety_stock or math.ceil(avg_sales * 7)
 
         # 수량 산출 분기
         if anomaly_type == "LOW_STOCK":
-            # 안전재고(7일치) + 리드타임(14일치) - 현재재고
-            lead_demand  = math.ceil(avg_sales * 14)
+            lead_demand  = math.ceil(avg_sales * lead_time)
             proposed_qty = max(1, math.ceil(safety_stock + lead_demand - current_stock))
             reason = (
                 f"[재고부족 자동발주] 현재재고 {current_stock}개 / "
-                f"일평균 {avg_sales:.1f}개 / 리드타임 14일"
+                f"일평균 {avg_sales:.1f}개 / 리드타임 {lead_time}일"
             )
         else:
-            # SALES_SURGE: 급등 판매량 × 리드타임
-            # daily_avg_sales가 급등 이후 평균이므로 그대로 사용
             surge_avg    = record.daily_avg_sales or avg_sales
-            proposed_qty = max(1, math.ceil(surge_avg * _SURGE_LEAD_TIME))
+            proposed_qty = max(1, math.ceil(surge_avg * lead_time))
             reason = (
                 f"[판매급등 긴급발주] 급등 일평균 {surge_avg:.1f}개 / "
-                f"리드타임 {_SURGE_LEAD_TIME}일"
+                f"리드타임 {lead_time}일"
             )
 
         # 발주 제안 생성 + 즉시 APPROVED

@@ -7,6 +7,7 @@ import {
     getSchedulerStatus, triggerReport, getReportStatus,
     triggerCrawler, triggerCleanup, triggerSync,
     triggerDemandForecast, triggerTurnoverAnalysis, triggerAbcAnalysis,
+    triggerProactiveOrder, triggerSafetyStockRecalc
 } from "@/lib/api";
 import { ScheduleConfig } from "@/lib/types";
 import {
@@ -22,21 +23,25 @@ const BEAT_LABELS: Record<string, { label: string }> = {
     "cleanup-data":      { label: "데이터 정리"       },
     "sync-sheets-to-db": { label: "Sheets→DB 동기화" },
     "demand-forecast":   { label: "수요 예측 분석"    },
+    "proactive-order":   { label: "선제 발주"         },
     "turnover-analysis": { label: "재고 회전율 분석"  },
     "abc-analysis":      { label: "ABC 분석"          },
+    "safety-stock-recalc": { label: "안전재고 재계산" },
 };
 
 // Beat 항목별 즉시 실행 API 매핑
 type TriggerKey =
-    | "daily-report" | "daily-crawler" | "cleanup-data" | "sync-sheets-to-db"
-    | "demand-forecast" | "turnover-analysis" | "abc-analysis";
+    | "daily-report" | "daily-crawler" | "cleanup-data" | "sync-sheets-to-db" | "safety-stock-recalc"
+    | "demand-forecast" | "proactive-order" | "turnover-analysis" | "abc-analysis" ;
 
 const BEAT_TRIGGER_FN: Record<TriggerKey, () => Promise<any>> = {
     "daily-report":      () => triggerReport(),
     "daily-crawler":     () => triggerCrawler(),
     "cleanup-data":      () => triggerCleanup(),
     "sync-sheets-to-db": () => triggerSync(),
+    "safety-stock-recalc": () => triggerSafetyStockRecalc(),
     "demand-forecast":   () => triggerDemandForecast(),
+    "proactive-order":   () => triggerProactiveOrder(),
     "turnover-analysis": () => triggerTurnoverAnalysis(),
     "abc-analysis":      () => triggerAbcAnalysis(),
 };

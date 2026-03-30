@@ -208,3 +208,29 @@ async def trigger_abc_analysis(
         return {"status": "triggered", "task_id": result.id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@router.post("/trigger-proactive-order")
+async def trigger_proactive_order(
+        current_user: Annotated[TokenData, Depends(require_admin)],
+):
+    try:
+        from app.celery_app.tasks import run_proactive_order
+        result = run_proactive_order.delay()
+        return {"status": "triggered", "task_id": result.id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# 안전재고 재계산 트리거
+@router.post("/trigger-safety-stock-recalc")
+async def trigger_safety_stock_recalc(
+        current_user: Annotated[TokenData, Depends(require_admin)],
+):
+    try:
+        from app.celery_app.tasks import run_safety_stock_recalc
+        result = run_safety_stock_recalc.delay()
+        return {"status": "triggered", "task_id": result.id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
