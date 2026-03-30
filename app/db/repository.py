@@ -66,15 +66,11 @@ def upsert_anomaly_log(
         daily_avg_sales: float | None = None,
         days_until_stockout: float | None = None,
 ) -> AnomalyLog:
-    from datetime import datetime, date
-    today_start = datetime.combine(date.today(), datetime.min.time())
-
-    # 당일 미해결 동일 이상징후가 있으면 severity만 업데이트
+    # 미해결 동일 이상징후가 있으면 최신 데이터로 업데이트 (날짜 무관)
     existing = db.query(AnomalyLog).filter(
         AnomalyLog.product_code == product_code,
         AnomalyLog.anomaly_type == anomaly_type,
         AnomalyLog.is_resolved  == False,
-        AnomalyLog.detected_at  >= today_start,
         ).first()
 
     if existing:

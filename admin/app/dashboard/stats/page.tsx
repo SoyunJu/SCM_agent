@@ -137,10 +137,23 @@ function SearchInput({
 async function resolveAnalysis(apiRes: any): Promise<any> {
     if (!apiRes.data?.task_id) return apiRes.data;
     let data = apiRes.data;
+    const MAX_POLLS = 20;       // 최대 20회
+    const INTERVAL  = 3000;     // 3초 간격 (기존 1.5초 → 2배)
+    let count = 0;
     while (data.state !== "SUCCESS" && data.state !== "FAILURE") {
-        await new Promise((r) => setTimeout(r, 1500));
-        const poll = await getTaskStatus(data.task_id);
-        data = poll.data;
+        if (count >= MAX_POLLS) {
+            // 타임아웃 시 result 없이 반환 (빈 데이터 표시)
+            return null;
+        }
+        await new Promise((r) => setTimeout(r, INTERVAL));
+        try {
+            const poll = await getTaskStatus(data.task_id);
+            data = poll.data;
+        } catch {
+            // 폴링 실패 시 조용히 종료
+            return null;
+        }
+        count++;
     }
     if (data.state === "FAILURE") throw new Error(data.error ?? "분석 실패");
     return data.result;

@@ -1,8 +1,8 @@
 // admin/lib/useAlerts.ts
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { AlertMessage } from "./types";
+import {useCallback, useEffect, useRef, useState} from "react";
+import {AlertMessage} from "./types";
 
 export function useAlerts() {
     const [alerts, setAlerts]      = useState<AlertMessage[]>([]);
@@ -23,23 +23,43 @@ export function useAlerts() {
 
         es.onmessage = (e) => {
             try {
-                const data: AlertMessage = JSON.parse(e.data);
+                const data: any = JSON.parse(e.data);
 
-                // 연결 확인 메시지는 무시 (알림창에 노출 X)
                 if (data.type === "connected") return;
 
-                // 알림 목록에 추가 (최대 20개)
-                setAlerts((prev) => [data, ...prev].slice(0, 20));
+                // 배치 알림 처리 — 묶음을 하나의 알림으로 표시
+                if (data.type === "critical_anomaly_batch") {
+                    const batchAlert: AlertMessage = {
+                        type: "critical_anomaly_batch",
+                        severity: data.severity ?? "HIGH",
+                        product_code: "",
+                        product_name: `긴급 이상징후 ${data.count}건`,
+                        anomaly_type: "",
+                        message: data.items
+                            ?.slice(0, 3)
+                            .map((i: any) => `${i.product_name}(${i.anomaly_type})`)
+                            .join(", ") + (data.count > 3 ? ` 외 ${data.count - 3}건` : ""),
+                    };
+                    setAlerts((prev) => [batchAlert, ...prev].slice(0, 20));
+                    setUnread((n) => n + 1);
+                    if (Notification.permission === "granted") {
+                        new Notification(`🔴 SCM Agent 긴급 알림 ${data.count}건`, {
+                            body: batchAlert.message,
+                            icon: "/favicon.ico",
+                        });
+                    }
+                    return;
+                }
 
-                // severity UPPERCASE 정규화 후 비교 (백엔드는 UPPERCASE로 전송)
-                const sev = (data.severity ?? "").toUpperCase();
+                // 단건 알림 (기존)
+                const alert: AlertMessage = data;
+                setAlerts((prev) => [alert, ...prev].slice(0, 20));
+                const sev = (alert.severity ?? "").toUpperCase();
                 if (sev === "CRITICAL" || sev === "HIGH") {
                     setUnread((n) => n + 1);
-
-                    // 브라우저 푸시 알림
                     if (Notification.permission === "granted") {
                         new Notification(`🔴 SCM Agent 긴급 알림`, {
-                            body: data.message,
+                            body: alert.message,
                             icon: "/favicon.ico",
                         });
                     }
