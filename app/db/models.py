@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Float, Enum, Date, UniqueConstraint, Index
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Float, Enum, Date, UniqueConstraint, Index, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.types import TypeDecorator
 from app.db.connection import Base
@@ -223,4 +223,68 @@ class AnalysisCache(Base):
 
     __table_args__ = (
         Index("ix_analysis_cache_type_hash", "analysis_type", "params_hash"),
+    )
+
+
+class Supplier(Base):
+    """공급업체 마스터"""
+    __tablename__ = "suppliers"
+
+    id             = Column(Integer,     primary_key=True, autoincrement=True)
+    name           = Column(String(200), nullable=False, unique=True)
+    contact        = Column(String(100), nullable=True)   # 담당자명
+    email          = Column(String(200), nullable=True)
+    phone          = Column(String(50),  nullable=True)
+    lead_time_days = Column(Integer,     nullable=False, default=14)
+    is_active      = Column(Boolean,     nullable=False, default=True)
+    created_at     = Column(DateTime,    nullable=False, default=func.now())
+    updated_at     = Column(DateTime,    nullable=False, default=func.now(), onupdate=func.now())
+
+
+class ProductSupplier(Base):
+    """상품-공급업체 1:1 매핑"""
+    __tablename__ = "product_suppliers"
+
+    product_code = Column(String(20),  ForeignKey("products.code", ondelete="CASCADE"), primary_key=True)
+    supplier_id  = Column(Integer,     ForeignKey("suppliers.id",  ondelete="CASCADE"), nullable=False)
+    unit_price   = Column(Float,       nullable=True)    # 공급업체별 매입단가
+    updated_at   = Column(DateTime,    nullable=False, default=func.now(), onupdate=func.now())
+
+
+class SupplierDeliveryHistory(Base):
+    """납기 이력 (발주 대비 실제 납기 추적)"""
+    __tablename__ = "supplier_delivery_history"
+
+    id                = Column(Integer,  primary_key=True, autoincrement=True)
+    supplier_id       = Column(Integer,  ForeignKey("suppliers.id", ondelete="SET NULL"), nullable=True)
+    order_proposal_id = Column(Integer,  ForeignKey("order_proposals.id", ondelete="SET NULL"), nullable=True)
+    expected_date     = Column(Date,     nullable=False)   # 예상 납기일
+    actual_date       = Column(Date,     nullable=True)    # 실제 입고일
+    delay_days        = Column(Integer,  nullable=True)    # 지연일수 (음수=조기납품)
+    created_at        = Column(DateTime, nullable=False, default=func.now())
+
+
+class ReceivingInspection(Base):
+    """입고 검수 이력"""
+    __tablename__ = "receiving_inspections"
+
+    id                = Column(Integer,     primary_key=True, autoincrement=True)
+    order_proposal_id = Column(Integer,     ForeignKey("order_proposals.id", ondelete="SET NULL"), nullable=True)
+    supplier_id       = Column(Integer,     ForeignKey("suppliers.id",       ondelete="SET NULL"), nullable=True)
+    product_code      = Column(String(20),  nullable=False)
+    product_name      = Column(String(200), nullable=True)
+    ordered_qty       = Column(Integer,     nullable=False)
+    received_qty      = Column(Integer,     nullable=False, default=0)
+    defect_qty        = Column(Integer,     nullable=False, default=0)
+    return_qty        = Column(Integer,     nullable=False, default=0)
+    status            = Column(String(20),  nullable=False, default="PENDING")
+    # PENDING / PARTIAL(부분입고) / COMPLETED(완료) / RETURNED(반품)
+    note              = Column(Text,        nullable=True)
+    inspected_by      = Column(String(100), nullable=True)
+    inspected_at      = Column(DateTime,    nullable=True)
+    created_at        = Column(DateTime,    nullable=False, default=func.now())
+
+    __table_args__ = (
+        Index("ix_receiving_product_code", "product_code"),
+        Index("ix_receiving_status",       "status"),
     )

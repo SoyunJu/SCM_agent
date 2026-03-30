@@ -365,3 +365,42 @@ export const uploadExcel = (file: File, sheetType: "master" | "sales" | "stock")
         headers: { "Content-Type": "multipart/form-data" },
     });
 };
+
+// --- Suppliers ---
+export const getSuppliers        = (activeOnly = false) =>
+    apiClient.get(`/scm/suppliers?active_only=${activeOnly}`);
+
+export const createSupplier      = (data: {
+    name: string; contact?: string; email?: string; phone?: string; lead_time_days?: number;
+}) => apiClient.post("/scm/suppliers", data);
+
+export const updateSupplier      = (id: number, data: object) =>
+    apiClient.patch(`/scm/suppliers/${id}`, data);
+
+export const deleteSupplier      = (id: number) =>
+    apiClient.delete(`/scm/suppliers/${id}`);
+
+export const getSupplierStats    = (id: number) =>
+    apiClient.get(`/scm/suppliers/${id}/stats`);
+
+export const getDeliveryHistory  = (id: number) =>
+    apiClient.get(`/scm/suppliers/${id}/delivery-history`);
+
+export const mapProductSupplier  = (supplierId: number, productCode: string, unitPrice?: number) =>
+    apiClient.post(`/scm/suppliers/${supplierId}/products`, {
+        product_code: productCode, unit_price: unitPrice ?? null,
+    });
+
+export const getProductSupplier  = (productCode: string) =>
+    apiClient.get(`/scm/suppliers/products/${productCode}/supplier`);
+
+// --- Receiving Inspections ---
+export const getInspections      = (status?: string, limit = 50, offset = 0) =>
+    apiClient.get(`/scm/suppliers/inspections?${status ? `status=${status}&` : ""}limit=${limit}&offset=${offset}`);
+
+export const createInspection    = (proposalId: number) =>
+    apiClient.post(`/scm/suppliers/inspections/from-proposal/${proposalId}`);
+
+export const completeInspection  = (id: number, data: {
+    received_qty: number; defect_qty?: number; return_qty?: number; note?: string;
+}) => apiClient.patch(`/scm/suppliers/inspections/${id}/complete`, data);

@@ -7,7 +7,7 @@ import {
     LayoutDashboard, AlertTriangle, FileText,
     MessageSquare, LogOut, Bell, Database,
     Calendar, BarChart2, ShoppingCart, Settings, Users, X,
-    ChevronLeft, ChevronRight, Pencil,
+    ChevronLeft, ChevronRight, Pencil, Truck,
 } from "lucide-react";
 import { useAlerts } from "@/lib/useAlerts";
 import { changeMyPassword, updateMyProfile, getMyAdminProfile } from "@/lib/api";
@@ -19,6 +19,7 @@ const NAV_ITEMS = [
     { href: "/dashboard/stats",       icon: BarChart2,       label: "통계",        adminOnly: false },
     { href: "/dashboard/sheets",      icon: Database,        label: "데이터 시트", adminOnly: false },
     { href: "/dashboard/orders",      icon: ShoppingCart,    label: "발주 관리",   adminOnly: false },
+    { href: "/dashboard/suppliers",   icon: Truck,           label: "공급업체",     adminOnly: false },
     { href: "/dashboard/scheduler",   icon: Calendar,        label: "스케줄 관리", adminOnly: false },
     { href: "/dashboard/chat",        icon: MessageSquare,   label: "AI 챗봇",     adminOnly: false },
     { href: "/dashboard/settings",    icon: Settings,        label: "설정",        adminOnly: false },
