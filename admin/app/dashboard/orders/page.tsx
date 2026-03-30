@@ -434,9 +434,22 @@ function ProposalsTab() {
                             </td>
 
                             <td className="px-4 py-3">
-                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${PROPOSAL_STATUS_COLOR[p.status] ?? "bg-gray-100 text-gray-500"}`}>
-                                    {PROPOSAL_STATUS_LABEL[p.status] ?? p.status}
-                                </span>
+                                <div className="flex flex-col gap-1">
+                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${PROPOSAL_STATUS_COLOR[p.status] ?? "bg-gray-100 text-gray-500"}`}>
+                                        {PROPOSAL_STATUS_LABEL[p.status] ?? p.status}
+                                    </span>
+                                    {p.status === "PENDING" && (
+                                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                            (p as any).required_role === "SUPERADMIN"
+                                                ? "bg-red-50 text-red-600"
+                                                : (p as any).required_role === "SYSTEM"
+                                                    ? "bg-blue-50 text-blue-500"
+                                                    : "bg-gray-50 text-gray-500"
+                                        }`}>
+                                            {{SYSTEM: "자동승인", ADMIN: "관리자 결재", SUPERADMIN: "최고관리자 결재"}[(p as any).required_role] ?? "관리자 결재"}
+                                        </span>
+                                    )}
+                                </div>
                             </td>
 
                             <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">

@@ -149,6 +149,7 @@ class OrderProposal(Base):
     unit_price    = Column(Float, nullable=False, default=0.0)
     reason        = Column(Text, nullable=True)
     status        = Column(UpperCaseEnum(ProposalStatus), nullable=False, default=ProposalStatus.PENDING)
+    required_role = Column(String(20), nullable=False, default="ADMIN")
     created_at    = Column(DateTime, nullable=False, default=func.now())
     approved_at   = Column(DateTime, nullable=True)
     approved_by   = Column(String(100), nullable=True)
@@ -174,6 +175,7 @@ class Product(Base):
     name          = Column(String(200), nullable=False)
     category      = Column(String(100), nullable=True)
     safety_stock  = Column(Integer,     nullable=False, default=0)
+    lead_time_days = Column(Integer,    nullable=True,  default=None)
     status        = Column(UpperCaseEnum(ProductStatus), nullable=False, default=ProductStatus.ACTIVE)
     source        = Column(String(50),  nullable=True)
     updated_at    = Column(DateTime,    nullable=False,

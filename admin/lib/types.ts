@@ -93,6 +93,7 @@ export interface OrderProposal {
     unit_price: number;
     reason: string | null;
     status: "PENDING" | "APPROVED" | "REJECTED";
+    required_role: "SYSTEM" | "ADMIN" | "SUPERADMIN";
     created_at: string;
     approved_at: string | null;
     approved_by: string | null;
@@ -115,6 +116,7 @@ export interface Product {
     product_name: string;
     category: string;
     status: ProductStatus;
+    lead_time_days: number | null;
 }
 
 export interface AdminUser {

@@ -178,7 +178,7 @@ export default function SheetsPage() {
     const isMasterTab = tab === "상품마스터";
     const allColumns  = data.length > 0 ? Object.keys(data[0]) : [];
     const columns     = isMasterTab
-        ? allColumns.filter((c) => c !== "status")
+        ? allColumns.filter((c) => c !== "status" && c !== "lead_time_days")
         : allColumns;
 
     return (
@@ -380,7 +380,8 @@ export default function SheetsPage() {
                             {columns.map((col) => (
                                 <th key={col} className="px-5 py-3 text-left whitespace-nowrap">{col}</th>
                             ))}
-                            {isMasterTab && <th className="px-5 py-3 text-left whitespace-nowrap">상태</th>}
+                            {isMasterTab && <th className="px-4 py-3 text-right whitespace-nowrap">리드타임(일)</th>}
+                            {isMasterTab && <th className="px-4 py-3 text-center whitespace-nowrap">상태</th>}
                             {isMasterTab && !isReadonly && <th className="px-5 py-3 text-left whitespace-nowrap">상태 변경</th>}
                             {isMasterTab && !isReadonly && <th className="px-5 py-3 text-left whitespace-nowrap">편집</th>}
                         </tr>
@@ -396,6 +397,19 @@ export default function SheetsPage() {
                                             {String(row[col] ?? "-")}
                                         </td>
                                     ))}
+                                    {columns.map((col) => (
+                                        <td key={col} className="px-5 py-2.5 text-gray-700 whitespace-nowrap">
+                                            {String(row[col] ?? "-")}
+                                        </td>
+                                    ))}
+                                    {isMasterTab && (
+                                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                                            {(row["lead_time_days"] as number | null) != null
+                                                ? <span className="text-xs font-medium text-blue-600">{row["lead_time_days"] as number}일</span>
+                                                : <span className="text-xs text-gray-300">기본</span>
+                                            }
+                                        </td>
+                                    )}
                                     {isMasterTab && (
                                         <td className="px-5 py-2.5 whitespace-nowrap">
                                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BG[currentStatus] ?? "bg-gray-100 text-gray-500"}`}>

@@ -333,3 +333,253 @@ def run_sync_sheets_to_db():
     except Exception as exc:
         logger.error(f"[Sync] 태스크 실패: {exc}")
         raise
+
+
+
+@celery_app.task(bind=True, name="app.celery_app.tasks.run_proactive_order")
+def run_proactive_order(self):
+
+    logger.info("[선제발주] 태스크 시작")
+    db = SessionLocal()
+    try:
+        self.update_state(state=states.STARTED, meta={"status": "수요예측 캐시 조회 중"})
+
+        from app.db.sync import make_params_hash
+        from app.db.repository import get_analysis_cache, get_setting
+        from app.db.models import AnomalyLog, AnomalyType, OrderProposal, ProposalStatus
+        from app.cache.redis_client import cache_get
+        import json
+
+        # 수요예측 캐시 조회
+        params_hash = make_params_hash({"forecast_days": 14, "category": None})
+        cache_key   = f"analysis:demand:{params_hash}"
+        cached      = cache_get(cache_key)
+        if cached is None:
+            hit    = get_analysis_cache(db, "demand", params_hash, max_age_minutes=1440)
+            cached = json.loads(hit.result_json)["items"] if hit else None
+
+        if not cached:
+            logger.warning("[선제발주] 수요예측 캐시 없음 — 태스크 종료")
+            return {"skipped": True, "reason": "수요예측 캐시 없음"}
+
+        # 재고 부족 예상 상품 필터 (shortage > 0)
+        shortage_items = [i for i in cached if (i.get("shortage") or 0) > 0]
+        if not shortage_items:
+            logger.info("[선제발주] 재고 부족 예상 상품 없음")
+            return {"created": 0, "reason": "부족 예상 상품 없음"}
+
+        # 미해결 LOW_STOCK 이상징후 있는 상품 제외
+        existing_codes = {
+            r.product_code
+            for r in db.query(AnomalyLog.product_code)
+            .filter(
+                AnomalyLog.anomaly_type == AnomalyType.LOW_STOCK,
+                AnomalyLog.is_resolved  == False,
+                )
+            .all()
+        }
+
+        # PENDING 발주 제안 있는 상품 제외
+        pending_codes = {
+            r.product_code
+            for r in db.query(OrderProposal.product_code)
+            .filter(OrderProposal.status == ProposalStatus.PENDING)
+            .all()
+        }
+
+        target_items = [
+            i for i in shortage_items
+            if i.get("product_code") not in existing_codes
+               and i.get("product_code") not in pending_codes
+        ]
+
+        if not target_items:
+            logger.info("[선제발주] 신규 선제 발주 대상 없음 (기존 이상징후/제안 존재)")
+            return {"created": 0, "reason": "모두 기존 처리 중"}
+
+        # 발주 제안 생성
+        from datetime import datetime
+        import math
+
+        threshold_days = int(get_setting(db, "PROACTIVE_ORDER_DAYS", "7"))
+        created        = 0
+        proposals      = []
+
+        for item in target_items:
+            shortage    = item.get("shortage", 0)
+            daily_avg   = item.get("daily_avg", 0)
+            # 7일 이내 소진 예상만 선제 발주
+            days_left   = item.get("current_stock", 0) / daily_avg if daily_avg > 0 else 999
+            if days_left > threshold_days:
+                continue
+
+            proposed_qty = max(1, shortage)
+            proposal = OrderProposal(
+                product_code = item.get("product_code", ""),
+                product_name = item.get("product_name", ""),
+                category     = item.get("category", ""),
+                proposed_qty = proposed_qty,
+                unit_price   = 0.0,  # 단가 미확정
+                reason       = (
+                    f"[선제발주] 14일 예측 부족분 {shortage}개 / "
+                    f"현재재고 {item.get('current_stock', 0)}개 / "
+                    f"잔여 {days_left:.1f}일 예상"
+                ),
+                status = ProposalStatus.PENDING,
+            )
+            db.add(proposal)
+            proposals.append(proposal)
+            created += 1
+
+        if created > 0:
+            db.commit()
+            logger.info(f"[선제발주] 발주 제안 {created}건 생성 완료")
+
+            #  Slack 보고
+            try:
+                from app.notifier.slack_notifier import get_slack_client
+                from app.config import settings as app_settings
+
+                lines = [f"• {p.product_name} ({p.product_code}) | 예측 부족분: {p.proposed_qty}개" for p in proposals[:10]]
+                if created > 10:
+                    lines.append(f"... 외 {created - 10}건")
+
+                get_slack_client().chat_postMessage(
+                    channel=app_settings.slack_channel_id,
+                    text=f"📦 선제 발주 제안 {created}건 생성",
+                    blocks=[
+                        {"type": "header", "text": {"type": "plain_text", "text": "SCM Agent | 선제 발주 제안"}},
+                        {"type": "section", "text": {"type": "mrkdwn",
+                                                     "text": f"수요예측 기반 *{created}건* 선제 발주 제안이 생성되었습니다.\n발주관리 탭에서 검토 후 승인해주세요."}},
+                        {"type": "divider"},
+                        {"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(lines)}},
+                    ],
+                )
+            except Exception as e:
+                logger.warning(f"[선제발주] Slack 보고 실패(스킵): {e}")
+
+        return {"created": created, "skipped": len(target_items) - created}
+
+    except Exception as exc:
+        logger.error(f"[선제발주] 태스크 실패: {exc}")
+        self.update_state(state=states.FAILURE, meta={"error": str(exc)})
+        raise Ignore()
+    finally:
+        db.close()
+
+
+# 안전재고 재계산
+@celery_app.task(bind=True, name="app.celery_app.tasks.run_safety_stock_recalc")
+def run_safety_stock_recalc(self):
+
+    logger.info("[안전재고재계산] 태스크 시작")
+    db = SessionLocal()
+    try:
+        self.update_state(state=states.STARTED, meta={"status": "판매 데이터 로딩 중"})
+
+        from datetime import date, timedelta
+        from app.db.repository import get_daily_sales_range, get_setting
+        from app.db.models import Product, ProductStatus
+        import math
+
+        safety_days     = int(get_setting(db, "DEFAULT_SAFETY_STOCK_DAYS", "7"))
+        safety_default  = int(get_setting(db, "SAFETY_STOCK_DEFAULT_MIN",  "10"))
+        change_threshold = float(get_setting(db, "SAFETY_STOCK_CHANGE_THRESHOLD", "0.1"))  # 10% 이상 변화 시 알림
+
+        # 최근 30일 판매 데이터
+        sales = get_daily_sales_range(
+            db,
+            start=date.today() - timedelta(days=30),
+            end=date.today(),
+        )
+
+        if not sales:
+            logger.warning("[안전재고재계산] 판매 데이터 없음 — 종료")
+            return {"updated": 0, "reason": "판매 데이터 없음"}
+
+        # 상품코드별 일평균 판매량 계산
+        from collections import defaultdict
+        sales_map: dict[str, list[float]] = defaultdict(list)
+        for s in sales:
+            sales_map[s.product_code].append(s.qty)
+
+        avg_map: dict[str, float] = {
+            code: sum(qtys) / 30  # 30일 기준
+            for code, qtys in sales_map.items()
+        }
+
+        # 활성 상품 조회
+        products = db.query(Product).filter(
+            Product.status == ProductStatus.ACTIVE
+        ).all()
+
+        updated       = 0
+        big_changes   = []  # 10% 이상 변화 상품
+
+        for product in products:
+            avg = avg_map.get(product.code, 0.0)
+            new_safety = max(
+                math.ceil(avg * safety_days),
+                safety_default,
+            ) if avg > 0 else safety_default
+
+            old_safety = product.safety_stock or 0
+
+            # 변화 없으면 스킵
+            if new_safety == old_safety:
+                continue
+
+            # 변화율 계산
+            change_rate = abs(new_safety - old_safety) / max(old_safety, 1)
+
+            product.safety_stock = new_safety
+            updated += 1
+
+            if change_rate >= change_threshold:
+                big_changes.append({
+                    "code":       product.code,
+                    "name":       product.name,
+                    "old":        old_safety,
+                    "new":        new_safety,
+                    "change_pct": round(change_rate * 100, 1),
+                })
+
+        if updated > 0:
+            db.commit()
+            logger.info(f"[안전재고재계산] {updated}건 업데이트 완료 (10%+ 변화: {len(big_changes)}건)")
+
+        # Slack 보고
+        if big_changes:
+            try:
+                from app.notifier.slack_notifier import get_slack_client
+                from app.config import settings as app_settings
+
+                lines = [
+                    f"• {i['name']} ({i['code']}) | {i['old']}개 → {i['new']}개 ({'+' if i['new'] > i['old'] else ''}{i['change_pct']}%)"
+                    for i in big_changes[:10]
+                ]
+                if len(big_changes) > 10:
+                    lines.append(f"... 외 {len(big_changes) - 10}건")
+
+                get_slack_client().chat_postMessage(
+                    channel=app_settings.slack_channel_id,
+                    text=f"🔄 안전재고 자동 재계산 완료: {updated}건 업데이트",
+                    blocks=[
+                        {"type": "header", "text": {"type": "plain_text", "text": "SCM Agent | 안전재고 재계산"}},
+                        {"type": "section", "text": {"type": "mrkdwn",
+                                                     "text": f"*{updated}건* 안전재고 업데이트 / 대폭 변화 *{len(big_changes)}건*\n기준: 최근 30일 일평균 × {safety_days}일"}},
+                        {"type": "divider"},
+                        {"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(lines)}},
+                    ],
+                )
+            except Exception as e:
+                logger.warning(f"[안전재고재계산] Slack 보고 실패(스킵): {e}")
+
+        return {"updated": updated, "big_changes": len(big_changes)}
+
+    except Exception as exc:
+        logger.error(f"[안전재고재계산] 태스크 실패: {exc}")
+        self.update_state(state=states.FAILURE, meta={"error": str(exc)})
+        raise Ignore()
+    finally:
+        db.close()

@@ -116,12 +116,22 @@ def _process_approve(
         _slack_ephemeral(payload, f"발주제안 #{obj.id}은 이미 {obj.status.value} 상태입니다.")
         return Response(status_code=200)
 
+    # Slack 사용자 → AdminUser 역할 조회
+    from app.db.models import AdminUser
+    slack_user = db.query(AdminUser).filter(AdminUser.slack_user_id == user_id).first()
+    user_role  = slack_user.role.value if slack_user else "ADMIN"
+    required   = (obj.required_role or "ADMIN").upper()
+    role_rank  = {"READONLY": 0, "ADMIN": 1, "SUPERADMIN": 2}
+    if role_rank.get(user_role.upper(), 0) < role_rank.get(required, 1):
+        _slack_ephemeral(payload, f"⚠️ 이 발주는 {required} 이상만 승인 가능합니다. (현재: {user_role})")
+        return Response(status_code=200)
+
     obj.status      = ProposalStatus.APPROVED
     obj.approved_at = datetime.now()
     obj.approved_by = user_name
     db.commit()
     _update_message_resolved(obj, payload)
-    logger.info(f"[Slack] 발주제안 #{obj.id} 승인 — {user_name}")
+    logger.info(f"[Slack] 발주제안 #{obj.id} 승인 — {user_name} ({user_role})")
     return Response(status_code=200)
 
 

@@ -156,7 +156,8 @@ class SheetService:
                 "상품명":       p.name,
                 "카테고리":     p.category or "",
                 "안전재고기준": p.safety_stock,
-                "상태":         p.status.value.lower(),
+                "lead_time_days": p.lead_time_days,
+                "status":       p.status.value.lower(),
             }
             for p in result["items"]
         ]

@@ -46,17 +46,30 @@ class OrderService:
     # --- PATCH ---
 
     @staticmethod
-    def approve(db: Session, proposal_id: int, username: str) -> dict:
+    def approve(db: Session, proposal_id: int, username: str, user_role: str) -> dict:
         from app.services.slack_service import SlackService
+        from fastapi import HTTPException
         p = OrderService._get_or_404(db, proposal_id)
+
+        # 결재 권한 검증
+        required = (p.required_role or "ADMIN").upper()
+        role     = user_role.upper()
+        role_rank = {"READONLY": 0, "ADMIN": 1, "SUPERADMIN": 2}
+        if role_rank.get(role, 0) < role_rank.get(required, 1):
+            raise HTTPException(
+                status_code=403,
+                detail=f"이 발주는 {required} 이상만 승인할 수 있습니다. (현재 역할: {role})",
+            )
+
         p.status      = ProposalStatus.APPROVED
         p.approved_by = username
-        p.approved_at = datetime.utcnow()
+        p.approved_at = datetime.now()
         db.commit()
         db.refresh(p)
         SlackService.update_proposal_resolved(p)
-        logger.info(f"[OrderService] 발주 승인: id={proposal_id}, by={username}")
+        logger.info(f"[OrderService] 발주 승인: id={proposal_id}, by={username} ({role})")
         return OrderService._serialize(p)
+
 
     @staticmethod
     def reject(db: Session, proposal_id: int, username: str) -> dict:
@@ -167,8 +180,10 @@ class OrderService:
 
         proposals_data = generate_order_proposals(filtered, df_master, df_stock, df_sales)
 
-        # --- 자동 승인 여부 확인 ---
-        auto_approve = get_setting(db, "AUTO_ORDER_APPROVAL", "false").lower() == "true"
+        # --- 결재선 설정 조회 ---
+        auto_approve_enabled = get_setting(db, "AUTO_ORDER_APPROVAL",         "false").lower() == "true"
+        auto_limit           = float(get_setting(db, "ORDER_AUTO_APPROVE_LIMIT",    "100000"))
+        manager_limit        = float(get_setting(db, "ORDER_MANAGER_APPROVAL_LIMIT","1000000"))
 
         # --- Slack 헤더 메시지 ---
         mode_label = "자동 승인" if auto_approve else "승인 대기"
@@ -191,22 +206,38 @@ class OrderService:
         except Exception as e:
             logger.warning(f"Slack 헤더 전송 실패(스킵): {e}")
 
+
         # --- 발주 제안 저장 ---
         created = 0
         for p_data in proposals_data:
-            obj = OrderProposal(**p_data)
+            obj       = OrderProposal(**p_data)
+            total_amt = (p_data.get("proposed_qty") or 0) * (p_data.get("unit_price") or 0)
 
-            if auto_approve:
-                obj.status      = ProposalStatus.APPROVED
-                obj.approved_by = "SYSTEM"
-                obj.approved_at = datetime.now()
+            # 결재선
+            if auto_approve_enabled and total_amt < auto_limit:
+                # 소액 자동 승인
+                obj.status       = ProposalStatus.APPROVED
+                obj.required_role = "SYSTEM"
+                obj.approved_by  = "SYSTEM"
+                obj.approved_at  = datetime.utcnow()
                 db.add(obj)
                 db.flush()
                 try:
                     SlackService.send_auto_approved(obj)
                 except Exception as e:
                     logger.warning(f"Slack 자동승인 전송 실패(스킵): {e}")
+            elif total_amt >= manager_limit:
+                # 고액 → SUPERADMIN 승인 필요
+                obj.required_role = "SUPERADMIN"
+                db.add(obj)
+                db.flush()
+                try:
+                    SlackService.send_proposal(obj, approval_note="⚠️ 고액 발주 — SUPERADMIN 승인 필요")
+                except Exception as e:
+                    logger.warning(f"Slack 발송 실패(스킵): {e}")
             else:
+                # 중액 → ADMIN 승인 필요
+                obj.required_role = "ADMIN"
                 db.add(obj)
                 db.flush()
                 try:
@@ -215,24 +246,6 @@ class OrderService:
                     logger.warning(f"Slack 발송 실패(스킵): {e}")
 
             created += 1
-
-        db.commit()
-        logger.info(
-            f"[OrderService] 발주 제안 {created}건 생성, "
-            f"임계값={threshold}, 자동승인={auto_approve}"
-        )
-        return {
-            "created": created,
-            "threshold": threshold,
-            "auto_approve": auto_approve,
-            "proposals": [
-                OrderService._serialize(p)
-                for p in db.query(OrderProposal)
-                .order_by(OrderProposal.id.desc())
-                .limit(created)
-                .all()
-            ],
-        }
 
     # --- HELPER ---
 
@@ -260,6 +273,7 @@ class OrderService:
             "reason":       p.reason,
             "status":       p.status.value if p.status else "PENDING",
             "created_at":   p.created_at.isoformat() if p.created_at else "",
-            "approved_at":  p.approved_at.isoformat() if p.approved_at else None,
-            "approved_by":  p.approved_by,
+            "approved_at":   p.approved_at.isoformat() if p.approved_at else None,
+            "approved_by":   p.approved_by,
+            "required_role": p.required_role or "ADMIN",
         }

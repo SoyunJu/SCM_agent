@@ -61,7 +61,7 @@ def approve_proposal(
         db: Session = Depends(get_db),
         current_user: TokenData = Depends(require_admin),
 ):
-    return OrderService.approve(db, proposal_id, current_user.username)
+    return OrderService.approve(db, proposal_id, current_user.username, current_user.role)
 
 
 @router.patch("/proposals/{proposal_id}/reject")

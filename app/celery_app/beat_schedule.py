@@ -27,10 +27,25 @@ BEAT_SCHEDULE = {
         "task":     "app.celery_app.tasks.run_demand_forecast",
         "schedule": crontab(hour=1, minute=0),
     },
+    # 안전재고 자동 재계산 (매일 01:10 — 수요예측 완료 직후)
+    "safety-stock-recalc": {
+        "task":     "app.celery_app.tasks.run_safety_stock_recalc",
+        "schedule": crontab(hour=1, minute=10),
+    },
+    # 선제 발주 (매일 01:15 — 수요예측 완료 후)
+    "proactive-order": {
+        "task":     "app.celery_app.tasks.run_proactive_order",
+        "schedule": crontab(hour=1, minute=15),
+    },
     # 재고 회전율 분석 (매일 01:30)
     "turnover-analysis": {
         "task":     "app.celery_app.tasks.run_turnover_analysis",
         "schedule": crontab(hour=1, minute=30),
+    },
+    # 오래된 데이터 정리 (매일 02:00)
+    "cleanup-data": {
+        "task":     "app.celery_app.tasks.run_cleanup",
+        "schedule": crontab(hour=2, minute=0),
     },
     # ABC 분석 (매일 02:30)
     "abc-analysis": {

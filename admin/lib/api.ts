@@ -163,6 +163,12 @@ export const triggerTurnoverAnalysis = () =>
 export const triggerAbcAnalysis = () =>
     apiClient.post("/scm/scheduler/trigger-abc-analysis");
 
+export const triggerProactiveOrder = () =>
+    apiClient.post("/scm/scheduler/trigger-proactive-order");
+
+export const triggerSafetyStockRecalc = () =>
+    apiClient.post("/scm/scheduler/trigger-safety-stock-recalc");
+
 // --- Sheets ---
 export const getSheetCategories = () =>
     apiClient.get("/scm/sheets/categories");
@@ -274,6 +280,9 @@ export const getSettings = () =>
 
 export const saveSettings = (values: Record<string, string>) =>
     apiClient.put("/scm/settings", values);
+
+export const updateLeadTime = (code: string, leadTimeDays: number | null) =>
+    apiClient.patch(`/scm/products/${code}/lead-time`, { lead_time_days: leadTimeDays });
 
 // --- Orders ---
 export const getOrders = (params?: {
