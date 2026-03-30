@@ -288,3 +288,23 @@ class ReceivingInspection(Base):
         Index("ix_receiving_product_code", "product_code"),
         Index("ix_receiving_status",       "status"),
     )
+
+
+class AlertHistory(Base):
+    """SSE/Slack/Email 알림 발송 이력"""
+    __tablename__ = "alert_history"
+
+    id           = Column(Integer,     primary_key=True, autoincrement=True)
+    alert_type   = Column(String(50),  nullable=False)   # anomaly / daily_report / proactive_order 등
+    channel      = Column(String(20),  nullable=False)   # slack / email / sse / both
+    severity     = Column(String(20),  nullable=True)
+    product_code = Column(String(20),  nullable=True)
+    product_name = Column(String(200), nullable=True)
+    message      = Column(Text,        nullable=True)
+    is_read      = Column(Boolean,     nullable=False, default=False)
+    created_at   = Column(DateTime,    nullable=False, default=func.now())
+
+    __table_args__ = (
+        Index("ix_alert_history_created_at", "created_at"),
+        Index("ix_alert_history_is_read",    "is_read"),
+    )

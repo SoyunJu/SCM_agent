@@ -10,7 +10,7 @@ import {
     ChevronLeft, ChevronRight, Pencil, Truck,
 } from "lucide-react";
 import { useAlerts } from "@/lib/useAlerts";
-import { changeMyPassword, updateMyProfile, getMyAdminProfile } from "@/lib/api";
+import { changeMyPassword, updateMyProfile, getMyAdminProfile, markAlertsRead } from "@/lib/api";
 
 const NAV_ITEMS = [
     { href: "/dashboard",             icon: LayoutDashboard, label: "대시보드",    adminOnly: false },
@@ -240,30 +240,51 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         </button>
 
                         {showAlerts && (
-                            <div className="absolute right-0 top-12 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50">
+                            <div className="absolute right-0 top-12 w-96 bg-white border border-gray-200 rounded-xl shadow-lg z-50">
                                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                                    <span className="text-sm font-semibold text-gray-700">실시간 알림</span>
-                                    <button onClick={() => setShowAlerts(false)}>
-                                        <X size={14} className="text-gray-400" />
-                                    </button>
+                                    <span className="text-sm font-semibold text-gray-700">알림</span>
+                                    <div className="flex items-center gap-2">
+                                        {alerts.length > 0 && (
+                                            <button
+                                                onClick={async () => {
+                                                    clearUnread();
+                                                    try { await markAlertsRead(); } catch {}
+                                                }}
+                                                className="text-xs text-blue-500 hover:underline"
+                                            >
+                                                모두 읽음
+                                            </button>
+                                        )}
+                                        <button onClick={() => setShowAlerts(false)}>
+                                            <X size={14} className="text-gray-400" />
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="max-h-72 overflow-y-auto">
+                                <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
                                     {alerts.length === 0 ? (
                                         <p className="text-center text-gray-400 text-sm py-6">알림 없음</p>
                                     ) : (
-                                        alerts.map((a, i) => {
-
+                                        alerts.map((a: any, i: number) => {
                                             const sev = (a.severity ?? "").toUpperCase();
-                                            const bgColor = sev === "CRITICAL" ? "bg-red-50" :
-                                                sev === "HIGH"     ? "bg-orange-50" :
-                                                    "bg-gray-50";
-
+                                            const bgColor = sev === "CRITICAL" ? "bg-red-50"
+                                                : sev === "HIGH" ? "bg-orange-50"
+                                                    : "bg-gray-50";
+                                            const isBatch = a.type === "critical_anomaly_batch";
                                             return (
-                                                <div key={i} className={`px-4 py-3 border-b border-gray-50 text-sm ${bgColor}`}>
+                                                <div key={i} className={`px-4 py-3 text-sm ${bgColor}`}>
                                                     <p className="font-medium text-gray-700">{a.message}</p>
-                                                    <p className="text-xs text-gray-400 mt-0.5">
-                                                        {a.product_code} | {a.anomaly_type}
-                                                    </p>
+                                                    {isBatch ? (
+                                                        <p className="text-xs text-gray-400 mt-0.5">
+                                                            {a.items?.slice(0, 2).map((it: any) =>
+                                                                `${it.product_name}(${it.anomaly_type})`
+                                                            ).join(", ")}
+                                                            {(a.count ?? 0) > 2 && ` 외 ${a.count - 2}건`}
+                                                        </p>
+                                                    ) : (
+                                                        <p className="text-xs text-gray-400 mt-0.5">
+                                                            {a.product_code} | {a.anomaly_type}
+                                                        </p>
+                                                    )}
                                                 </div>
                                             );
                                         })

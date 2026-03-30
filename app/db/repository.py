@@ -438,3 +438,47 @@ def delete_old_daily_sales(db: Session, older_than_days: int = 365) -> int:
     deleted = db.query(DailySales).filter(DailySales.date < cutoff).delete()
     db.commit()
     return deleted
+
+
+def save_alert_history(
+        db: Session,
+        alert_type:   str,
+        channel:      str,
+        message:      str,
+        severity:     str | None = None,
+        product_code: str | None = None,
+        product_name: str | None = None,
+) -> None:
+    from app.db.models import AlertHistory
+    try:
+        db.add(AlertHistory(
+            alert_type   = alert_type,
+            channel      = channel,
+            severity     = severity,
+            product_code = product_code,
+            product_name = product_name,
+            message      = message,
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"[알림이력] 저장 실패(스킵): {e}")
+
+
+def get_alert_history(
+        db: Session,
+        limit:    int  = 50,
+        unread:   bool = False,
+) -> list:
+    from app.db.models import AlertHistory
+    query = db.query(AlertHistory)
+    if unread:
+        query = query.filter(AlertHistory.is_read == False)
+    return query.order_by(AlertHistory.created_at.desc()).limit(limit).all()
+
+
+def mark_alerts_read(db: Session) -> int:
+    from app.db.models import AlertHistory
+    count = db.query(AlertHistory).filter(AlertHistory.is_read == False).update({"is_read": True})
+    db.commit()
+    return count

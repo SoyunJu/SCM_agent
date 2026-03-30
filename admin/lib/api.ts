@@ -404,3 +404,14 @@ export const createInspection    = (proposalId: number) =>
 export const completeInspection  = (id: number, data: {
     received_qty: number; defect_qty?: number; return_qty?: number; note?: string;
 }) => apiClient.patch(`/scm/suppliers/inspections/${id}/complete`, data);
+
+// --- Alert History ---
+export const getAlertHistory = (limit = 50, unread = false) =>
+    apiClient.get(`/scm/alerts/history?limit=${limit}&unread=${unread}`);
+
+export const markAlertsRead = () =>
+    apiClient.patch("/scm/alerts/history/read-all");
+
+// --- AI Limit ---
+export const getAiLimitStatus = () =>
+    apiClient.get("/scm/chat/limit-status");
