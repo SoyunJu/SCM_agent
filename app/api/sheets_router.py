@@ -260,11 +260,17 @@ async def upload_excel(
             if "날짜" in df.columns:
                 df["날짜"] = pd.to_datetime(df["날짜"], errors="coerce").dt.strftime("%Y-%m-%d")
             write_sales(df)
+            # 판매 데이터에 신규 상품코드 있으면 마스터에 자동 반영
+            upsert_master_from_excel(df)
             db_result = SyncService.sync_sales(db, df)
+            SyncService.sync_master(db, df)
 
         else:  # stock
             upsert_stock_from_excel(df)
+            # 재고 데이터에 신규 상품코드 있으면 마스터에 자동 반영
+            upsert_master_from_excel(df)
             db_result = SyncService.sync_stock(db, df)
+            SyncService.sync_master(db, df)
 
         total = len(df)
         logger.info(f"엑셀 업로드: type={sheet_type}, rows={total}, db={db_result}, user={current_user.username}")
