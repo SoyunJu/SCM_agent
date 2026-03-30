@@ -1,16 +1,30 @@
+// app/layout.tsx
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import {useEffect, useState} from "react";
+import {usePathname, useRouter} from "next/navigation";
 import Link from "next/link";
 import {
-    LayoutDashboard, AlertTriangle, FileText,
-    MessageSquare, LogOut, Bell, Database,
-    Calendar, BarChart2, ShoppingCart, Settings, Users, X,
-    ChevronLeft, ChevronRight, Pencil, Truck,
+    AlertTriangle,
+    BarChart2,
+    Bell,
+    Calendar,
+    ChevronLeft,
+    ChevronRight,
+    Database,
+    FileText,
+    LayoutDashboard,
+    LogOut,
+    MessageSquare,
+    Pencil,
+    Settings,
+    ShoppingCart,
+    Truck,
+    Users,
+    X,
 } from "lucide-react";
-import { useAlerts } from "@/lib/useAlerts";
-import { changeMyPassword, updateMyProfile, getMyAdminProfile, markAlertsRead } from "@/lib/api";
+import {useAlerts} from "@/lib/useAlerts";
+import {changeMyPassword, getMyAdminProfile, markAlertsRead, updateMyProfile} from "@/lib/api";
 
 const NAV_ITEMS = [
     { href: "/dashboard",             icon: LayoutDashboard, label: "대시보드",    adminOnly: false },
@@ -111,9 +125,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         window.location.href = "/login";
     };
 
-    const toggleAlerts = () => {
+    const toggleAlerts = async () => {
         setShowAlerts((v) => !v);
-        if (!showAlerts) clearUnread();
+        if (!showAlerts) {
+            clearUnread();
+            try {
+                await markAlertsRead();
+            } catch {
+            }
+        }
     };
 
     const openProfile = async () => {
@@ -249,6 +269,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                                 onClick={async () => {
                                                     clearUnread();
                                                     try { await markAlertsRead(); } catch {}
+                                                    setShowAlerts(false);
                                                 }}
                                                 className="text-xs text-blue-500 hover:underline"
                                             >

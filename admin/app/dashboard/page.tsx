@@ -1,3 +1,4 @@
+// admin/app/page.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -5,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
     getAnomalies, getReportHistory, triggerReport,
     getSalesStats, getStockStats, getReportStatus,
+    invalidateDashboardCache,
 } from "@/lib/api";
 import { AnomalyLog, ReportExecution, SalesStatItem } from "@/lib/types";
 import { AlertTriangle, Package, TrendingUp, FileText, Play, RefreshCw, Loader2 } from "lucide-react";
@@ -25,6 +27,9 @@ const SEVERITY_KOR: Record<string, string> = {
     CRITICAL: "긴급", HIGH: "높음", MEDIUM: "보통", CHECK: "확인", LOW: "낮음",
 };
 const ANOMALY_KOR: Record<string, string> = {
+    LOW_STOCK: "재고 부족", OVER_STOCK: "재고 과잉",
+    SALES_SURGE: "판매 급등", SALES_DROP: "판매 급락",
+    LONG_TERM_STOCK: "장기 재고",
     low_stock: "재고 부족", over_stock: "재고 과잉",
     sales_surge: "판매 급등", sales_drop: "판매 급락",
     long_term_stock: "장기 재고",
@@ -34,29 +39,42 @@ const MAX_POLL = 150;
 
 export default function DashboardPage() {
     const router = useRouter();
-    const [anomalies, setAnomalies]   = useState<AnomalyLog[]>([]);
-    const [history, setHistory]       = useState<ReportExecution[]>([]);
-    const [salesStats, setSalesStats] = useState<SalesStatItem[]>([]);
-    const [stockStats, setStockStats] = useState<any>(null);
-    const [period, setPeriod]         = useState<"daily" | "weekly" | "monthly">("daily");
-    const [triggering, setTriggering] = useState(false);
-    const [polling, setPolling]       = useState(false);
-    const [message, setMessage]       = useState("");
-    const [loading, setLoading]       = useState(true);
-    const [isReadonly, setIsReadonly] = useState(false);
+    const [anomalies, setAnomalies]         = useState<AnomalyLog[]>([]);
+    const [anomalyTotal, setAnomalyTotal]   = useState(0);
+    const [severitySummary, setSeveritySummary] = useState<Record<string, number>>({});
+    const [history, setHistory]             = useState<ReportExecution[]>([]);
+    const [salesStats, setSalesStats]       = useState<SalesStatItem[]>([]);
+    const [stockStats, setStockStats]       = useState<any>(null);
+    const [period, setPeriod]               = useState<"daily" | "weekly" | "monthly">("daily");
+    const [triggering, setTriggering]       = useState(false);
+    const [polling, setPolling]             = useState(false);
+    const [message, setMessage]             = useState("");
+    const [loading, setLoading]             = useState(true);
+    const [isReadonly, setIsReadonly]       = useState(false);
     const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
     const pollCountRef = useRef(0);
 
     const fetchAll = async () => {
         setLoading(true);
         try {
-            const [anomRes, histRes, statsRes, stockRes] = await Promise.all([
-                getAnomalies(false, 200),
+            // 전체 count용 (page_size=1), 테이블용 10건, 나머지 데이터 병렬 조회
+            const [anomRes, anomCountRes, histRes, statsRes, stockRes] = await Promise.all([
+                getAnomalies(false, 10),   // 테이블 표시용 10건
+                getAnomalies(false, 1),    // total count + severity_summary용
                 getReportHistory(5),
                 getSalesStats(period),
                 getStockStats(),
             ]);
+
             setAnomalies(anomRes.data.items ?? []);
+            setAnomalyTotal(anomCountRes.data.total ?? 0);
+
+            // severity_summary가 API에서 오면 사용, 없으면 stock_stats severity_counts 사용
+            const summary = anomCountRes.data.severity_summary
+                ?? stockRes.data?.severity_counts
+                ?? {};
+            setSeveritySummary(summary);
+
             setHistory(histRes.data.items ?? []);
             setSalesStats(statsRes.data.items ?? []);
             setStockStats(stockRes.data);
@@ -121,26 +139,39 @@ export default function DashboardPage() {
         }
     };
 
+    const handleRefresh = async () => {
+        try { await invalidateDashboardCache(); } catch {}
+        fetchAll();
+    };
+
     const lastRun = history[0];
-    const severityCounts = anomalies.reduce<Record<string, number>>((acc, a) => {
+
+    // 카드 수치: anomalyTotal(전체), severitySummary(심각도별 전체 기준)
+    // severitySummary가 없으면 테이블 10건 기준으로 fallback
+    const fallbackCounts = anomalies.reduce<Record<string, number>>((acc, a) => {
         const sev = (typeof a.severity === "string" ? a.severity : (a.severity as any)?.value ?? "").toUpperCase();
         acc[sev] = (acc[sev] ?? 0) + 1;
         return acc;
     }, {});
 
+    const criticalCount = severitySummary.CRITICAL ?? fallbackCounts.CRITICAL ?? 0;
+    const highCount     = severitySummary.HIGH     ?? fallbackCounts.HIGH     ?? 0;
+
     const severityCards = [
-        { label: "미해결 이상 징후", value: anomalies.length,           icon: AlertTriangle, color: "text-orange-500" },
-        { label: "긴급",            value: severityCounts.CRITICAL ?? 0, icon: Package,       color: "text-red-500"    },
-        { label: "높음",            value: severityCounts.HIGH ?? 0,     icon: TrendingUp,    color: "text-orange-400" },
+        { label: "미해결 이상 징후", value: anomalyTotal,  icon: AlertTriangle, color: "text-orange-500" },
+        { label: "긴급",            value: criticalCount,  icon: Package,       color: "text-red-500"    },
+        { label: "높음",            value: highCount,      icon: TrendingUp,    color: "text-orange-400" },
         { label: "최근 보고서",
             value: lastRun?.status === "success" ? "성공" : lastRun?.status ?? "-",
             icon: FileText, color: "text-blue-500" },
     ];
+
+    // 차트용 심각도 데이터도 summary 기준으로
     const severityBarData = [
-        { name: "긴급", count: severityCounts.CRITICAL ?? 0 },
-        { name: "높음", count: severityCounts.HIGH ?? 0 },
-        { name: "보통", count: severityCounts.MEDIUM ?? 0 },
-        { name: "낮음", count: severityCounts.LOW ?? 0 },
+        { name: "긴급", count: severitySummary.CRITICAL ?? fallbackCounts.CRITICAL ?? 0 },
+        { name: "높음", count: severitySummary.HIGH     ?? fallbackCounts.HIGH     ?? 0 },
+        { name: "보통", count: severitySummary.MEDIUM   ?? fallbackCounts.MEDIUM   ?? 0 },
+        { name: "낮음", count: severitySummary.LOW      ?? fallbackCounts.LOW      ?? 0 },
     ];
 
     return (
@@ -151,18 +182,23 @@ export default function DashboardPage() {
                     <p className="text-gray-400 text-sm mt-1">재고·판매 현황 요약</p>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={fetchAll} disabled={loading} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition disabled:opacity-50">
+                    <button
+                        onClick={handleRefresh}
+                        disabled={loading}
+                        className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition disabled:opacity-50"
+                        title="캐시 초기화 후 새로고침"
+                    >
                         <RefreshCw size={15} className={`text-gray-500 ${loading ? "animate-spin" : ""}`} />
                     </button>
                     {!isReadonly && (
-                    <button
-                        onClick={handleTrigger}
-                        disabled={triggering || polling}
-                        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50"
-                    >
-                        {polling ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                        {polling ? "생성 중..." : triggering ? "요청 중..." : "보고서 즉시 생성"}
-                    </button>
+                        <button
+                            onClick={handleTrigger}
+                            disabled={triggering || polling}
+                            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                        >
+                            {polling ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                            {polling ? "생성 중..." : triggering ? "요청 중..." : "보고서 즉시 생성"}
+                        </button>
                     )}
                 </div>
             </div>
@@ -215,7 +251,7 @@ export default function DashboardPage() {
                                     <XAxis dataKey="날짜" tick={{ fontSize: 11 }} />
                                     <YAxis yAxisId="qty" orientation="left" tick={{ fontSize: 11 }} />
                                     <YAxis yAxisId="rev" orientation="right" tick={{ fontSize: 11 }}
-                                               tickFormatter={(v: number) => v >= 10000 ? `${(v / 10000).toFixed(0)}만` : v.toLocaleString()} />
+                                           tickFormatter={(v: number) => v >= 10000 ? `${(v / 10000).toFixed(0)}만` : v.toLocaleString()} />
                                     <Tooltip formatter={(v: any, name: any): any =>
                                         name === "매출액" ? [`${Number(v).toLocaleString()}원`, name] : [v, name]
                                     } />
@@ -275,10 +311,15 @@ export default function DashboardPage() {
                         </div>
                     )}
 
-                    {/* 이상 징후 테이블 */}
+                    {/* 이상 징후 테이블 — 최근 10건 */}
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
                         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                            <h3 className="font-semibold text-gray-700">미해결 이상 징후 (최근 10건)</h3>
+                            <h3 className="font-semibold text-gray-700">
+                                미해결 이상 징후
+                                <span className="ml-2 text-xs text-gray-400 font-normal">
+                                    (최근 10건 / 전체 {anomalyTotal}건)
+                                </span>
+                            </h3>
                             <button onClick={() => router.push("/dashboard/anomalies")}
                                     className="text-xs text-blue-500 hover:underline">전체 보기</button>
                         </div>
@@ -312,8 +353,8 @@ export default function DashboardPage() {
                                             <td className="px-6 py-3 text-gray-600">{a.current_stock ?? "-"}</td>
                                             <td className="px-6 py-3 text-gray-600">{ANOMALY_KOR[a.anomaly_type] ?? a.anomaly_type}</td>
                                             <td className="px-6 py-3">
-                                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SEVERITY_COLOR[a.severity]}`}>
-                                                    {SEVERITY_KOR[a.severity]}
+                                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SEVERITY_COLOR[a.severity] ?? "text-gray-500 bg-gray-100"}`}>
+                                                    {SEVERITY_KOR[a.severity] ?? a.severity}
                                                 </span>
                                             </td>
                                             <td className="px-6 py-3 text-gray-400">{a.detected_at.slice(0, 16)}</td>

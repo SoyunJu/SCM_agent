@@ -430,3 +430,6 @@ export const upsertCategoryLeadTime = (category: string, lead_time_days: number)
 
 export const deleteCategoryLeadTime = (category: string) =>
     apiClient.delete(`/scm/settings/category-lead-times/${encodeURIComponent(category)}`);
+
+export const invalidateDashboardCache = () =>
+    apiClient.post("/scm/sheets/invalidate-cache");

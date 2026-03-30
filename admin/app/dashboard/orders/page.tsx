@@ -1,15 +1,16 @@
+// orders/page.tsx
 "use client";
 
 import {useEffect, useState} from "react";
 import {
     approveProposal,
+    createInspection,
     generateProposals,
     getOrders,
     getProposals,
     rejectProposal,
     resetProposal,
-    updateProposal,
-    createInspection
+    updateProposal
 } from "@/lib/api";
 import {getDefaultPageSize} from "@/lib/utils";
 import {OrderProposal} from "@/lib/types";
@@ -381,6 +382,7 @@ function ProposalsTab() {
                         <th className="px-4 py-3 text-left whitespace-nowrap">카테고리</th>
                         <th className="px-4 py-3 text-right whitespace-nowrap">발주수량</th>
                         <th className="px-4 py-3 text-right whitespace-nowrap">단가</th>
+                        <th className="px-4 py-3 text-right whitespace-nowrap">총액</th>
                         <th className="px-4 py-3 text-left whitespace-nowrap">사유</th>
                         <th className="px-4 py-3 text-left whitespace-nowrap">상태</th>
                         <th className="px-4 py-3 text-left whitespace-nowrap">생성일시</th>
@@ -389,11 +391,11 @@ function ProposalsTab() {
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                     {loading ? (
-                        <tr><td colSpan={9} className="py-12 text-center">
+                        <tr><td colSpan={10} className="py-12 text-center">
                             <Loader2 size={24} className="animate-spin text-blue-500 mx-auto" />
                         </td></tr>
                     ) : proposals.length === 0 ? (
-                        <tr><td colSpan={9} className="py-12 text-center text-gray-400">
+                        <tr><td colSpan={10} className="py-12 text-center text-gray-400">
                             <Package size={32} className="mx-auto mb-2 text-gray-300" />
                             발주 제안이 없습니다
                         </td></tr>
@@ -420,9 +422,10 @@ function ProposalsTab() {
                             <td className="px-4 py-3 text-right">
                                 {editId === p.id ? (
                                     <input
-                                        type="number" value={editPrice}
-                                        onChange={(e) => setEditPrice(e.target.value)}
-                                        className="w-24 text-right border border-blue-300 rounded px-1 py-0.5 text-sm"
+                                        type="text"
+                                        value={Number(editPrice.replace(/,/g, "") || 0).toLocaleString("ko-KR")}
+                                        onChange={(e) => setEditPrice(e.target.value.replace(/,/g, ""))}
+                                        className="w-28 text-right border border-blue-300 rounded px-1 py-0.5 text-sm"
                                     />
                                 ) : (
                                     <span className="text-gray-600 whitespace-nowrap">
@@ -431,28 +434,56 @@ function ProposalsTab() {
                                 )}
                             </td>
 
+                            {/* 총액 */}
+                            <td className="px-4 py-3 text-right whitespace-nowrap">
+                                {p.unit_price > 0
+                                    ? <span
+                                        className="text-gray-700 font-medium">{(p.proposed_qty * p.unit_price).toLocaleString("ko-KR")}원</span>
+                                    : <span className="text-gray-300">-</span>
+                                }
+                            </td>
+
                             {/* 사유 — 짧게 */}
                             <td className="px-4 py-3 text-gray-400 text-xs max-w-[180px]">
                                 <span className="truncate block" title={p.reason ?? ""}>{p.reason ?? "-"}</span>
                             </td>
 
-                            <td className="px-4 py-3">
-                                <div className="flex flex-col gap-1">
-                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${PROPOSAL_STATUS_COLOR[p.status] ?? "bg-gray-100 text-gray-500"}`}>
-                                        {PROPOSAL_STATUS_LABEL[p.status] ?? p.status}
-                                    </span>
-                                    {p.status === "PENDING" && (
-                                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                                            (p as any).required_role === "SUPERADMIN"
-                                                ? "bg-red-50 text-red-600"
-                                                : (p as any).required_role === "SYSTEM"
-                                                    ? "bg-blue-50 text-blue-500"
-                                                    : "bg-gray-50 text-gray-500"
-                                        }`}>
-                                            {({"SYSTEM": "자동승인", "ADMIN": "관리자 결재", "SUPERADMIN": "최고관리자 결재"} as Record<string, string>)[(p as any).required_role] ?? "관리자 결재"}
+                            <td className="px-4 py-3 whitespace-nowrap">
+                                {p.status === "PENDING" ? (
+                                    <div className="flex flex-col gap-1">
+                                        <span
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                                            ⏳ 대기
                                         </span>
-                                    )}
-                                </div>
+                                        <span
+                                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                                            (p as any).required_role === "SUPERADMIN"
+                                                ? "bg-purple-50 text-purple-700 border border-purple-200"
+                                                : (p as any).required_role === "SYSTEM"
+                                                    ? "bg-blue-50 text-blue-600 border border-blue-200"
+                                                    : "bg-gray-50 text-gray-600 border border-gray-200"
+                                        }`}>
+                                            {(p as any).required_role === "SUPERADMIN" && "👑 "}
+                                            {(p as any).required_role === "SYSTEM" && "⚡ "}
+                                            {(p as any).required_role === "ADMIN" && "✅ "}
+                                            {({
+                                                "SYSTEM": "자동처리",
+                                                "ADMIN": "관리자 결재",
+                                                "SUPERADMIN": "최고관리자 결재"
+                                            } as Record<string, string>)[(p as any).required_role] ?? "관리자 결재"}
+                                        </span>
+                                    </div>
+                                ) : p.status === "APPROVED" ? (
+                                    <span
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+                                        ✅ 승인
+                                    </span>
+                                ) : (
+                                    <span
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-200">
+                                        ❌ 거절
+                                    </span>
+                                )}
                             </td>
 
                             <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">

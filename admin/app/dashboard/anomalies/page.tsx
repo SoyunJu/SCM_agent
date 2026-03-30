@@ -1,13 +1,10 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getAnomalies, resolveAnomaly, autoResolveAnomaly } from "@/lib/api";
-import { getDefaultPageSize } from "@/lib/utils";
-import {
-    AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight,
-    Loader2, X, ShieldCheck, Zap, Tag,
-} from "lucide-react";
+import {useCallback, useState} from "react";
+import {useQuery, useQueryClient} from "@tanstack/react-query";
+import {autoResolveAnomaly, getAnomalies, resolveAnomaly} from "@/lib/api";
+import {getDefaultPageSize} from "@/lib/utils";
+import {AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Loader2, ShieldCheck, Tag, X, Zap,} from "lucide-react";
 
 // ── 상수 ─────────────────────────────────────────────────────────────────────
 const SEVERITY_COLOR: Record<string, string> = {
@@ -450,8 +447,15 @@ export default function AnomaliesPage() {
                                     <td className="px-5 py-3 text-gray-500 text-xs">
                                         {a.category || "—"}
                                     </td>
-                                    <td className="px-5 py-3 text-gray-600 whitespace-nowrap text-xs">
-                                        {typeLabel}
+                                    <td className="px-5 py-3 whitespace-nowrap text-xs">
+                                        <span className="text-gray-600">{typeLabel}</span>
+                                        {(tk === "SALES_SURGE" || tk === "SALES_DROP") && a.change_rate != null && (
+                                            <span className={`ml-1.5 font-semibold ${
+                                                a.change_rate > 0 ? "text-red-500" : "text-blue-500"
+                                            }`}>
+                                                {a.change_rate > 0 ? `+${a.change_rate}%` : `${a.change_rate}%`}
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="px-5 py-3 text-right text-gray-600">
                                         {a.current_stock != null ? a.current_stock.toLocaleString() : "—"}

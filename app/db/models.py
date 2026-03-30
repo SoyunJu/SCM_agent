@@ -102,6 +102,7 @@ class AnomalyLog(Base):
     current_stock       = Column(Integer, nullable=True)
     daily_avg_sales     = Column(Float, nullable=True)
     days_until_stockout = Column(Float, nullable=True)
+    change_rate         = Column(Float, nullable=True)
     severity            = Column(UpperCaseEnum(Severity), nullable=False, default=Severity.MEDIUM)
     is_resolved         = Column(Boolean, nullable=False, default=False)
     created_at          = Column(DateTime, nullable=False, default=func.now())

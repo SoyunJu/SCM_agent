@@ -326,6 +326,13 @@ def run_sync_sheets_to_db():
         db.close()
 
     logger.info("[Sync] Sheets→DB 동기화 시작")
+    from app.cache.redis_client import get_redis
+    redis = get_redis()
+    lock_key = "lock:sync_sheets_to_db"     # 10분 락
+    acquired = redis.set(lock_key, "1", nx=True, ex=600)
+    if not acquired:
+        logger.warning("[Sync] 이미 동기화 실행 중 — 중복 실행 스킵")
+        return {"skipped": True, "reason": "already_running"}
     try:
         from app.scheduler.jobs import sync_sheets_to_db_incremental
         result = sync_sheets_to_db_incremental()
@@ -334,6 +341,8 @@ def run_sync_sheets_to_db():
     except Exception as exc:
         logger.error(f"[Sync] 태스크 실패: {exc}")
         raise
+    finally:
+        redis.delete(lock_key)
 
 
 

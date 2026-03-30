@@ -294,3 +294,22 @@ async def upload_excel(
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+@router.post("/invalidate-cache")
+async def invalidate_cache(
+        current_user: Annotated[TokenData, Depends(require_admin)],
+        db: Session = Depends(get_db),
+):
+    try:
+        from app.cache.redis_client import get_redis
+        from app.db.repository import delete_old_analysis_cache
+        keys = get_redis().keys("anomaly_list:*") + get_redis().keys("analysis:*")
+        if keys:
+            get_redis().delete(*keys)
+        delete_old_analysis_cache(db, older_than_hours=0)
+        logger.info(f"[Cache] 대시보드 캐시 무효화: {len(keys)}개 키 삭제")
+        return {"invalidated": len(keys)}
+    except Exception as e:
+        logger.warning(f"캐시 무효화 실패(스킵): {e}")
+        return {"invalidated": 0}

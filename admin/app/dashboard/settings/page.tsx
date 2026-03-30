@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { getSettings, saveSettings, getCategoryLeadTimes, upsertCategoryLeadTime, deleteCategoryLeadTime } from "@/lib/api";
-import { X, Loader2, Save, RotateCcw } from "lucide-react";
-import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import {useEffect, useState} from "react";
+import {useMutation, useQuery} from "@tanstack/react-query";
+import {
+    deleteCategoryLeadTime,
+    getCategoryLeadTimes,
+    getSettings,
+    saveSettings,
+    upsertCategoryLeadTime
+} from "@/lib/api";
+import {Loader2, Save, X} from "lucide-react";
+import {LoadingSpinner} from "@/components/ui/LoadingSpinner";
 
 interface SettingItem {
     key: string;
@@ -28,8 +34,8 @@ const LABELS: Record<string, string> = {
     ALERT_MIN_SEVERITY:            "알림 최소 심각도",
     AUTO_ORDER_MIN_SEVERITY:       "자동발주 에이전트 최소 심각도",
     AUTO_ORDER_APPROVAL:              "발주 자동 승인 여부",
-    ORDER_AUTO_APPROVE_LIMIT:         "소액 자동승인 한도 (원)",
-    ORDER_MANAGER_APPROVAL_LIMIT:     "고액 SUPERADMIN 승인 기준 (원)",
+    ORDER_AUTO_APPROVE_LIMIT: "소액 자동승인 한도",
+    ORDER_MANAGER_APPROVAL_LIMIT: "고액 SUPERADMIN 승인 기준",
     DEFAULT_LEAD_TIME_DAYS:           "기본 리드타임 (일)",
     DATA_RETENTION_SALES_DAYS:     "매출 데이터 보존 기간 (일)",
     DATA_RETENTION_STOCK_DAYS:     "재고 스냅샷 보존 기간 (일)",
@@ -79,12 +85,43 @@ const GROUPS: { title: string; tab: string; keys: string[] }[] = [
     { title: "데이터 보존 설정", tab: "데이터",    keys: ["DATA_RETENTION_SALES_DAYS", "DATA_RETENTION_STOCK_DAYS", "DATA_RETENTION_ANALYSIS_HOURS"] },
 ];
 
-const SETTING_TABS = ["전체", "재고", "이상징후", "알림·발주", "시스템", "데이터"] as const;
+const SETTING_TABS = [ "재고", "이상징후", "알림·발주", "시스템", "데이터"] as const;
 type SettingTab = typeof SETTING_TABS[number];
 
 // ── 컴포넌트 ───────────────────────────────────────────────────────────────────
+
+const MONEY_KEYS = new Set(["ORDER_AUTO_APPROVE_LIMIT", "ORDER_MANAGER_APPROVAL_LIMIT"]);
+
+function formatMoney(v: string): string {
+    const n = Number(v.replace(/,/g, ""));
+    if (isNaN(n)) return v;
+    return n.toLocaleString("ko-KR");
+}
+
+function parseMoney(v: string): string {
+    return v.replace(/,/g, "");
+}
+
+function MoneyInput({
+                        value, onChange, disabled,
+                    }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+    return (
+        <div className="flex items-center gap-1.5">
+            <input
+                type="text"
+                value={formatMoney(value)}
+                onChange={(e) => onChange(parseMoney(e.target.value))}
+                disabled={disabled}
+                className="w-32 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+            />
+            <span className="text-xs text-gray-400 shrink-0">원</span>
+        </div>
+    );
+}
+
+
 export default function SettingsPage() {
-    const [activeTab, setActiveTab] = useState<SettingTab>("전체");
+    const [activeTab, setActiveTab] = useState<SettingTab>("재고");
     const [values, setValues]       = useState<Record<string, string>>({});
     const [message, setMessage]     = useState("");
     const [isReadonly, setIsReadonly]     = useState(false);
@@ -133,9 +170,7 @@ export default function SettingsPage() {
     };
 
     // 탭에 따른 그룹 필터
-    const visibleGroups = activeTab === "전체"
-        ? GROUPS
-        : GROUPS.filter((g) => g.tab === activeTab);
+    const visibleGroups = GROUPS.filter((g) => g.tab === activeTab);
 
     if (isLoading) return <LoadingSpinner fullPage />;
 
@@ -180,7 +215,7 @@ export default function SettingsPage() {
                 ))}
             </div>
 
-            {(activeTab === "전체" || activeTab === "알림·발주") && (
+            {activeTab === "알림·발주" && (
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
                     <div className="px-6 py-4 border-b border-gray-100">
                         <h3 className="font-semibold text-gray-700">카테고리별 리드타임</h3>
@@ -301,6 +336,12 @@ export default function SettingsPage() {
                                                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                                                 ))}
                                             </select>
+                                        ) : MONEY_KEYS.has(key) ? (
+                                            <MoneyInput
+                                                value={values[key] ?? item.value}
+                                                onChange={(v) => setValues((prev) => ({...prev, [key]: v}))}
+                                                disabled={isReadonly}
+                                            />
                                         ) : (
                                             <input
                                                 type="number"
@@ -309,18 +350,6 @@ export default function SettingsPage() {
                                                 disabled={isReadonly}
                                                 className="w-24 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
                                             />
-                                        )}
-                                        {isChanged && (
-                                            <>
-                                                <button
-                                                    onClick={() => handleReset(key)}
-                                                    title={`기본값: ${item.default}`}
-                                                    className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition"
-                                                >
-                                                    <RotateCcw size={13} />
-                                                </button>
-                                                <span className="text-xs text-gray-400">기본: {item.default}</span>
-                                            </>
                                         )}
                                     </div>
                                 </div>

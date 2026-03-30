@@ -67,21 +67,13 @@ def send_email(
 
 
 def send_daily_report_email(
-        report_date:        str,
-        total_products:     int,
-        stock_anomaly_count: int,
-        sales_anomaly_count: int,
-        risk_level:         str,
-        pdf_path:           Path | None = None,
-        to:                 list[str] | None = None,
+        report_date:   str,
+        anomaly_count: int,
+        top_products:  list[str],
+        pdf_path:      Path | None = None,
+        pdf_bytes:     bytes | None = None,
+        to:            list[str] | None = None,
 ) -> bool:
-
-    risk_color = {
-        "LOW":      "#22c55e",
-        "MEDIUM":   "#eab308",
-        "HIGH":     "#f97316",
-        "CRITICAL": "#ef4444",
-    }.get(risk_level.upper() if risk_level else "", "#6b7280")
 
     body = f"""
     <html><body style="font-family:sans-serif;color:#374151;padding:24px;">
@@ -90,20 +82,12 @@ def send_daily_report_email(
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
       <table style="border-collapse:collapse;width:100%;max-width:400px;">
         <tr>
-          <td style="padding:8px 16px 8px 0;color:#6b7280;">전체 상품</td>
-          <td style="padding:8px 0;font-weight:600;">{total_products}개</td>
+          <td style="padding:8px 16px 8px 0;color:#6b7280;">총 이상징후</td>
+          <td style="padding:8px 0;font-weight:600;">{anomaly_count}건</td>
         </tr>
         <tr>
-          <td style="padding:8px 16px 8px 0;color:#6b7280;">재고 이상</td>
-          <td style="padding:8px 0;font-weight:600;">{stock_anomaly_count}건</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 16px 8px 0;color:#6b7280;">판매 이상</td>
-          <td style="padding:8px 0;font-weight:600;">{sales_anomaly_count}건</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 16px 8px 0;color:#6b7280;">위험도</td>
-          <td style="padding:8px 0;font-weight:600;color:{risk_color};">{risk_level.upper()}</td>
+          <td style="padding:8px 16px 8px 0;color:#6b7280;">주요 상품</td>
+          <td style="padding:8px 0;font-weight:600;">{', '.join(top_products[:3]) if top_products else '-'}</td>
         </tr>
       </table>
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
@@ -111,7 +95,7 @@ def send_daily_report_email(
     </body></html>
     """
     return send_email(
-        subject=f"[SCM Agent] 일일 보고서 - {report_date} | 위험도: {risk_level.upper()}",
+        subject=f"[SCM Agent] 일일 보고서 - {report_date} | 이상징후 {anomaly_count}건",
         body_html=body,
         attachment=pdf_path,
         to=to,
