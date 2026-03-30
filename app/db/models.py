@@ -106,6 +106,13 @@ class AnomalyLog(Base):
     is_resolved         = Column(Boolean, nullable=False, default=False)
     created_at          = Column(DateTime, nullable=False, default=func.now())
 
+    __table_args__ = (
+        Index("ix_anomaly_product_code",  "product_code"),
+        Index("ix_anomaly_is_resolved",   "is_resolved"),
+        Index("ix_anomaly_type_resolved", "anomaly_type", "is_resolved"),  # 미해결 타입별 조회
+        Index("ix_anomaly_detected_at",   "detected_at"),
+    )
+
 class ScheduleConfig(Base):
     __tablename__ = "schedule_configs"
 
@@ -128,6 +135,12 @@ class ChatHistory(Base):
     message    = Column(Text, nullable=False)
     tool_used  = Column(String(100), nullable=True)
     created_at = Column(DateTime, nullable=False, default=func.now())
+
+    __table_args__ = (
+        Index("ix_chat_session_id",  "session_id"),
+        Index("ix_chat_user_id",     "user_id"),
+        Index("ix_chat_created_at",  "created_at"),
+    )
 
 class SystemSettings(Base):
     __tablename__ = "system_settings"
@@ -155,6 +168,12 @@ class OrderProposal(Base):
     approved_by   = Column(String(100), nullable=True)
     slack_ts      = Column(String(50), nullable=True)
     slack_channel = Column(String(50), nullable=True)
+
+    __table_args__ = (
+        Index("ix_proposal_status",     "status"),
+        Index("ix_proposal_created_at", "created_at"),
+        Index("ix_proposal_product",    "product_code"),
+    )
 
 class AdminUser(Base):
     __tablename__ = "admin_users"
@@ -197,9 +216,10 @@ class DailySales(Base):
     cost         = Column(Float, nullable=False, default=0)   # ← 추가: 매입액
 
     __table_args__ = (
-        UniqueConstraint("date", "product_code", name="uq_date_code"),
+        UniqueConstraint("date", "product_code", name="uq_daily_sales_date_product"),
         Index("idx_date", "date"),
         Index("idx_product_code", "product_code"),
+        Index("idx_date_product_code", "date", "product_code"),
     )
 
 class StockLevel(Base):

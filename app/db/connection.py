@@ -14,9 +14,12 @@ DATABASE_URL = (
 
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True,       # 연결 자동 확인
-    pool_recycle=3600,        # 1시간마다 커넥션 재생성
-    # echo=(settings.app_env == "development"),  # dev 환경에서 SQL 로그 출력
+    pool_pre_ping    = True,     # 연결 유효성 자동 확인 (dead connection 방지)
+    pool_recycle     = 1800,     # 30분마다 커넥션 재생성 (MySQL wait_timeout 대비)
+    pool_size        = 10,       # 기본 커넥션 풀 크기
+    max_overflow     = 20,       # 피크 시 추가 허용 커넥션 (총 30개까지)
+    pool_timeout     = 30,       # 커넥션 획득 대기 최대 30초
+    pool_use_lifo    = True,     # LIFO: 최근 사용 커넥션 재사용 → DB 부하 분산
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -124,17 +124,33 @@ def sync_sheets_only() -> dict:
 
 # --- Celery Beat 주기 동기화 ---
 def sync_sheets_to_db_incremental() -> dict:
-    logger.info("===== Sheets → DB 동기화 시작 =====")
+    logger.info("===== Sheets → DB 증분 동기화 시작 =====")
     db = SessionLocal()
     try:
+        from app.sheets.reader import read_product_master, read_sales, read_stock
+        from app.db.sync import incremental_upsert_daily_sales
+
         result = {}
-        result["master"] = SyncService.sync_master(db, __import__("app.sheets.reader", fromlist=["read_product_master"]).read_product_master())
-        result["sales"]  = SyncService.sync_sales(db,  __import__("app.sheets.reader", fromlist=["read_sales"]).read_sales())
-        result["stock"]  = SyncService.sync_stock(db,  __import__("app.sheets.reader", fromlist=["read_stock"]).read_stock())
-        logger.info(f"===== Sheets → DB 동기화 완료: {result} =====")
+
+        # 상품마스터: 항상 전체 upsert
+        result["master"] = SyncService.sync_master(db, read_product_master())
+
+        # 일별판매: watermark 기반 증분
+        all_sales = read_sales()
+        result["sales"] = incremental_upsert_daily_sales(db, [
+            {"date": r.get("날짜"), "product_code": r.get("상품코드"),
+             "qty": r.get("판매수량", 0), "revenue": r.get("매출액", 0),
+             "cost": r.get("매입액", 0)}
+            for r in all_sales
+        ])
+
+        # 재고현황: 항상 전체 upsert
+        result["stock"] = SyncService.sync_stock(db, read_stock())
+
+        logger.info(f"===== Sheets → DB 증분 동기화 완료: {result} =====")
         return result
     except Exception as e:
-        logger.error(f"Sheets → DB 동기화 실패: {e}")
+        logger.error(f"Sheets → DB 증분 동기화 실패: {e}")
         return {"error": str(e)}
     finally:
         db.close()

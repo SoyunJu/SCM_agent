@@ -94,6 +94,12 @@ def upsert_anomaly_log(
     db.add(record)
     db.commit()
     db.refresh(record)
+    try:
+        from app.cache.redis_client import get_redis
+        for k in get_redis().keys("anomaly_list:*"):
+            get_redis().delete(k)
+    except Exception:
+        pass
     return record
 
 
@@ -106,6 +112,7 @@ def get_anomaly_logs(
         page: int = 1,
         page_size: int = 50,
 ) -> dict:
+    from sqlalchemy import func as sqlfunc
     query = db.query(AnomalyLog)
     if is_resolved is not None:
         query = query.filter(AnomalyLog.is_resolved == is_resolved)
@@ -121,10 +128,18 @@ def get_anomaly_logs(
         except ValueError:
             pass
 
-    total = query.count()
-    items = query.order_by(desc(AnomalyLog.detected_at)).offset((page - 1) * page_size).limit(page_size).all()
+    # count + items 를 별도 쿼리로 분리, 필터 재사용
+    total       = query.count()
+    items       = (
+        query
+        .order_by(desc(AnomalyLog.detected_at))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     total_pages = max(1, (total + page_size - 1) // page_size)
-    return {"total": total, "page": page, "page_size": page_size, "total_pages": total_pages, "items": items}
+    return {"total": total, "page": page, "page_size": page_size,
+            "total_pages": total_pages, "items": items}
 
 
 
