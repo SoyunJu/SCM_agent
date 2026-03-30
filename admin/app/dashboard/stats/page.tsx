@@ -72,7 +72,9 @@ function DemandChart({ items }: { items: any[] }) {
                         ? <span className="text-red-500 text-xs font-medium">↑ 상승</span>
                         : (trend === "down" || trend === "decreasing")
                             ? <span className="text-blue-500 text-xs font-medium">↓ 하락</span>
-                            : <span className="text-gray-400 text-xs">— 유지</span>;
+                            : (!trend || trend === "unknown")
+                                ? <span className="text-gray-300 text-xs">-</span>
+                                : <span className="text-gray-500 text-xs">— 유지</span>;
                     return (
                         <div key={i} className="flex items-center gap-3">
                             <span className="text-xs font-mono text-gray-500 w-20 shrink-0 truncate">
