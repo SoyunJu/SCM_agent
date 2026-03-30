@@ -45,6 +45,18 @@ class AnomalyService:
             page: int,
             page_size: int,
     ) -> dict:
+        import json, hashlib
+        from app.cache.redis_client import cache_get, cache_set
+
+        # 캐시 키 -> 파라미터 조합으로 생성
+        cache_key = "anomaly_list:" + hashlib.md5(
+            f"{is_resolved}:{anomaly_type}:{severity}:{page}:{page_size}".encode()
+        ).hexdigest()
+
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
+
         result = get_anomaly_logs(
             db,
             is_resolved=is_resolved,
@@ -53,7 +65,7 @@ class AnomalyService:
             page=page,
             page_size=page_size,
         )
-        return {
+        data = {
             "total":       result["total"],
             "page":        result["page"],
             "page_size":   result["page_size"],
@@ -82,6 +94,9 @@ class AnomalyService:
                 for r in result["items"]
             ],
         }
+        cache_set(cache_key, data, ttl=60)  # 1분 캐시
+        return data
+
 
     @staticmethod
     def resolve(db: Session, anomaly_id: int) -> dict:

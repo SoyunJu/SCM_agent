@@ -145,6 +145,46 @@ def bulk_upsert_products(db: Session, records: list[dict]) -> dict:
 
 
 
+def get_last_sync_date(db: Session, sync_type: str) -> str | None:
+    from app.db.repository import get_setting
+    return get_setting(db, f"LAST_SYNC_{sync_type.upper()}", None)
+
+
+# 마지막 동기화 날짜 저장
+def set_last_sync_date(db: Session, sync_type: str, date_str: str) -> None:
+    from app.db.models import SystemSettings
+    row = db.query(SystemSettings).filter(
+        SystemSettings.setting_key == f"LAST_SYNC_{sync_type.upper()}"
+    ).first()
+    if row:
+        row.setting_value = date_str
+    else:
+        db.add(SystemSettings(
+            setting_key   = f"LAST_SYNC_{sync_type.upper()}",
+            setting_value = date_str,
+            description   = f"{sync_type} 마지막 동기화 날짜",
+        ))
+    db.commit()
+
+
+# watermark 기반 증분 upsert
+def incremental_upsert_daily_sales(db: Session, records: list[dict]) -> dict:
+    if not records:
+        return {"inserted": 0, "skipped": 0}
+
+    last_date = get_last_sync_date(db, "SALES")
+    if last_date:
+        records = [r for r in records if str(r.get("date", "")) > last_date]
+
+    if not records:
+        return {"inserted": 0, "skipped": 0}
+
+    result   = bulk_upsert_daily_sales(db, records)
+    max_date = max(str(r.get("date", "")) for r in records)
+    set_last_sync_date(db, "SALES", max_date)
+    return result
+
+
 # 헬퍼
 def make_params_hash(params: dict) -> str:
     serialized = json.dumps(params, sort_keys=True, default=str)

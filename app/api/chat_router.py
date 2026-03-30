@@ -146,11 +146,76 @@ async def slack_webhook(request: Request, background_tasks: BackgroundTasks):
 async def chat_query(
         req: ChatRequest,
         current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),
 ):
-    logger.info(f"챗봇 질의: user={current_user.username}, msg={req.message[:50]}")
+    from datetime import date
+    from app.cache.redis_client import get_redis
+    from app.db.repository import get_setting
+
+    role = current_user.role.upper()
+
+    # SUPERADMIN 무제한
+    if role != "SUPERADMIN":
+        limit_key = f"AI_DAILY_LIMIT_{role}"
+        daily_limit = int(get_setting(db, limit_key, "50" if role == "ADMIN" else "10"))
+
+        if daily_limit > 0:
+            redis_key = f"ai_limit:{current_user.username}:{date.today().isoformat()}"
+            try:
+                redis = get_redis()
+                count = redis.incr(redis_key)
+                if count == 1:
+                    redis.expire(redis_key, 86400)  # 자정 기준 TTL (하루)
+                if count > daily_limit:
+                    raise HTTPException(
+                        status_code=429,
+                        detail={
+                            "code":    "AI_LIMIT_EXCEEDED",
+                            "message": f"일일 AI 사용 한도({daily_limit}회)를 초과했습니다. 내일 다시 이용해주세요.",
+                            "limit":   daily_limit,
+                            "used":    count - 1,
+                        },
+                    )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning(f"AI limit Redis 오류(스킵): {e}")
+
+    logger.info(f"챗봇 질의: user={current_user.username} ({role}), msg={req.message[:50]}")
     reply = run_agent(
         message=req.message,
         session_id=req.session_id,
         user_id=current_user.username,
     )
     return ChatResponse(reply=reply, session_id=req.session_id)
+
+
+@router.get("/limit-status")
+async def get_limit_status(
+        current_user: Annotated[TokenData, Depends(get_current_user)],
+        db: Session = Depends(get_db),
+):
+    from datetime import date
+    from app.cache.redis_client import get_redis
+    from app.db.repository import get_setting
+
+    role = current_user.role.upper()
+    if role == "SUPERADMIN":
+        return {"limit": 0, "used": 0, "remaining": -1, "unlimited": True}
+
+    limit_key   = f"AI_DAILY_LIMIT_{role}"
+    daily_limit = int(get_setting(db, limit_key, "50" if role == "ADMIN" else "10"))
+    redis_key   = f"ai_limit:{current_user.username}:{date.today().isoformat()}"
+
+    try:
+        redis = get_redis()
+        used  = int(redis.get(redis_key) or 0)
+    except Exception:
+        used = 0
+
+    return {
+        "limit":     daily_limit,
+        "used":      used,
+        "remaining": max(0, daily_limit - used) if daily_limit > 0 else -1,
+        "unlimited": daily_limit == 0,
+    }

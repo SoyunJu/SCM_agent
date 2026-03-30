@@ -94,6 +94,12 @@ def upsert_anomaly_log(
     db.add(record)
     db.commit()
     db.refresh(record)
+    try:
+        from app.cache.redis_client import get_redis
+        for k in get_redis().keys("anomaly_list:*"):
+            get_redis().delete(k)
+    except Exception:
+        pass
     return record
 
 
@@ -106,6 +112,7 @@ def get_anomaly_logs(
         page: int = 1,
         page_size: int = 50,
 ) -> dict:
+    from sqlalchemy import func as sqlfunc
     query = db.query(AnomalyLog)
     if is_resolved is not None:
         query = query.filter(AnomalyLog.is_resolved == is_resolved)
@@ -121,10 +128,18 @@ def get_anomaly_logs(
         except ValueError:
             pass
 
-    total = query.count()
-    items = query.order_by(desc(AnomalyLog.detected_at)).offset((page - 1) * page_size).limit(page_size).all()
+    # count + items 를 별도 쿼리로 분리, 필터 재사용
+    total       = query.count()
+    items       = (
+        query
+        .order_by(desc(AnomalyLog.detected_at))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     total_pages = max(1, (total + page_size - 1) // page_size)
-    return {"total": total, "page": page, "page_size": page_size, "total_pages": total_pages, "items": items}
+    return {"total": total, "page": page, "page_size": page_size,
+            "total_pages": total_pages, "items": items}
 
 
 
@@ -438,3 +453,47 @@ def delete_old_daily_sales(db: Session, older_than_days: int = 365) -> int:
     deleted = db.query(DailySales).filter(DailySales.date < cutoff).delete()
     db.commit()
     return deleted
+
+
+def save_alert_history(
+        db: Session,
+        alert_type:   str,
+        channel:      str,
+        message:      str,
+        severity:     str | None = None,
+        product_code: str | None = None,
+        product_name: str | None = None,
+) -> None:
+    from app.db.models import AlertHistory
+    try:
+        db.add(AlertHistory(
+            alert_type   = alert_type,
+            channel      = channel,
+            severity     = severity,
+            product_code = product_code,
+            product_name = product_name,
+            message      = message,
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"[알림이력] 저장 실패(스킵): {e}")
+
+
+def get_alert_history(
+        db: Session,
+        limit:    int  = 50,
+        unread:   bool = False,
+) -> list:
+    from app.db.models import AlertHistory
+    query = db.query(AlertHistory)
+    if unread:
+        query = query.filter(AlertHistory.is_read == False)
+    return query.order_by(AlertHistory.created_at.desc()).limit(limit).all()
+
+
+def mark_alerts_read(db: Session) -> int:
+    from app.db.models import AlertHistory
+    count = db.query(AlertHistory).filter(AlertHistory.is_read == False).update({"is_read": True})
+    db.commit()
+    return count

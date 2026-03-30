@@ -4,7 +4,10 @@ from loguru import logger
 import asyncio
 import json
 
+from sqlalchemy.orm import Session
+
 from app.api.auth_router import get_current_user, TokenData
+from app.db.connection import get_db
 from fastapi import APIRouter, Depends, Query
 from jose import JWTError, jwt
 from app.config import settings
@@ -127,7 +130,6 @@ async def get_unread_count(
 async def test_broadcast(
         current_user: Annotated[TokenData, Depends(get_current_user)],
 ):
-    """SSE 동작 확인용 테스트 알림 발송"""
     await broadcast_alert({
         "type":         "critical_anomaly",
         "severity":     "CRITICAL",
@@ -137,3 +139,42 @@ async def test_broadcast(
         "message":      "[테스트] SSE 알림이 정상 동작합니다.",
     })
     return {"status": "broadcast sent", "subscribers": len(_alert_queues)}
+
+
+@router.get("/history")
+async def get_alert_history(
+        limit:  int  = 50,
+        unread: bool = False,
+        current_user: Annotated[TokenData, Depends(get_current_user)] = None,
+        db: Session = Depends(get_db),
+):
+    """알림 이력 조회"""
+    from app.db.repository import get_alert_history
+    rows = get_alert_history(db, limit=limit, unread=unread)
+    return {
+        "items": [
+            {
+                "id":           r.id,
+                "alert_type":   r.alert_type,
+                "channel":      r.channel,
+                "severity":     r.severity,
+                "product_code": r.product_code,
+                "product_name": r.product_name,
+                "message":      r.message,
+                "is_read":      r.is_read,
+                "created_at":   r.created_at.isoformat(),
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.patch("/history/read-all")
+async def mark_all_read(
+        current_user: Annotated[TokenData, Depends(get_current_user)] = None,
+        db: Session = Depends(get_db),
+):
+    """알림 이력 전체 읽음 처리"""
+    from app.db.repository import mark_alerts_read
+    count = mark_alerts_read(db)
+    return {"marked": count}

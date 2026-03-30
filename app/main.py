@@ -17,7 +17,7 @@ from app.api.settings_router            import router as settings_router
 from app.api.order_router               import router as order_router
 from app.api.admin_router               import router as admin_router
 from app.api.slack_interactions_router  import router as slack_interactions_router
-
+from app.api.supplier_router import router as supplier_router
 from app.api.product_router    import router as product_router
 from app.api.task_router       import router as task_router
 from app.api.scheduler_router  import router as scheduler_router
@@ -123,6 +123,7 @@ app.include_router(admin_router)
 app.include_router(task_router)
 app.include_router(product_router)
 app.include_router(scheduler_router)
+app.include_router(supplier_router)
 
 
 @app.get("/scm/health")

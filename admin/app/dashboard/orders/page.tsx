@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {useEffect, useState} from "react";
 import {
-    getOrders, getProposals, generateProposals,
-    approveProposal, rejectProposal, updateProposal, resetProposal
+    approveProposal,
+    generateProposals,
+    getOrders,
+    getProposals,
+    rejectProposal,
+    resetProposal,
+    updateProposal,
+    createInspection
 } from "@/lib/api";
-import { getDefaultPageSize } from "@/lib/utils";
-import { OrderItem, OrderProposal } from "@/lib/types";
-import {
-    Package, Loader2, RefreshCw, ChevronLeft, ChevronRight,
-    CheckCircle, XCircle, Pencil, Zap,
-} from "lucide-react";
+import {getDefaultPageSize} from "@/lib/utils";
+import {OrderProposal} from "@/lib/types";
+import {ChevronLeft, ChevronRight, Loader2, Package, RefreshCw, Zap,} from "lucide-react";
 
 // --- 주문현황 탭 상수 ------------------------------------------------------------------------------------─
 const STATUS_TABS = ["전체", "발주완료", "입고중", "입고완료", "반품"] as const;
@@ -446,7 +449,7 @@ function ProposalsTab() {
                                                     ? "bg-blue-50 text-blue-500"
                                                     : "bg-gray-50 text-gray-500"
                                         }`}>
-                                            {{SYSTEM: "자동승인", ADMIN: "관리자 결재", SUPERADMIN: "최고관리자 결재"}[(p as any).required_role] ?? "관리자 결재"}
+                                            {({"SYSTEM": "자동승인", "ADMIN": "관리자 결재", "SUPERADMIN": "최고관리자 결재"} as Record<string, string>)[(p as any).required_role] ?? "관리자 결재"}
                                         </span>
                                     )}
                                 </div>
@@ -488,11 +491,20 @@ function ProposalsTab() {
                                         </>
                                     )}
                                     {/* 승인/거절 → 되돌리기 */}
-                                    {(p.status === "APPROVED" || p.status === "REJECTED") && (
+                                    {p.status === "APPROVED" && (
                                         <button
-                                            onClick={() => handleReset(p.id)}
-                                            className="px-2 py-1 rounded text-xs bg-amber-50 text-amber-700 hover:bg-amber-100 transition font-medium"
-                                        >되돌리기</button>
+                                            onClick={async () => {
+                                                try {
+                                                    await createInspection(p.id);
+                                                    alert("입고 검수가 등록되었습니다. 공급업체 탭에서 확인하세요.");
+                                                } catch (e: any) {
+                                                    alert(e?.response?.data?.detail ?? "검수 등록 실패");
+                                                }
+                                            }}
+                                            className="px-2 py-1 rounded text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 transition font-medium"
+                                        >
+                                            검수 등록
+                                        </button>
                                     )}
                                 </div>
                             </td>

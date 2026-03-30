@@ -35,6 +35,7 @@ class OrderService:
             "items": [OrderService._serialize(p) for p in items],
         }
 
+
     @staticmethod
     def get_threshold(db: Session) -> str:
         from app.db.models import SystemSettings

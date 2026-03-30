@@ -129,3 +129,35 @@ export interface AdminUser {
     created_at:    string;
     last_login_at: string | null;
 }
+
+export interface Supplier {
+    id:              number;
+    name:            string;
+    contact:         string | null;
+    email:           string | null;
+    phone:           string | null;
+    lead_time_days:  number;
+    is_active:       boolean;
+    mapped_products: number;
+    on_time_rate:    number | null;
+    avg_delay_days:  number | null;
+    created_at:      string;
+}
+
+export interface ReceivingInspection {
+    id:                number;
+    order_proposal_id: number | null;
+    supplier_id:       number | null;
+    product_code:      string;
+    product_name:      string | null;
+    ordered_qty:       number;
+    received_qty:      number;
+    defect_qty:        number;
+    return_qty:        number;
+    good_qty:          number;
+    status:            "PENDING" | "PARTIAL" | "COMPLETED" | "RETURNED";
+    note:              string | null;
+    inspected_by:      string | null;
+    inspected_at:      string | null;
+    created_at:        string;
+}

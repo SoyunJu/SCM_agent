@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { chatQuery, getChatHistory } from "@/lib/api";
+import { chatQuery, getChatHistory, getAiLimitStatus } from "@/lib/api";
 import { ChatMessage } from "@/lib/types";
 import { Send, Bot, User, Loader2 } from "lucide-react";
 
@@ -25,6 +25,13 @@ export default function ChatPage() {
     const [historyLoading, setHistoryLoading] = useState(true);
     const sessionId               = useRef<string>("");
     const bottomRef               = useRef<HTMLDivElement>(null);
+    const [limitStatus, setLimitStatus] = useState<{limit: number; used: number; remaining: number; unlimited: boolean} | null>(null);
+
+
+    // AI 호툴 limit
+    useEffect(() => {
+        getAiLimitStatus().then((r) => setLimitStatus(r.data)).catch(() => {});
+    }, []);
 
     // 세션 ID 초기화 및 히스토리 로드
     useEffect(() => {
@@ -153,6 +160,14 @@ export default function ChatPage() {
 
             {/* 입력창 */}
             <div className="mt-4 flex gap-3">
+                {limitStatus && !limitStatus.unlimited && (
+                    <div className={`px-4 py-1.5 text-xs text-right ${
+                        limitStatus.remaining === 0 ? "text-red-500" : "text-gray-400"
+                    }`}>
+                        오늘 사용: {limitStatus.used} / {limitStatus.limit}회
+                        {limitStatus.remaining === 0 && " · 한도 초과"}
+                    </div>
+                )}
                 <input
                     type="text"
                     value={input}

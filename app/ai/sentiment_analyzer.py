@@ -94,18 +94,75 @@ def analyze_sales_anomaly_sentiment(
     return result
 
 
+
 def batch_analyze_sales_anomalies(anomalies: list[dict]) -> list[dict]:
+    if not anomalies:
+        return []
 
     logger.info(f"################## 일괄 감성 분석 시작: {len(anomalies)}건 ##################")
-    enriched = []
 
+    # 텍스트 목록 생성
+    texts = []
     for item in anomalies:
-        sentiment = analyze_sales_anomaly_sentiment(
-            product_name=item["product_name"],
-            anomaly_type=item["anomaly_type"],
-            change_rate=item.get("change_rate", 0.0),
-        )
-        enriched.append({**item, "sentiment": sentiment})
+        atype = str(item.get("anomaly_type", ""))
+        name  = item.get("product_name", "")
+        rate  = abs(item.get("change_rate", 0.0))
+        if "SURGE" in atype.upper():
+            texts.append(
+                f"{name} 상품의 판매량이 전주 대비 {rate:.1f}% 급등했습니다. "
+                f"매출 급등으로 재고 소진 가능성이 높습니다."
+            )
+        else:
+            texts.append(
+                f"{name} 상품의 판매량이 전주 대비 {rate:.1f}% 급락했습니다. "
+                f"수요 급락으로 재고 과잉 우려가 있습니다."
+            )
+
+    # 배치 추론 (pipeline이 내부적으로 배치 처리)
+    try:
+        pipe    = get_sentiment_pipeline()
+        results = pipe([t[:512] for t in texts], batch_size=16)
+    except Exception as e:
+        logger.error(f"배치 감성 분석 실패: {e}")
+        # fallback: 건별 처리
+        results = []
+        for t in texts:
+            try:
+                results.append(pipe(t[:512]))
+            except Exception:
+                results.append([[{"label": "LABEL_1", "score": 1.0}]])
+
+    label_map = {
+        "positive": "긍정", "negative": "부정", "neutral": "중립",
+        "LABEL_0":  "부정", "LABEL_1":  "중립", "LABEL_2": "긍정",
+    }
+
+    # 결과 조합
+    enriched = []
+    for item, result in zip(anomalies, results):
+        scores  = result[0] if isinstance(result[0], list) else result
+        top     = max(scores, key=lambda x: x["score"])
+        label_kor = label_map.get(top["label"].lower(),
+                                  label_map.get(top["label"], top["label"]))
+        score   = round(top["score"], 4)
+        atype   = str(item.get("anomaly_type", ""))
+
+        if "SURGE" in atype.upper():
+            interp = (f"판매 급등 신호 ({label_kor}, 확률 {score*100:.1f}%) — "
+                      "!! 긴급 재고 확보 검토 필요 !!")
+        else:
+            interp = (f"판매 급락 신호 ({label_kor}, 확률 {score*100:.1f}%) — "
+                      "!! 프로모션 또는 재고 조정 검토 필요 !!")
+
+        enriched.append({
+            **item,
+            "sentiment": {
+                "label":          label_kor,
+                "score":          score,
+                "interpretation": interp,
+                "all_scores":     scores,
+            },
+        })
 
     logger.info("################## 일괄 감성 분석 완료 ##################")
     return enriched
