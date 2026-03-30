@@ -1,360 +1,294 @@
 # SCM Agent
 
-**쇼핑몰 공급망을 스스로 감지하고, 판단하고, 처리하는 자율 SCM 자동화 플랫폼입니다.**
+**쇼핑몰 공급망 자동화 에이전트** — 재고 이상 탐지부터 AI 발주 처리, 보고서 자동 생성까지 한 사이클로 자동화합니다.
+
+[![Python](https://img.shields.io/badge/Python-3.11-blue)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green)](https://fastapi.tiangolo.com/)
+[![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org/)
+[![Celery](https://img.shields.io/badge/Celery-5.3-brightgreen)](https://docs.celeryq.dev/)
+[![MariaDB](https://img.shields.io/badge/MariaDB-11.3-blue)](https://mariadb.org/)
+[![Test](https://img.shields.io/badge/Tests-134%20passed-brightgreen)](/)
+[![Coverage](https://img.shields.io/badge/Coverage-51%25-yellow)](/)
+
+> Google Sheets 재고·판매 데이터를 실시간 모니터링하고, AI가 이상징후를 탐지해 발주를 자동 처리하는 풀스택 SCM 에이전트입니다.
+> Docker Compose 하나로 전체 시스템을 실행할 수 있습니다.
 
 ---
 
-단순한 대시보드가 아닙니다.
+## 데모
 
-재고가 줄어들기 시작하면 스스로 감지하고, 발주 수량을 계산하고, 결재선에 따라 자동 승인하거나 담당자에게 알립니다. AI 챗봇에게 "긴급 재고 부족 상품 발주해줘"라고 말하면 — 조회, 제안, 승인까지 직접 처리합니다.
+### AI Agent 자율 발주 처리
 
-이상징후 탐지, 수요 예측, 선제 발주, 공급업체 납기 추적, 입고 검수까지 SCM의 반복 업무를 자동화하는 것이 목표입니다.
+자연어로 지시하면 Agent가 Tool을 직접 호출해 DB 상태를 변경합니다. 단순 조회 챗봇이 아닌 **Write Tool**이 동작하는 에이전트입니다.
 
----
-
-## 목차
-
-1. [이 프로젝트가 하는 일](#1-이-프로젝트가-하는-일)
-2. [기술 스택](#2-기술-스택)
-3. [빠른 시작](#3-빠른-시작)
-4. [주요 기능](#4-주요-기능)
-5. [자동화 스케줄](#5-자동화-스케줄)
-6. [AI Agent 기능](#6-ai-agent-기능)
-7. [프로젝트 구조](#7-프로젝트-구조)
-8. [환경변수 설정](#8-환경변수-설정)
-9. [테스트](#9-테스트)
-10. [API 문서](#10-api-문서)
-
----
-
-## 1. 이 프로젝트가 하는 일
-
-Google Sheets를 데이터 소스로 사용하는 쇼핑몰의 공급망 운영을 자동화합니다.
-
-| 무엇을 | 어떻게 |
-|--------|--------|
-| 재고 이상 감지 | 재고 부족·과잉·장기재고를 자동 탐지하고 심각도(CRITICAL/HIGH/MEDIUM/LOW)로 분류 |
-| 판매 이상 감지 | 전주 대비 판매량 50% 이상 급등·급락 자동 감지 |
-| 수요 예측 | 최근 30일 일평균 판매량 기반 14일 수요 예측 및 부족분 계산 |
-| 선제 발주 | 재고 소진 7일 전 자동 발주 제안 생성 — 이상징후 발생 전에 먼저 대응 |
-| 발주 결재선 | 금액 기준 자동승인/ADMIN/SUPERADMIN 3단계 분기 |
-| 공급업체 관리 | 납기 준수율·평균 지연일수 자동 집계, 입고 검수 후 재고 자동 반영 |
-| 일일 보고서 | PDF 생성 + Slack/Email 자동 발송, 감성 분석 포함 |
-| AI 챗봇 | 자연어로 발주 처리, 이상징후 해결, 재고 조회까지 직접 실행 |
-
----
-
-## 2. 기술 스택
-
-**Backend**
-- FastAPI · Python 3.11
-- MariaDB · SQLAlchemy · Redis · Celery · RabbitMQ
-- LangChain · OpenAI GPT · HuggingFace (감성 분석)
-- Google Sheets API · gspread
-
-**Frontend**
-- Next.js 14 (App Router) · TypeScript
-- React Query · Tailwind CSS · Recharts · lucide-react
-
-**Infrastructure**
-- Docker / Docker Compose
-- Celery Beat (스케줄러) · Celery Worker
-- SSE (Server-Sent Events) 실시간 알림
-
----
-
-## 3. 빠른 시작
-
-### 사전 요구사항
-
-- Docker Desktop
-- Google Sheets API 서비스 계정 (JSON 키 파일)
-- OpenAI API Key
-
-### 설치 및 실행
-
-```bash
-# 1. 저장소 클론
-git clone https://github.com/SoyunJu/SCM_agent.git
-cd SCM_agent
-
-# 2. 환경변수 설정
-cp .env.example .env
-# .env 파일에 API 키 및 DB 설정 입력
-
-# 3. Google Sheets 서비스 계정 키 파일 배치
-# credentials.json 파일을 프로젝트 루트에 위치
-
-# 4. 전체 실행
-docker-compose up -d --build
+![AI 챗봇 데모](docs/gifs/ai챗봇.gif)
+```
+입력: "재고 부족한 상품 전부 발주 처리해줘"
+  → get_low_stock Tool 호출 → 재고 부족 상품 목록 조회
+  → approve_anomaly_orders Tool 호출 → 발주 자동 생성 + 즉시 승인
+  → Slack 발주 완료 알림 전송
 ```
 
-접속 주소:
-- 관리자 대시보드: `http://localhost:3001`
-- API 문서 (Swagger): `http://localhost:8000/docs`
-
-### Google Sheets 구조
-
-이 프로젝트는 아래 3개 시트가 있는 Google Spreadsheet를 데이터 소스로 사용합니다.
-
-| 시트명 | 필수 컬럼 |
-|--------|----------|
-| 상품마스터 | 상품코드, 상품명, 카테고리, 안전재고기준 |
-| 일별판매 | 날짜, 상품코드, 판매수량, 매출액, 매입액 |
-| 재고현황 | 상품코드, 현재재고, 입고예정일, 입고예정수량 |
-
 ---
 
-## 4. 주요 기능
+### 이상징후 감지 → 자동 처리 전 사이클
 
-### 이상징후 탐지 및 자동 처리
+이상 감지 → 원인 분석 → 발주 처리 → Slack 승인까지 한 화면에서 완결됩니다.
 
-5가지 이상징후를 자동 감지하고 심각도에 따라 처리합니다.
+![이상징후 자동 처리 데모](docs/gifs/이상징후해결컷.gif)
 
 | 유형 | 조건 | 심각도 |
 |------|------|--------|
-| 재고 부족 (LOW_STOCK) | 1일치 이하 재고 | CRITICAL |
-| 재고 부족 (LOW_STOCK) | 3일치 이하 재고 | HIGH |
-| 재고 부족 (LOW_STOCK) | 7일치 이하 재고 | MEDIUM |
-| 판매 급등 (SALES_SURGE) | 전주 대비 100% 이상 | CRITICAL |
-| 판매 급등 (SALES_SURGE) | 전주 대비 70% 이상 | HIGH |
-| 판매 급락 (SALES_DROP) | 전주 대비 50% 이상 감소 | MEDIUM |
-| 재고 과잉 (OVER_STOCK) | 안전재고 기준 초과 | LOW |
-| 장기 재고 (LONG_TERM_STOCK) | 장기 미판매 | LOW |
-
-LOW_STOCK·SALES_SURGE → 발주 자동 생성 / OVER_STOCK·SALES_DROP → 할인 판매 시트 기록
-
-### 발주 승인 워크플로우
-
-금액 기준으로 결재선이 자동 분기됩니다.
-
-```
-총 발주 금액
-  < ORDER_AUTO_APPROVE_LIMIT (기본 100,000원) → SYSTEM 자동 승인
-  < ORDER_MANAGER_APPROVAL_LIMIT (기본 1,000,000원) → ADMIN 승인 필요
-  그 이상 → SUPERADMIN 승인 필요
-```
-
-Slack 버튼 클릭으로도 승인·거절이 가능하며, 역할 검증이 적용됩니다.
-
-### 선제 발주 (Proactive Ordering)
-
-이상징후가 발생하기 전에 먼저 대응합니다.
-
-```
-매일 01:00 수요 예측 분석 완료
-  → 01:10 안전재고 자동 재계산
-  → 01:15 잔여 재고 7일 이하 예상 상품 자동 발주 제안 생성
-           (기존 미해결 이상징후 상품, 기존 PENDING 발주 상품 중복 제외)
-```
-
-### 공급업체 관리 및 입고 검수
-
-- 공급업체별 납기 준수율·평균 지연일수 자동 집계
-- 발주 승인 후 입고 검수 생성 → 실입고·불량·반품 수량 기록
-- 입고 완료 시 DB 재고 자동 반영 + Google Sheets 재고현황 자동 업데이트
-
-### 실시간 알림 (SSE + Slack + Email)
-
-CRITICAL/HIGH 이상징후 감지 시 묶음 알림을 동시에 전송합니다.
-
-```
-ALERT_CHANNEL 설정에 따라:
-  slack → Slack 채널 블록 메시지
-  email → 담당자 이메일
-  sse   → 브라우저 실시간 알림 (벨 아이콘)
-  both  → 전부 동시 발송
-```
-
-알림 이력은 DB에 저장되어 대시보드에서 조회·읽음 처리가 가능합니다.
+| `LOW_STOCK` | 소진예상 1일 이하 | CRITICAL |
+| `LOW_STOCK` | 소진예상 3일 이하 | HIGH |
+| `LOW_STOCK` | 소진예상 7일 이하 | MEDIUM |
+| `SALES_SURGE` | 전주 대비 +100% 이상 | CRITICAL |
+| `SALES_SURGE` | 전주 대비 +70% 이상 | HIGH |
+| `SALES_DROP` | 전주 대비 -50% 이하 | MEDIUM ~ CRITICAL |
+| `OVER_STOCK` / `LONG_TERM_STOCK` | 과잉·장기 재고 | LOW |
 
 ---
 
-## 5. 자동화 스케줄
+###  보고서 즉시 생성 + Slack 자동 발송
 
-Celery Beat가 아래 스케줄을 자동 실행합니다.
+심각도·카테고리 필터 적용 → HuggingFace 감성 분석 + GPT 인사이트 → PDF 생성 → Slack 발송까지 자동 파이프라인
 
-| 스케줄명 | 실행 시각 | 동작 |
-|----------|----------|------|
-| daily-report | 매일 00:00 | 일일 보고서 생성 + PDF + Slack/Email 발송 |
-| demand-forecast | 매일 01:00 | 14일 수요 예측 분석 |
-| safety-stock-recalc | 매일 01:10 | 안전재고 자동 재계산 |
-| proactive-order | 매일 01:15 | 선제 발주 제안 생성 |
-| turnover-analysis | 매일 01:30 | 재고 회전율 분석 |
-| cleanup-data | 매일 02:00 | 오래된 데이터 정리 |
-| abc-analysis | 매일 02:30 | ABC 등급 분석 |
-| sync-sheets-to-db | 15분마다 | Google Sheets → DB 증분 동기화 |
-| daily-crawler | 매일 23:00 | 크롤러 실행 |
-
-모든 스케줄은 관리자 대시보드에서 즉시 실행이 가능합니다.
+![보고서 슬랙 데모](docs/gifs/보고서슬랙.gif)
 
 ---
 
-## 6. AI Agent 기능
+### 발주 관리 — 총액 기준 자동 결재선 설정
 
-LangChain ReAct Agent 기반으로 자연어 명령을 실제 작업으로 처리합니다.
+총액에 따라 결재선이 자동 설정되고, Slack 인터랙션 버튼으로 승인/거절 처리가 가능합니다.
 
-### Read Tools (조회)
+![발주 관리 데모](docs/gifs/발주관리.gif)
 
-| Tool | 동작 |
+| 총액 기준 | 결재선 |
+|-----------|--------|
+| 10만원 미만 | 자동 승인 (SYSTEM) |
+| 10만원 ~ 100만원 | 관리자 결재 (ADMIN) |
+| 100만원 이상 | 최고관리자 결재 (SUPERADMIN) |
+
+---
+
+## 기술 스택
+
+### 백엔드
+| 기술 | 역할 |
 |------|------|
-| `get_low_stock` | 재고 부족 상품 목록 조회 |
-| `get_top_sales_tool` | 최근 N일 판매 상위 상품 조회 |
-| `get_stock_by_product` | 상품별 현재 재고 조회 |
-| `get_sales_trend_tool` | 상품별 판매 트렌드 조회 |
-| `get_anomalies` | 이상징후 목록 조회 (id 포함) |
-| `get_demand_forecast_tool` | 14일 수요 예측 결과 조회 |
-| `generate_report` | 일일 보고서 즉시 생성 트리거 |
+| **FastAPI** | REST API, SSE 실시간 알림 |
+| **Celery + RabbitMQ** | 비동기 태스크 큐 (분석·보고서·발주) |
+| **Celery Beat** | 주기적 자동 실행 (동기화·이상징후 탐지) |
+| **MariaDB** | 주 데이터 저장소 (SoT) |
+| **Redis** | API 캐시, Celery result backend, 분산락 |
+| **SQLAlchemy** | ORM |
+| **pandas** | 재고·판매 데이터 분석 |
+| **HuggingFace Transformers** | 판매 이상징후 감성 분석 |
+| **xhtml2pdf** | PDF 보고서 렌더링 |
+| **gspread** | Google Sheets API 연동 |
 
-### Write Tools (실행)
-
-| Tool | 동작 |
+### 프론트엔드
+| 기술 | 역할 |
 |------|------|
-| `approve_anomaly_orders` | 이상징후 기반 발주 자동 생성 + 즉시 승인 |
-| `resolve_anomaly_tool` | 이상징후 해결 처리 |
-| `generate_order_proposals` | 발주 제안 생성 (승인 대기) |
+| **Next.js 14** (App Router) | 관리자 대시보드 |
+| **TypeScript** | 타입 안전성 |
+| **React Query** | 서버 상태 관리·캐시 무효화 |
+| **Recharts** | 판매·재고·이상징후 차트 |
+| **Tailwind CSS** | UI 스타일링 |
 
-**대화 예시:**
-
+### 인프라
 ```
-사용자: "긴급 재고 부족 상품 전부 발주해줘"
-Agent:  → get_anomalies("unresolved") 호출
-        → approve_anomaly_orders("") 호출
-        → "LOW_STOCK 상품 7건 발주 자동 승인 완료했습니다" 응답
-
-사용자: "다음 주 재고 위험 상품 알려줘"
-Agent:  → get_demand_forecast_tool() 호출
-        → "14일 내 재고 부족 예상 35건 (부족분 큰 순): ..." 응답
-```
-
-역할별 일일 사용 한도가 적용됩니다 (SUPERADMIN 무제한 / ADMIN 50회 / READONLY 10회).
-
----
-
-## 7. 프로젝트 구조
-
-```
-SCM_agent/
-├── app/                          # FastAPI 백엔드
-│   ├── api/                      # 라우터 (auth, sheets, orders, alerts, suppliers...)
-│   ├── ai/                       # LangChain Agent, Tools, 감성 분석
-│   ├── analyzer/                 # 재고·판매·수요·회전율·ABC 분석기
-│   ├── celery_app/               # Celery Tasks, Beat Schedule
-│   ├── crawler/                  # 데이터 크롤러 및 Excel 파서
-│   ├── db/                       # SQLAlchemy 모델, Repository, Sync
-│   ├── notifier/                 # Slack, Email, SSE 알림
-│   ├── report/                   # PDF 보고서 생성
-│   ├── scheduler/                # Jobs (일일 보고서 메인 로직)
-│   ├── services/                 # 비즈니스 서비스 레이어
-│   └── sheets/                   # Google Sheets Reader/Writer
-│
-├── admin/                        # Next.js 14 프론트엔드
-│   ├── app/dashboard/            # 대시보드 페이지들
-│   │   ├── anomalies/            # 이상징후 탭
-│   │   ├── orders/               # 발주 관리 탭
-│   │   ├── suppliers/            # 공급업체 탭
-│   │   ├── stats/                # 통계 탭 (수요예측, 회전율, ABC)
-│   │   ├── reports/              # 보고서 탭
-│   │   ├── sheets/               # 데이터 시트 탭
-│   │   ├── scheduler/            # 스케줄 관리 탭
-│   │   ├── chat/                 # AI 챗봇 탭
-│   │   └── settings/             # 설정 탭
-│   └── lib/                      # API 클라이언트, Types, Hooks
-│
-├── prompts/                      # Agent 프롬프트 템플릿
-├── tests/                        # pytest 테스트
-└── docker-compose.yml
+Docker Compose
+├── scm_agent          FastAPI API 서버 (:8000)
+├── scm_admin          Next.js 대시보드 (:3001)
+├── scm_celery_worker  Celery Worker
+├── scm_celery_beat    Celery Beat 스케줄러
+├── scm_db             MariaDB 11.3 (:3307)
+├── scm_redis          Redis 7 (:6379)
+└── scm_rabbitmq       RabbitMQ 3.12 (:5672 / 관리 :15672)
 ```
 
 ---
 
-## 8. 환경변수 설정
+## 아키텍처
+```
+Google Sheets
+     │  gspread (양방향 동기화)
+     ▼
+┌─────────────────────────────────────────┐
+│              FastAPI Server             │
+│                                         │
+│  Router → Service Layer → Repository   │
+│     ↓                                   │
+│  SSE 실시간 알림 (이상징후·보고서 완료)    │
+└────────────────┬────────────────────────┘
+                 │ Celery Task
+        ┌────────▼────────┐
+        │  RabbitMQ Queue │
+        │  Celery Worker  │◄── Beat (주기 스케줄)
+        └────────┬────────┘
+                 │
+     ┌───────────┼───────────┐
+     ▼           ▼           ▼
+  MariaDB      Redis       Slack / Email
+  (SoT)     (캐시·락)      (알림 발송)
+```
 
+---
+
+## 주요 설계 포인트
+
+### MariaDB SoT 전환
+Google Sheets를 직접 SoT로 사용하면 API 레이트 리밋·데이터 일관성 문제가 발생합니다. MariaDB를 SoT로 전환하고 Sheets는 입력 인터페이스로만 활용합니다. DB ↔ Sheets 양방향 동기화로 양쪽 데이터를 동기화 상태로 유지합니다.
+
+### 이중 캐시 전략
+Redis(TTL 120분) + MariaDB `analysis_cache` 2계층 캐시를 구성합니다. Redis miss 시 DB에서 워밍업하고, 동기화 완료 시 분석 캐시를 자동 무효화합니다. 분석 태스크가 캐시 히트로 즉시 반환되므로 반복 호출 비용이 없습니다.
+
+### Celery 분산락
+Beat 주기 동기화와 수동 트리거가 동시에 실행되는 race condition을 Redis 분산락(`SET NX EX`)으로 방지합니다. 이미 동기화가 실행 중이면 후발 태스크는 즉시 skip 처리됩니다.
+
+### InnoDB REPEATABLE READ 활용
+보고서 생성(~15초)과 동기화가 동시에 실행될 때, InnoDB의 REPEATABLE READ 격리 수준으로 보고서가 시작 시점 스냅샷 기준으로 일관성 있게 생성됩니다. 별도의 트랜잭션 잠금 없이 데이터 일관성을 보장합니다.
+
+### upsert 중복 방지
+이상징후 upsert 시 날짜 기반이 아닌 `product_code + anomaly_type + is_resolved=False` 상태 기반 유니크 키를 사용합니다. 같은 이상징후가 반복 감지돼도 중복 insert 없이 기존 레코드를 업데이트합니다.
+
+---
+
+## 빠른 시작
+
+### 1. 저장소 클론
+```bash
+git clone https://github.com/your-repo/scm-agent.git
+cd scm-agent
+```
+
+### 2. 환경 변수 설정
+```bash
+cp .env.example .env
+```
+
+`.env` 필수 항목:
 ```env
-# DB
-DB_HOST=db
-DB_PORT=3306
-DB_NAME=scm_db
-DB_USER=scm_user
-DB_PASSWORD=your_password
-DB_ROOT_PASSWORD=your_root_password
-
-# Redis / RabbitMQ
-REDIS_URL=redis://redis:6379/0
-RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
-
 # Google Sheets
+GOOGLE_CREDENTIALS_JSON={"type":"service_account",...}
 SPREADSHEET_ID=your_spreadsheet_id
-GOOGLE_CREDENTIALS_PATH=credentials.json
-
-# OpenAI
-OPENAI_API_KEY=your_openai_key
-OPENAI_MODEL=gpt-4o-mini
 
 # Slack
-SLACK_BOT_TOKEN=xoxb-your-token
-SLACK_SIGNING_SECRET=your_signing_secret
-SLACK_CHANNEL_ID=your_channel_id
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_CHANNEL_ID=C...
 
-# Email
+# DB
+MARIADB_ROOT_PASSWORD=yourpassword
+MARIADB_DATABASE=scm_db
+
+# AI (선택 — 없으면 인사이트 생성 스킵)
+OPENAI_API_KEY=sk-...
+
+# 이메일 (선택)
 SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASSWORD=your_app_password
-
-# JWT
-JWT_SECRET_KEY=your_secret_key
-
-# 발주 결재선 (선택 — 기본값 있음)
-ORDER_AUTO_APPROVE_LIMIT=100000
-ORDER_MANAGER_APPROVAL_LIMIT=1000000
-
-# 선제 발주 임계값 (선택)
-PROACTIVE_ORDER_DAYS=7
+SMTP_USER=...
+ALERT_EMAIL_TO=admin@example.com
 ```
 
----
-
-## 9. 테스트
-
+### 3. 실행
 ```bash
-# 전체 테스트 실행
-docker exec scm_agent pytest tests/ -v
-
-# 커버리지 포함
-docker exec scm_agent pytest tests/ --cov=app --cov-report=term-missing
+docker-compose up -d
 ```
 
-SQLite in-memory + StaticPool으로 MariaDB 없이 테스트가 실행됩니다.
+### 4. 접속
+
+| 서비스 | 주소 |
+|--------|------|
+| 관리자 대시보드 | http://localhost:3001 |
+| API 문서 (Swagger) | http://localhost:8000/docs |
+| RabbitMQ 관리 | http://localhost:15672 |
+
+### 5. 초기 데이터 동기화
+
+대시보드 로그인 후 **스케줄 관리 → Sheets→DB 동기화 → 즉시 실행**
 
 ---
 
-## 10. API 문서
-
-서버 실행 후 Swagger UI에서 전체 API를 확인할 수 있습니다.
-
+## 프로젝트 구조
 ```
-http://localhost:8000/docs
+app/
+├── api/                FastAPI 라우터
+├── services/           서비스 레이어
+│   ├── sync_service.py      Sheets ↔ DB 동기화
+│   ├── anomaly_service.py   이상징후 조회·자동처리
+│   ├── order_service.py     발주 생성·승인·결재
+│   ├── report_service.py    보고서 이력 관리
+│   └── slack_service.py     Slack 메시지 발송
+├── db/
+│   ├── models.py       SQLAlchemy ORM (15개 테이블)
+│   ├── repository.py   CRUD 함수
+│   └── sync.py         bulk upsert (ON DUPLICATE KEY UPDATE)
+├── analyzer/
+│   ├── stock_analyzer.py     재고 이상징후 탐지
+│   ├── sales_analyzer.py     판매 급등·급락 탐지
+│   ├── demand_forecaster.py  수요 예측 (MA7 기반)
+│   ├── abc_analyzer.py       ABC 등급 분석
+│   └── turnover_analyzer.py  재고 회전율 분석
+├── ai/
+│   ├── anomaly_detector.py   이상징후 AI 종합 탐지
+│   ├── order_agent.py        발주 수량 제안 생성
+│   └── sentiment_analyzer.py HuggingFace 감성 분석
+├── celery_app/
+│   └── tasks.py        분석·동기화·보고서·선제발주 태스크
+├── scheduler/
+│   └── jobs.py         보고서 생성 7단계 파이프라인
+├── report/
+│   ├── template.py     HTML 보고서 템플릿
+│   └── pdf_generator.py xhtml2pdf 렌더링
+└── sheets/
+    ├── reader.py       Sheets 읽기 (Redis 캐시 + 재시도)
+    └── writer.py       Sheets 쓰기 (threading.Lock)
+
+admin/                  Next.js 14 App Router
+└── app/dashboard/
+    ├── page.tsx             대시보드 (KPI 카드·차트)
+    ├── anomalies/           이상징후 목록·자동처리 모달
+    ├── reports/             보고서 이력·PDF 미리보기
+    ├── stats/               ABC·수요예측·회전율 통계
+    ├── sheets/              원본 데이터 조회
+    ├── orders/              발주 관리·결재
+    ├── chat/                AI 챗봇 (Tool Use Agent)
+    └── settings/            시스템 설정·카테고리 리드타임
+
+tests/                  pytest 통합 테스트
 ```
-
-주요 엔드포인트:
-
-| 그룹 | 경로 | 설명 |
-|------|------|------|
-| 인증 | `POST /scm/auth/login` | JWT 로그인 |
-| 이상징후 | `GET /scm/anomalies` | 이상징후 목록 조회 |
-| 발주 | `POST /scm/orders/proposals/generate` | 발주 제안 생성 |
-| 발주 | `PATCH /scm/orders/proposals/{id}/approve` | 발주 승인 |
-| 공급업체 | `GET /scm/suppliers` | 공급업체 목록 |
-| 공급업체 | `PATCH /scm/suppliers/inspections/{id}/complete` | 입고 검수 완료 |
-| 보고서 | `POST /scm/report/run` | 보고서 즉시 생성 |
-| 스케줄 | `POST /scm/scheduler/trigger-proactive-order` | 선제 발주 즉시 실행 |
-| 챗봇 | `POST /scm/chat/query` | AI Agent 질의 |
-| 알림 | `GET /scm/alerts/stream` | SSE 스트림 연결 |
 
 ---
 
-## 라이선스
+## 테스트
+```bash
+# 전체 테스트 (MariaDB 없이 SQLite in-memory로 실행)
+pytest
 
-MIT License
-````
+# 커버리지 리포트
+pytest --cov=app --cov-report=term-missing
+```
+```
+134 passed · Coverage 51%
+SQLite in-memory + StaticPool — 외부 DB 없이 CI 실행 가능
+```
+
+---
+
+## API 주요 엔드포인트
+
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| `GET` | `/scm/anomalies` | 이상징후 목록 조회 |
+| `POST` | `/scm/anomalies/{id}/auto-resolve` | 이상징후 자동 처리 |
+| `POST` | `/scm/orders/generate` | 발주 제안 생성 |
+| `PATCH` | `/scm/orders/{id}/approve` | 발주 승인 |
+| `POST` | `/scm/reports/trigger` | 보고서 즉시 생성 |
+| `GET` | `/scm/sheets/stats/demand` | 수요 예측 통계 |
+| `GET` | `/scm/sheets/stats/abc` | ABC 분석 통계 |
+| `POST` | `/scm/sheets/sync` | Sheets→DB 동기화 트리거 |
+| `POST` | `/scm/chat` | AI 챗봇 (Tool Use) |
+
+전체 API 명세: `http://localhost:8000/docs`
+
