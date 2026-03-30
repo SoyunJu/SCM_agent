@@ -335,15 +335,17 @@ export const getMyAdminProfile = () =>
 export const updateMyProfile = (data: { email?: string; slack_user_id?: string }) =>
     apiClient.put("/scm/admin/me/profile", data);
 
-export const getDemandForecast = (forecastDays = 14, page = 1, pageSize = 50, category?: string) => {
+export const getDemandForecast = (forecastDays = 14, page = 1, pageSize = 50, category?: string, search?: string) => {
     const params = new URLSearchParams({ forecast_days: String(forecastDays), page: String(page), page_size: String(pageSize) });
     if (category) params.append("category", category);
+    if (search)   params.append("search",   search);
     return apiClient.get(`/scm/sheets/stats/demand?${params}`);
 };
 
-export const getTurnoverStats = (days = 30, page = 1, pageSize = 50, category?: string) => {
+export const getTurnoverStats = (days = 30, page = 1, pageSize = 50, category?: string, search?: string) => {
     const params = new URLSearchParams({ days: String(days), page: String(page), page_size: String(pageSize) });
     if (category) params.append("category", category);
+    if (search)   params.append("search",   search);
     return apiClient.get(`/scm/sheets/stats/turnover?${params}`);
 };
 

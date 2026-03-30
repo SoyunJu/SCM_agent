@@ -157,7 +157,7 @@ class SheetService:
                 "카테고리":     p.category or "",
                 "안전재고기준": p.safety_stock,
                 "lead_time_days": p.lead_time_days,
-                "status":       p.status.value.lower(),
+                "status":       p.status.value.upper(),
             }
             for p in result["items"]
         ]
@@ -557,6 +557,7 @@ class SheetService:
             db: Session,
             forecast_days: int, page: int, page_size: int,
             category: str | None,
+            search: str | None = None,
     ) -> dict:
         import json
         from app.db.sync import make_params_hash
@@ -569,6 +570,9 @@ class SheetService:
 
         def _paginate(all_items: list) -> dict:
             items = all_items if not category else [i for i in all_items if i.get("category") == category]
+            if search:
+                s = search.lower()
+                items = [i for i in items if s in str(i.get("product_code", "")).lower() or s in str(i.get("product_name", "")).lower()]
             total       = len(items)
             total_pages = max(1, (total + page_size - 1) // page_size)
             start       = (page - 1) * page_size
@@ -582,6 +586,7 @@ class SheetService:
                 "items":         items[start:start + page_size],
                 "from_cache":    True,
             }
+
         # Redis HIT
         cached = cache_get(cache_key)
         if cached is not None:
@@ -609,6 +614,7 @@ class SheetService:
             db: Session,
             days: int, page: int, page_size: int,
             category: str | None,
+            search: str | None = None,
     ) -> dict:
         import json
         from app.db.sync import make_params_hash
@@ -621,6 +627,9 @@ class SheetService:
 
         def _paginate(all_items: list) -> dict:
             items       = all_items if not category else [i for i in all_items if i.get("카테고리") == category]
+            if search:
+                s = search.lower()
+                items = [i for i in items if s in str(i.get("상품코드", "")).lower() or s in str(i.get("상품명", "")).lower()]
             total       = len(items)
             total_pages = max(1, (total + page_size - 1) // page_size)
             start       = (page - 1) * page_size
@@ -681,5 +690,5 @@ class SheetService:
             "name":         product.name,
             "category":     product.category,
             "safety_stock": product.safety_stock,
-            "status":       product.status.value.lower(),
+            "status":       product.status.value.upper(),
         }

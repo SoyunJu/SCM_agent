@@ -178,9 +178,10 @@ async def get_demand_forecast(
         db: Session = Depends(get_db),
         forecast_days: int = 14, page: int = 1,
         page_size: int = 50, category: str | None = None,
+        search: str | None = None,
 ):
     try:
-        return SheetService.get_demand_stats(db, forecast_days, page, page_size, category)
+        return SheetService.get_demand_stats(db, forecast_days, page, page_size, category, search)
     except Exception as e:
         logger.error(f"수요예측 조회 실패: {e}")
         return {"total": 0, "items": []}
@@ -192,9 +193,10 @@ async def get_turnover_stats(
         db: Session = Depends(get_db),
         days: int = 30, page: int = 1,
         page_size: int = 50, category: str | None = None,
+        search: str | None = None,
 ):
     try:
-        return SheetService.get_turnover_stats(db, days, page, page_size, category)
+        return SheetService.get_turnover_stats(db, days, page, page_size, category, search)
     except Exception as e:
         logger.error(f"회전율 조회 실패: {e}")
         return {"total": 0, "items": []}
