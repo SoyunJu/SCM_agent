@@ -7,6 +7,7 @@ import json
 from sqlalchemy.orm import Session
 
 from app.api.auth_router import get_current_user, TokenData
+from app.db.connection import get_db
 from fastapi import APIRouter, Depends, Query
 from jose import JWTError, jwt
 from app.config import settings
