@@ -51,7 +51,7 @@ export default function DashboardPage() {
         setLoading(true);
         try {
             const [anomRes, histRes, statsRes, stockRes] = await Promise.all([
-                getAnomalies(false, 10),
+                getAnomalies(false, 200),
                 getReportHistory(5),
                 getSalesStats(period),
                 getStockStats(),
@@ -122,19 +122,25 @@ export default function DashboardPage() {
     };
 
     const lastRun = history[0];
+    const severityCounts = anomalies.reduce<Record<string, number>>((acc, a) => {
+        const sev = (typeof a.severity === "string" ? a.severity : (a.severity as any)?.value ?? "").toUpperCase();
+        acc[sev] = (acc[sev] ?? 0) + 1;
+        return acc;
+    }, {});
+
     const severityCards = [
-        { label: "미해결 이상 징후", value: stockStats?.total_anomalies ?? anomalies.length, icon: AlertTriangle, color: "text-orange-500" },
-        { label: "긴급",            value: stockStats?.severity_counts?.CRITICAL ?? 0,       icon: Package,       color: "text-red-500"    },
-        { label: "높음",            value: stockStats?.severity_counts?.HIGH ?? 0,            icon: TrendingUp,    color: "text-orange-400" },
+        { label: "미해결 이상 징후", value: anomalies.length,           icon: AlertTriangle, color: "text-orange-500" },
+        { label: "긴급",            value: severityCounts.CRITICAL ?? 0, icon: Package,       color: "text-red-500"    },
+        { label: "높음",            value: severityCounts.HIGH ?? 0,     icon: TrendingUp,    color: "text-orange-400" },
         { label: "최근 보고서",
             value: lastRun?.status === "success" ? "성공" : lastRun?.status ?? "-",
             icon: FileText, color: "text-blue-500" },
     ];
     const severityBarData = [
-        { name: "긴급", count: stockStats?.severity_counts?.CRITICAL ?? 0 },
-        { name: "높음", count: stockStats?.severity_counts?.HIGH ?? 0 },
-        { name: "보통", count: stockStats?.severity_counts?.MEDIUM ?? 0 },
-        { name: "낮음", count: stockStats?.severity_counts?.LOW ?? 0 },
+        { name: "긴급", count: severityCounts.CRITICAL ?? 0 },
+        { name: "높음", count: severityCounts.HIGH ?? 0 },
+        { name: "보통", count: severityCounts.MEDIUM ?? 0 },
+        { name: "낮음", count: severityCounts.LOW ?? 0 },
     ];
 
     return (

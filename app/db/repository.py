@@ -74,11 +74,13 @@ def upsert_anomaly_log(
         ).first()
 
     if existing:
+        existing.product_name        = product_name
         existing.severity            = severity
         existing.category            = category
         existing.current_stock       = current_stock
         existing.daily_avg_sales     = daily_avg_sales
         existing.days_until_stockout = days_until_stockout
+        existing.detected_at         = datetime.now()
         db.commit()
         db.refresh(existing)
         return existing
@@ -497,3 +499,52 @@ def mark_alerts_read(db: Session) -> int:
     count = db.query(AlertHistory).filter(AlertHistory.is_read == False).update({"is_read": True})
     db.commit()
     return count
+
+
+# --- CategoryLeadTime ---
+def get_category_lead_times(db: Session) -> list:
+    from app.db.models import CategoryLeadTime
+    return db.query(CategoryLeadTime).order_by(CategoryLeadTime.category).all()
+
+def upsert_category_lead_time(db: Session, category: str, lead_time_days: int):
+    from app.db.models import CategoryLeadTime
+    row = db.query(CategoryLeadTime).filter(CategoryLeadTime.category == category).first()
+    if row:
+        row.lead_time_days = lead_time_days
+    else:
+        row = CategoryLeadTime(category=category, lead_time_days=lead_time_days)
+        db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+def delete_category_lead_time(db: Session, category: str) -> bool:
+    from app.db.models import CategoryLeadTime
+    row = db.query(CategoryLeadTime).filter(CategoryLeadTime.category == category).first()
+    if not row:
+        return False
+    db.delete(row)
+    db.commit()
+    return True
+
+def get_lead_time_for_product(db: Session, product_code: str) -> int:
+    """상품별 > 카테고리별 > 전역 순으로 리드타임 반환"""
+    from app.db.models import Product, CategoryLeadTime
+    from app.db.repository import get_setting
+
+    product = db.query(Product).filter(Product.code == product_code).first()
+
+    # 1순위: 상품별
+    if product and product.lead_time_days:
+        return product.lead_time_days
+
+    # 2순위: 카테고리별
+    if product and product.category:
+        cat_row = db.query(CategoryLeadTime).filter(
+            CategoryLeadTime.category == product.category
+        ).first()
+        if cat_row:
+            return cat_row.lead_time_days
+
+    # 3순위: 전역 기본값
+    return int(get_setting(db, "DEFAULT_LEAD_TIME_DAYS", "14"))

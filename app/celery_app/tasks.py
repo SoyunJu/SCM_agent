@@ -103,35 +103,6 @@ def _build_dataframes(db) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     return df_master, df_sales, df_stock
 
 
-def _get_cached(cache_key: str, analysis_type: str, params_hash: str, db):
-    from app.db.repository import get_analysis_cache
-
-    redis_hit = cache_get(cache_key)
-    if redis_hit is not None:
-        logger.debug(f"[{analysis_type}] Redis 캐시 히트")
-        return redis_hit
-
-    db_hit = get_analysis_cache(db, analysis_type, params_hash, max_age_minutes=_get_cache_max_age(db))
-    if db_hit:
-        items = json.loads(db_hit.result_json).get("items", [])
-        cache_set(cache_key, items, ttl=_get_cache_ttl(db))
-        logger.debug(f"[{analysis_type}] DB 캐시 히트 → Redis 워밍업")
-        return items
-
-    return None
-
-
-def _store_cache(cache_key: str, analysis_type: str, params_hash: str, items: list, db) -> None:
-    from app.db.repository import upsert_analysis_cache
-
-    payload = json.dumps({"items": items}, ensure_ascii=False, default=str)
-    try:
-        upsert_analysis_cache(db, analysis_type, params_hash, payload)
-    except Exception as exc:
-        logger.warning(f"[{analysis_type}] DB 캐시 저장 실패 (Redis만 유지): {exc}")
-    cache_set(cache_key, items, ttl=_get_cache_ttl(db))
-
-
 
 # --- 분석 ---
 

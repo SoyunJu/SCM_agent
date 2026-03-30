@@ -169,6 +169,9 @@ export const triggerProactiveOrder = () =>
 export const triggerSafetyStockRecalc = () =>
     apiClient.post("/scm/scheduler/trigger-safety-stock-recalc");
 
+export const syncDbToSheets = () =>
+    apiClient.post("/scm/scheduler/sync-db-to-sheets");
+
 // --- Sheets ---
 export const getSheetCategories = () =>
     apiClient.get("/scm/sheets/categories");
@@ -332,15 +335,17 @@ export const getMyAdminProfile = () =>
 export const updateMyProfile = (data: { email?: string; slack_user_id?: string }) =>
     apiClient.put("/scm/admin/me/profile", data);
 
-export const getDemandForecast = (forecastDays = 14, page = 1, pageSize = 50, category?: string) => {
+export const getDemandForecast = (forecastDays = 14, page = 1, pageSize = 50, category?: string, search?: string) => {
     const params = new URLSearchParams({ forecast_days: String(forecastDays), page: String(page), page_size: String(pageSize) });
     if (category) params.append("category", category);
+    if (search)   params.append("search",   search);
     return apiClient.get(`/scm/sheets/stats/demand?${params}`);
 };
 
-export const getTurnoverStats = (days = 30, page = 1, pageSize = 50, category?: string) => {
+export const getTurnoverStats = (days = 30, page = 1, pageSize = 50, category?: string, search?: string) => {
     const params = new URLSearchParams({ days: String(days), page: String(page), page_size: String(pageSize) });
     if (category) params.append("category", category);
+    if (search)   params.append("search",   search);
     return apiClient.get(`/scm/sheets/stats/turnover?${params}`);
 };
 
@@ -415,3 +420,13 @@ export const markAlertsRead = () =>
 // --- AI Limit ---
 export const getAiLimitStatus = () =>
     apiClient.get("/scm/chat/limit-status");
+
+// --- 리드 타임 ---
+export const getCategoryLeadTimes = () =>
+    apiClient.get("/scm/settings/category-lead-times");
+
+export const upsertCategoryLeadTime = (category: string, lead_time_days: number) =>
+    apiClient.put("/scm/settings/category-lead-times", { category, lead_time_days });
+
+export const deleteCategoryLeadTime = (category: string) =>
+    apiClient.delete(`/scm/settings/category-lead-times/${encodeURIComponent(category)}`);

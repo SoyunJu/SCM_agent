@@ -36,11 +36,11 @@ export default function ChatPage() {
     // 세션 ID 초기화 및 히스토리 로드
     useEffect(() => {
         const initSession = async () => {
-            // localStorage에서 세션 ID 가져오거나 새로 생성
-            let id = localStorage.getItem("scm_chat_session_id");
+            const username = localStorage.getItem("username") || "anonymous";
+            let id = localStorage.getItem(`scm_chat_session_id_${username}`);
             if (!id) {
-                id = `session_${Date.now()}`;
-                localStorage.setItem("scm_chat_session_id", id);
+                id = `session_${username}_${Date.now()}`;
+                localStorage.setItem(`scm_chat_session_id_${username}`, id);
             }
             sessionId.current = id;
 

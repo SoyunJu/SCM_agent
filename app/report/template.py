@@ -44,21 +44,21 @@ SEVERITY_KOR = {
     "CHECK":    "확인",
 }
 SEVERITY_BADGE_STYLE = {
-    "CRITICAL": "background:#dc2626;color:#ffffff;font-weight:bold;",
-    "HIGH":     "background:#ea580c;color:#ffffff;font-weight:bold;",
-    "MEDIUM":   "background:#d97706;color:#ffffff;",
-    "LOW":      "background:#16a34a;color:#ffffff;",
-    "CHECK":    "background:#0284c7;color:#ffffff;",
+    "CRITICAL": "background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5;font-weight:600;",
+    "HIGH": "background:#fff7ed;color:#c2410c;border:1px solid #fdba74;font-weight:600;",
+    "MEDIUM": "background:#fefce8;color:#a16207;border:1px solid #fde047;",
+    "LOW": "background:#f0fdf4;color:#15803d;border:1px solid #86efac;",
+    "CHECK": "background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd;",
 }
 
 
 def _severity_badge(raw: object) -> str:
     key   = _str_val(raw).upper()
     label = SEVERITY_KOR.get(key, key)
-    style = SEVERITY_BADGE_STYLE.get(key, "background:#6b7280;color:#ffffff;")
+    style = SEVERITY_BADGE_STYLE.get(key, "background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;")
     return (
-        f'<span style="display:inline-block;padding:2px 8px;border-radius:4px;'
-        f'font-size:10px;{style}">{label}</span>'
+        f'<span style="display:inline-block;padding:2px 10px;border-radius:99px;'
+        f'font-size:10px;letter-spacing:0.2px;{style}">{label}</span>'
     )
 
 
@@ -172,31 +172,32 @@ def build_daily_report_html(
 
   /* ── 헤더 ── */
   .report-header {{
-    background: #1e3a5f;
+    background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
     color: #ffffff;
-    padding: 18px 22px 14px 22px;
+    padding: 16px 22px;
     margin-bottom: 16px;
-    border-radius: 6px;
+    border-radius: 8px;
   }}
   .report-title {{
-    font-size: 17px;
-    font-weight: bold;
-    letter-spacing: -0.3px;
-    margin-bottom: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
     color: #ffffff;
   }}
   .report-meta {{
-    font-size: 11px;
-    color: #cbd5e1;
+    font-size: 10px;
+    color: #bfdbfe;
   }}
 
   /* ── 위험도 강조 블록 ── */
-  .risk-block {{
-    display: inline-block;
+    .risk-block {{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     margin-top: 10px;
-    padding: 8px 18px;
-    border-radius: 6px;
-    border: 2px solid {risk_border};
+    padding: 5px 14px;
+    border-radius: 99px;
+    border: 1.5px solid {risk_border};
     background: {risk_bg};
   }}
   .risk-label-sm {{
@@ -222,11 +223,13 @@ def build_daily_report_html(
   .kpi-table td {{
     width: 25%;
     border: 1px solid #e2e8f0;
-    border-radius: 4px;
-    padding: 10px 6px;
+    border-top: 3px solid #3b82f6;
+    border-radius: 0 0 6px 6px;
+    padding: 12px 6px 10px 6px;
     text-align: center;
     vertical-align: middle;
-    background: #f8fafc;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   }}
   .kpi-num {{
     font-size: 22px;
@@ -247,13 +250,15 @@ def build_daily_report_html(
 
   /* ── 섹션 헤더 ── */
   .section-title {{
-    font-size: 12px;
-    font-weight: bold;
-    color: #ffffff;
-    background: #334155;
-    padding: 6px 10px;
-    margin: 16px 0 8px 0;
-    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #334155;
+    border-left: 3px solid #3b82f6;
+    padding: 4px 0 4px 10px;
+    margin: 18px 0 8px 0;
+    background: transparent;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
   }}
 
   /* ── 요약 박스 ── */
@@ -297,8 +302,10 @@ def build_daily_report_html(
     margin-bottom: 4px;
   }}
   table.data-table th {{
-    background: #334155;
-    color: #f1f5f9;
+    background: #f8fafc;
+    color: #475569;
+    border-bottom: 2px solid #e2e8f0;
+    border-top: 1px solid #e2e8f0;
     padding: 6px 7px;
     text-align: left;
     font-size: 10px;
@@ -321,12 +328,28 @@ def build_daily_report_html(
 
 <!-- 헤더 -->
 <div class="report-header">
-  <div class="report-title">SCM Agent &nbsp;|&nbsp; 일일 재고 현황 보고서</div>
-  <div class="report-meta">보고일: {generated_at}</div>
-  <div class="risk-block">
-    <span class="risk-label-sm">위험도</span>
-    <span class="risk-value">{risk_label}</span>
-  </div>
+  <table style="width:100%;border-collapse:collapse;">
+    <tr>
+      <td style="vertical-align:middle;">
+        <div class="report-title">SCM Agent &nbsp;|&nbsp; 일일 재고 현황 보고서</div>
+        <div class="report-meta" style="margin-top:4px;">보고일: {generated_at}</div>
+      </td>
+      <td style="text-align:right;vertical-align:middle;white-space:nowrap;">
+        <span style="font-size:9px;color:#94a3b8;display:block;margin-bottom:2px;">위험도</span>
+        <span style="
+          display:inline-block;
+          padding:4px 16px;
+          border-radius:99px;
+          font-size:13px;
+          font-weight:700;
+          letter-spacing:0.5px;
+          color:{risk_color};
+          background:{risk_bg};
+          border:1.5px solid {risk_border};
+        ">{risk_label}</span>
+      </td>
+    </tr>
+  </table>
 </div>
 
 <!-- KPI -->
@@ -336,15 +359,15 @@ def build_daily_report_html(
       <span class="kpi-num c-blue">{total_products:,}</span>
       <span class="kpi-label">전체 상품</span>
     </td>
-    <td>
+    <td style="border-top:3px solid #f97316;">
       <span class="kpi-num c-orange">{len(stock_anomalies)}</span>
       <span class="kpi-label">재고 이상</span>
     </td>
-    <td>
+    <td style="border-top:3px solid #ef4444;">
       <span class="kpi-num c-red">{len(sales_anomalies)}</span>
       <span class="kpi-label">판매 이상</span>
     </td>
-    <td>
+    <td style="border-top:3px solid #8b5cf6;">
       <span class="kpi-num c-purple">{total_anomalies}</span>
       <span class="kpi-label">총 이상 징후</span>
     </td>

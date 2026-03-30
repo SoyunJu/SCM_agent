@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import OrderProposal, ProposalStatus
 from app.utils.severity import norm, SEVERITY_RANK
+from app.db.repository import get_lead_time_for_product
 
 
 class OrderService:
@@ -187,7 +188,7 @@ class OrderService:
         manager_limit        = float(get_setting(db, "ORDER_MANAGER_APPROVAL_LIMIT","1000000"))
 
         # --- Slack 헤더 메시지 ---
-        mode_label = "자동 승인" if auto_approve else "승인 대기"
+        mode_label = "자동 승인" if auto_approve_enabled else "승인 대기"
         try:
             get_slack_client().chat_postMessage(
                 channel=app_settings.slack_channel_id,
@@ -247,6 +248,17 @@ class OrderService:
                     logger.warning(f"Slack 발송 실패(스킵): {e}")
 
             created += 1
+
+        db.commit()
+        logger.info(f"[OrderService] 발주 제안 생성: {created}건, threshold={threshold}")
+        return {
+            "created": created,
+            "threshold": threshold,
+            "auto_approve": auto_approve_enabled,
+            "proposals": [OrderService._serialize(p) for p in
+                          db.query(OrderProposal).order_by(OrderProposal.created_at.desc()).limit(created).all()],
+        }
+
 
     # --- HELPER ---
 

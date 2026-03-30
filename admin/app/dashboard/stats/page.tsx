@@ -48,9 +48,63 @@ const TURNOVER_BG: Record<string, string> = {
 
 // ── 공통 컴포넌트 ──────────────────────────────────────────────────────────────
 
+function DemandChart({ items }: { items: any[] }) {
+    const chartData = items
+        .filter((item) => (item.shortage ?? 0) > 0)
+        .slice(0, 10);
+    if (chartData.length === 0) return null;
+
+    const maxShortage = Math.max(...chartData.map((i) => i.shortage ?? 0));
+
+    return (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 mt-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">
+                부족분 상위 상품 (예측 14일)
+            </h3>
+            <div className="space-y-3">
+                {chartData.map((item, i) => {
+                    const shortage  = item.shortage ?? 0;
+                    const stock     = item.current_stock ?? 0;
+                    const forecast  = item.forecast_qty ?? 0;
+                    const barWidth  = maxShortage > 0 ? Math.round((shortage / maxShortage) * 100) : 0;
+                    const trend     = item.trend;
+                    const trendEl = (trend === "up" || trend === "increasing")
+                        ? <span className="text-red-500 text-xs font-medium">↑ 상승</span>
+                        : (trend === "down" || trend === "decreasing")
+                            ? <span className="text-blue-500 text-xs font-medium">↓ 하락</span>
+                            : <span className="text-gray-400 text-xs">— 유지</span>;
+                    return (
+                        <div key={i} className="flex items-center gap-3">
+                            <span className="text-xs font-mono text-gray-500 w-20 shrink-0 truncate">
+                                {(item.product_name ?? item.product_code ?? "").slice(0, 8)}
+                            </span>
+                            <div className="flex-1 bg-gray-100 rounded-full h-2">
+                                <div
+                                    className="bg-red-400 h-2 rounded-full transition-all"
+                                    style={{ width: `${barWidth}%` }}
+                                />
+                            </div>
+                            <span className="text-xs text-red-500 font-semibold w-14 text-right shrink-0">
+                                -{shortage.toLocaleString()}
+                            </span>
+                            <span className="w-12 text-right shrink-0">{trendEl}</span>
+                        </div>
+                    );
+                })}
+            </div>
+            <div className="flex gap-4 mt-4 pt-3 border-t border-gray-50 text-xs text-gray-400">
+                <span>현재재고 평균: {Math.round(chartData.reduce((s, i) => s + (i.current_stock ?? 0), 0) / chartData.length).toLocaleString()}</span>
+                <span>예측수요 평균: {Math.round(chartData.reduce((s, i) => s + (i.forecast_qty ?? 0), 0) / chartData.length).toLocaleString()}</span>
+                <span>부족 상품: {chartData.length}개</span>
+            </div>
+        </div>
+    );
+}
+
+
 function TrendIcon({ trend }: { trend: string }) {
-    if (trend === "up")   return <TrendingUp   size={14} className="text-red-500" />;
-    if (trend === "down") return <TrendingDown size={14} className="text-blue-500" />;
+    if (trend === "up"   || trend === "increasing") return <TrendingUp   size={14} className="text-red-500" />;
+    if (trend === "down" || trend === "decreasing") return <TrendingDown size={14} className="text-blue-500" />;
     return <Minus size={14} className="text-gray-400" />;
 }
 
@@ -138,7 +192,7 @@ async function resolveAnalysis(apiRes: any): Promise<any> {
     if (!apiRes.data?.task_id) return apiRes.data;
     let data = apiRes.data;
     const MAX_POLLS = 20;       // 최대 20회
-    const INTERVAL  = 3000;     // 3초 간격 (기존 1.5초 → 2배)
+    const INTERVAL  = 1000;     // 1초 간격
     let count = 0;
     while (data.state !== "SUCCESS" && data.state !== "FAILURE") {
         if (count >= MAX_POLLS) {
@@ -255,16 +309,17 @@ export default function StatsPage() {
                     setAbcData(data?.items ?? []);
 
                 } else if (tab === "demand") {
-                    const res  = await getDemandForecast(14, demandPage, demandPageSize, demandCategory || undefined);
+                    const res  = await getDemandForecast(14, demandPage, demandPageSize, demandCategory || undefined, demandSearch || undefined);
                     if (res.data?.task_id) setTaskMsg("수요 분석 중...");
                     const data = res.data?.task_id ? await resolveAnalysis(res) : res.data;
-                    setDemandData(data?.items ?? []);
+                    const items = data?.items ?? [];
+                    setDemandData(items);
                     setDemandTotalPages(data?.total_pages ?? 1);
                     setDemandTotal(data?.total ?? 0);
                     if (data?.categories?.length) setDemandCategories(data.categories);
 
                 } else if (tab === "turnover") {
-                    const res  = await getTurnoverStats(30, turnoverPage, turnoverPageSize, turnoverCategory || undefined);
+                    const res  = await getTurnoverStats(30, turnoverPage, turnoverPageSize, turnoverCategory || undefined, turnoverSearch || undefined);
                     if (res.data?.task_id) setTaskMsg("회전율 계산 중...");
                     const data = res.data?.task_id ? await resolveAnalysis(res) : res.data;
                     setTurnoverData(data?.items ?? []);
@@ -285,8 +340,8 @@ export default function StatsPage() {
         tab, period,
         salesCategory, stockCategory, stockSearch, stockPage, stockPageSize,
         abcCategory,
-        demandPage, demandPageSize, demandCategory,
-        turnoverPage, turnoverPageSize, turnoverCategory,
+        demandPage, demandPageSize, demandCategory, demandSearch,
+        turnoverPage, turnoverPageSize, turnoverCategory, turnoverSearch,
     ]);
 
     // ── 파생 데이터 ──────────────────────────────────────────────────────────
@@ -309,19 +364,8 @@ export default function StatsPage() {
     }));
 
     // 클라이언트 사이드 검색 필터
-    const filteredDemand = demandSearch
-        ? demandData.filter((item: any) =>
-            (item.product_code ?? "").toLowerCase().includes(demandSearch.toLowerCase()) ||
-            (item.product_name ?? "").toLowerCase().includes(demandSearch.toLowerCase())
-        )
-        : demandData;
-
-    const filteredTurnover = turnoverSearch
-        ? turnoverData.filter((item: any) =>
-            (item.상품코드 ?? "").toLowerCase().includes(turnoverSearch.toLowerCase()) ||
-            (item.상품명  ?? "").toLowerCase().includes(turnoverSearch.toLowerCase())
-        )
-        : turnoverData;
+    const filteredDemand   = demandData;
+    const filteredTurnover = turnoverData;
 
     // ── 재고현황 매입/할인 데이터 (stock_items에 cost 포함 시) ────────────────
     const stockItemsWithDiscount = (stockStats?.stock_items ?? []).map((item: any) => ({
@@ -760,6 +804,7 @@ export default function StatsPage() {
                                 total={demandTotalPages}
                                 onPageChange={setDemandPage}
                             />
+                            <DemandChart items={demandData}/>
                         </>
                     )}
                 </div>

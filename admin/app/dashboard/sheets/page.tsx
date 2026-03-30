@@ -397,11 +397,6 @@ export default function SheetsPage() {
                                             {String(row[col] ?? "-")}
                                         </td>
                                     ))}
-                                    {columns.map((col) => (
-                                        <td key={col} className="px-5 py-2.5 text-gray-700 whitespace-nowrap">
-                                            {String(row[col] ?? "-")}
-                                        </td>
-                                    ))}
                                     {isMasterTab && (
                                         <td className="px-4 py-2.5 text-right whitespace-nowrap">
                                             {(row["lead_time_days"] as number | null) != null
@@ -460,7 +455,7 @@ export default function SheetsPage() {
                     onClick={scrollToTop}
                     className="flex items-center gap-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-medium transition"
                 >
-                    <ArrowUp size={13} /> ▲
+                    <ArrowUp size={13} />
                 </button>
             </div>
 
