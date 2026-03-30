@@ -2,18 +2,23 @@ import pandas as pd
 from loguru import logger
 
 
+# 변경 : 7일 이상이면 계산, 3~6일은 단순 비교
 def _calc_trend(series: pd.Series) -> str:
-    if len(series) < 14:
-        return "stable"
-    recent = series.iloc[-7:].mean()
-    prev   = series.iloc[-14:-7].mean()
+    if len(series) < 3:
+        return "unknown"
+    if len(series) < 7:
+        mid    = len(series) // 2
+        recent = series.iloc[mid:].mean()
+        prev   = series.iloc[:mid].mean()
+    else:
+        half   = min(7, len(series) // 2)
+        recent = series.iloc[-half:].mean()
+        prev   = series.iloc[-half*2:-half].mean()
     if prev == 0:
         return "stable"
     change = (recent - prev) / prev * 100
-    if change >= 10:
-        return "up"
-    elif change <= -10:
-        return "down"
+    if change >= 10:    return "up"
+    elif change <= -10: return "down"
     return "stable"
 
 

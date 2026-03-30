@@ -204,6 +204,7 @@ def run_daily_job(
             df_master, df_sales,
             surge_threshold=surge_threshold,
             drop_threshold=drop_threshold,
+            df_stock=df_stock,
         )
 
         # --- 3. 주문 동기화 ---

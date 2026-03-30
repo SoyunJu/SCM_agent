@@ -1,6 +1,7 @@
 "use client";
 
 import {useEffect, useState} from "react";
+import {ChevronLeft, ChevronRight, Loader2, Minus, Search, TrendingDown, TrendingUp, X,} from "lucide-react";
 import {
     getAbcStats,
     getDemandForecast,
@@ -25,7 +26,7 @@ import {
     XAxis,
     YAxis,
 } from "recharts";
-import {ChevronLeft, ChevronRight, Loader2, Minus, Search, TrendingDown, TrendingUp, X,} from "lucide-react";
+
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
 const PERIOD_LABELS = { daily: "일별", weekly: "주별", monthly: "월별" };
@@ -108,7 +109,12 @@ function TrendIcon({ trend }: { trend: string }) {
     if (trend === "up"   || trend === "increasing") return <TrendingUp   size={14} className="text-red-500" />;
     if (trend === "down" || trend === "decreasing") return <TrendingDown size={14} className="text-blue-500" />;
     if (!trend || trend === "unknown")              return <span className="text-gray-300 text-xs">-</span>;
-    return <Minus size={14} className="text-gray-400" />;
+
+    return (
+        <span title="유지" className="inline-flex">
+            <Minus size={14} className="text-gray-400" />
+        </span>
+    );
 }
 
 function Pagination({
