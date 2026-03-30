@@ -13,11 +13,19 @@ class SyncService:
 
     @staticmethod
     def sync_master(db: Session, df: pd.DataFrame) -> dict:
+        CATEGORY_MAP = {
+            "Accessories": "액세서리",
+            "Bottoms":     "하의",
+            "Tops":        "상의",
+            "Outerwear":   "아우터",
+            "Luggage":     "기타",
+            "General":      "일반",
+        }
         records = [
             {
                 "code":         str(r.get("상품코드", "")),
                 "name":         str(r.get("상품명", "")),
-                "category":     r.get("카테고리"),
+                "category":     CATEGORY_MAP.get(r.get("카테고리"), r.get("카테고리")),
                 "safety_stock": int(r.get("안전재고기준", 0) or 0),
                 "source":       "sheets",
             }

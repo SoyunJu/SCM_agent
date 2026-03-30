@@ -48,6 +48,60 @@ const TURNOVER_BG: Record<string, string> = {
 
 // ── 공통 컴포넌트 ──────────────────────────────────────────────────────────────
 
+function DemandChart({ items }: { items: any[] }) {
+    const chartData = items
+        .filter((item) => (item.shortage ?? 0) > 0)
+        .slice(0, 10);
+    if (chartData.length === 0) return null;
+
+    const maxShortage = Math.max(...chartData.map((i) => i.shortage ?? 0));
+
+    return (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 mt-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">
+                부족분 상위 상품 (예측 14일)
+            </h3>
+            <div className="space-y-3">
+                {chartData.map((item, i) => {
+                    const shortage  = item.shortage ?? 0;
+                    const stock     = item.current_stock ?? 0;
+                    const forecast  = item.forecast_qty ?? 0;
+                    const barWidth  = maxShortage > 0 ? Math.round((shortage / maxShortage) * 100) : 0;
+                    const trend     = item.trend;
+                    const trendEl   = trend === "up"
+                        ? <span className="text-red-500 text-xs font-medium">↑ 상승</span>
+                        : trend === "down"
+                            ? <span className="text-blue-500 text-xs font-medium">↓ 하락</span>
+                            : <span className="text-gray-400 text-xs">— 유지</span>;
+                    return (
+                        <div key={i} className="flex items-center gap-3">
+                            <span className="text-xs font-mono text-gray-500 w-20 shrink-0 truncate">
+                                {(item.product_name ?? item.product_code ?? "").slice(0, 8)}
+                            </span>
+                            <div className="flex-1 bg-gray-100 rounded-full h-2">
+                                <div
+                                    className="bg-red-400 h-2 rounded-full transition-all"
+                                    style={{ width: `${barWidth}%` }}
+                                />
+                            </div>
+                            <span className="text-xs text-red-500 font-semibold w-14 text-right shrink-0">
+                                -{shortage.toLocaleString()}
+                            </span>
+                            <span className="w-12 text-right shrink-0">{trendEl}</span>
+                        </div>
+                    );
+                })}
+            </div>
+            <div className="flex gap-4 mt-4 pt-3 border-t border-gray-50 text-xs text-gray-400">
+                <span>현재재고 평균: {Math.round(chartData.reduce((s, i) => s + (i.current_stock ?? 0), 0) / chartData.length).toLocaleString()}</span>
+                <span>예측수요 평균: {Math.round(chartData.reduce((s, i) => s + (i.forecast_qty ?? 0), 0) / chartData.length).toLocaleString()}</span>
+                <span>부족 상품: {chartData.length}개</span>
+            </div>
+        </div>
+    );
+}
+
+
 function TrendIcon({ trend }: { trend: string }) {
     if (trend === "up")   return <TrendingUp   size={14} className="text-red-500" />;
     if (trend === "down") return <TrendingDown size={14} className="text-blue-500" />;
@@ -258,7 +312,8 @@ export default function StatsPage() {
                     const res  = await getDemandForecast(14, demandPage, demandPageSize, demandCategory || undefined);
                     if (res.data?.task_id) setTaskMsg("수요 분석 중...");
                     const data = res.data?.task_id ? await resolveAnalysis(res) : res.data;
-                    setDemandData(data?.items ?? []);
+                    const items = data?.items ?? [];
+                    setDemandData(items);
                     setDemandTotalPages(data?.total_pages ?? 1);
                     setDemandTotal(data?.total ?? 0);
                     if (data?.categories?.length) setDemandCategories(data.categories);
@@ -760,37 +815,7 @@ export default function StatsPage() {
                                 total={demandTotalPages}
                                 onPageChange={setDemandPage}
                             />
-                            {/* 수요 예측 추세 차트 */}
-                            {demandData.some((item: any) => (item.shortage ?? 0) > 0) && (
-                                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 mt-4">
-                                    <h3 className="text-sm font-semibold text-gray-700 mb-4">
-                                        부족분 상위 상품 (예측 14일)
-                                    </h3>
-                                    <ResponsiveContainer width="100%" height={280}>
-                                        <BarChart
-                                            data={demandData
-                                                .filter((item: any) => (item.shortage ?? 0) > 0)
-                                                .slice(0, 15)
-                                                .map((item: any) => ({
-                                                    name:     (item.product_name ?? item.product_code ?? "").slice(0, 8),
-                                                    현재재고: item.current_stock ?? 0,
-                                                    예측수요: item.forecast_qty  ?? 0,
-                                                    부족분:   item.shortage      ?? 0,
-                                                }))}
-                                            margin={{ top: 4, right: 16, left: 0, bottom: 48 }}
-                                        >
-                                            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                                            <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" />
-                                            <YAxis tick={{ fontSize: 10 }} />
-                                            <Tooltip />
-                                            <Legend wrapperStyle={{ fontSize: 11 }} />
-                                            <Bar dataKey="현재재고" fill="#93c5fd" radius={[3,3,0,0]} />
-                                            <Bar dataKey="예측수요" fill="#fbbf24" radius={[3,3,0,0]} />
-                                            <Bar dataKey="부족분"   fill="#f87171" radius={[3,3,0,0]} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </div>
-                            )}
+                            <DemandChart items={demandData}/>
                         </>
                     )}
                 </div>
