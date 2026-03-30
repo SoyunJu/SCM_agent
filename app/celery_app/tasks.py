@@ -8,10 +8,11 @@ from celery import states
 from celery.exceptions import Ignore
 from loguru import logger
 
-from app.celery_app.celery import celery_app
 from app.cache.redis_client import cache_get, cache_set
+from app.celery_app.celery import celery_app
 from app.db.connection import SessionLocal
 from app.db.sync import make_params_hash
+
 
 def _get_cache_ttl(db) -> int:
     from app.db.repository import get_setting
@@ -119,22 +120,28 @@ def run_demand_forecast(self, forecast_days: int = 14, category: str | None = No
         if cached is not None:
             return {"items": cached, "from_cache": True}
 
-        logger.info(f"[수요예측] 분석 시작 — forecast_days={forecast_days}, category={category}")
+        logger.info(f"[수요예측] ===== 분석 시작 — forecast_days={forecast_days}, category={category} =====")
         self.update_state(state=states.STARTED, meta={"status": "데이터 로딩 중"})
 
         df_master, df_sales, df_stock = _build_dataframes(db)
+        logger.info(f"[수요예측] 데이터 로딩 완료 — 상품 {len(df_master)}개, 판매 {len(df_sales)}행, 재고 {len(df_stock)}행")
         if df_master.empty:
             logger.warning("[수요예측] 분석 대상 상품 없음 — 빈 결과 반환")
             return {"items": [], "from_cache": False}
 
+        self.update_state(state=states.STARTED, meta={"status": "수요 예측 계산 중"})
         from app.analyzer.demand_forecaster import run_demand_forecast_all
         items = run_demand_forecast_all(df_master, df_sales, df_stock, forecast_days=forecast_days)
 
         if category:
+            before = len(items)
             items = [i for i in items if i.get("category") == category]
+            logger.info(f"[수요예측] 카테고리 필터 적용: {before} → {len(items)}개")
+
+        shortage = sum(1 for i in items if i.get("shortage", 0) > 0)
+        logger.info(f"[수요예측] ===== 분석 완료 — 총 {len(items)}개 | 부족예상 {shortage}개 =====")
 
         _store_cache(cache_key, "demand", params_hash, items, db)
-        logger.info(f"[수요예측] 분석 완료 — {len(items)}개 상품")
         return {"items": items, "from_cache": False}
 
     except Exception as exc:
@@ -158,22 +165,36 @@ def run_turnover_analysis(self, days: int = 30, category: str | None = None):
         if cached is not None:
             return {"items": cached, "from_cache": True}
 
-        logger.info(f"[회전율] 분석 시작 — days={days}, category={category}")
+        logger.info(f"[회전율] ===== 분석 시작 — days={days}, category={category} =====")
         self.update_state(state=states.STARTED, meta={"status": "데이터 로딩 중"})
 
         df_master, df_sales, df_stock = _build_dataframes(db)
+        logger.info(f"[회전율] 데이터 로딩 완료 — 상품 {len(df_master)}개, 판매 {len(df_sales)}행, 재고 {len(df_stock)}행")
         if df_master.empty:
             logger.warning("[회전율] 분석 대상 상품 없음 — 빈 결과 반환")
             return {"items": [], "from_cache": False}
 
+        self.update_state(state=states.STARTED, meta={"status": "회전율 계산 중"})
         from app.analyzer.turnover_analyzer import calc_inventory_turnover
         items = calc_inventory_turnover(df_master, df_sales, df_stock, days=days)
 
         if category:
+            before = len(items)
             items = [i for i in items if i.get("카테고리") == category]
+            logger.info(f"[회전율] 카테고리 필터 적용: {before} → {len(items)}개")
+
+        grade_counts = {"우수": 0, "보통": 0, "주의": 0, "데이터없음": 0}
+        for i in items:
+            g = i.get("등급", "데이터없음")
+            if g in grade_counts:
+                grade_counts[g] += 1
+        logger.info(
+            f"[회전율] ===== 분석 완료 — 총 {len(items)}개 | "
+            f"우수:{grade_counts['우수']} 보통:{grade_counts['보통']} "
+            f"주의:{grade_counts['주의']} 데이터없음:{grade_counts['데이터없음']} ====="
+        )
 
         _store_cache(cache_key, "turnover", params_hash, items, db)
-        logger.info(f"[회전율] 분석 완료 — {len(items)}개 상품")
         return {"items": items, "from_cache": False}
 
     except Exception as exc:
@@ -197,19 +218,28 @@ def run_abc_analysis_task(self, days: int = 90):
         if cached is not None:
             return {"items": cached, "from_cache": True}
 
-        logger.info(f"[ABC분석] 분석 시작 — days={days}")
+        logger.info(f"[ABC분석] ===== 분석 시작 — days={days} =====")
         self.update_state(state=states.STARTED, meta={"status": "데이터 로딩 중"})
 
         df_master, df_sales, _ = _build_dataframes(db)
+        logger.info(f"[ABC분석] 데이터 로딩 완료 — 상품 {len(df_master)}개, 판매 {len(df_sales)}행")
         if df_master.empty:
             logger.warning("[ABC분석] 분석 대상 상품 없음 — 빈 결과 반환")
             return {"items": [], "from_cache": False}
 
+        self.update_state(state=states.STARTED, meta={"status": "ABC 등급 산출 중"})
         from app.analyzer.abc_analyzer import run_abc_analysis
         items = run_abc_analysis(df_master, df_sales, days=days)
 
+        grade_counts = {"A": 0, "B": 0, "C": 0}
+        for i in items:
+            g = i.get("등급", "")
+            if g in grade_counts:
+                grade_counts[g] += 1
+        logger.info(
+            f"[ABC분석] ===== 분석 완료 — 총 {len(items)}개 | A:{grade_counts['A']} B:{grade_counts['B']} C:{grade_counts['C']} =====")
+
         _store_cache(cache_key, "abc", params_hash, items, db)
-        logger.info(f"[ABC분석] 분석 완료 — {len(items)}개 상품")
         return {"items": items, "from_cache": False}
 
     except Exception as exc:

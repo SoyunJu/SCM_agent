@@ -185,27 +185,8 @@ def run_daily_job(
         surge_threshold      = float(get_setting(db, "SALES_SURGE_THRESHOLD", "50"))
         drop_threshold       = float(get_setting(db, "SALES_DROP_THRESHOLD", "50"))
 
-        # --- 1. Sheets 동기화 (크롤러 결과 반영) ---
-        logger.info("[1/7] Sheets 동기화")
-        df_crawled = _get_crawled_df()
-        if not df_crawled.empty:
-            from app.sheets.writer import write_stock_upsert, upsert_master_from_excel
-            upsert_master_from_excel(df_crawled)
-            write_stock_upsert(df_crawled)
-        if os.path.exists(EXCEL_PATH):
-            from app.crawler.excel_parser import parse_sales_sheet, parse_stock_sheet
-            from app.sheets.writer import write_sales, upsert_master_from_excel, upsert_stock_from_excel
-            df_sales_excel = parse_sales_sheet(EXCEL_PATH)
-            write_sales(df_sales_excel)
-            upsert_master_from_excel(df_sales_excel)
-            try:
-                df_stock_excel = parse_stock_sheet(EXCEL_PATH)
-                upsert_stock_from_excel(df_stock_excel)
-                upsert_master_from_excel(df_stock_excel)
-            except Exception as e:
-                logger.warning(f"엑셀 재고 파싱 스킵: {e}")
-        # Sheets → DB 반영
-        SyncService.sync_all_from_sheets(db)
+        # --- 1. Sheets 동기화 스킵 (Beat 15분 주기 동기화에 위임) ---
+        logger.info("[1/7] Sheets 동기화 스킵 (Beat 자동 동기화 사용)")
 
         # --- 2. DB에서 분석 데이터 로드 ---
         logger.info("[2/7] 재고/판매 분석")
@@ -238,9 +219,22 @@ def run_daily_job(
         except Exception as e:
             logger.warning(f"주문 동기화 실패(스킵): {e}")
 
-        # --- 4. 감성 분석 ---
+        # --- 4. 감성 분석 (CRITICAL/HIGH 상위 20건만) ---
         logger.info("[4/7] 감성 분석")
-        sales_anomalies = batch_analyze_sales_anomalies(sales_anomalies)
+        high_sales = [
+            a for a in sales_anomalies
+            if str(a.get("severity", "")).upper() in ("CRITICAL", "HIGH")
+        ][:20]
+        if high_sales:
+            analyzed = batch_analyze_sales_anomalies(high_sales)
+            analyzed_map = {a.get("product_code"): a for a in analyzed}
+            sales_anomalies = [
+                analyzed_map.get(a.get("product_code"), a)
+                for a in sales_anomalies
+            ]
+            logger.info(f"[4/7] 감성 분석 완료: {len(high_sales)}건")
+        else:
+            logger.info("[4/7] 감성 분석 대상 없음 — 스킵")
 
         # 심각도/카테고리 필터
         filtered_stock = [
