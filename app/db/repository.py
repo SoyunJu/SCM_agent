@@ -74,11 +74,13 @@ def upsert_anomaly_log(
         ).first()
 
     if existing:
+        existing.product_name        = product_name
         existing.severity            = severity
         existing.category            = category
         existing.current_stock       = current_stock
         existing.daily_avg_sales     = daily_avg_sales
         existing.days_until_stockout = days_until_stockout
+        existing.detected_at         = datetime.now()
         db.commit()
         db.refresh(existing)
         return existing

@@ -245,20 +245,20 @@ def run_daily_job(
         # --- 5. 인사이트 생성 ---
         logger.info("[5/7] 인사이트 생성")
         insight = generate_daily_insight(
-            stock_anomalies=list(stock_anomalies),
-            sales_anomalies=list(sales_anomalies),
+            stock_anomalies=list(filtered_stock),
+            sales_anomalies=list(filtered_sales),
             total_products=len(df_master),
         )
 
         # 심각도/카테고리 필터
         filtered_stock = [
             a for a in stock_anomalies
-            if (not severity_filter or a["severity"] in severity_filter)
+            if (not severity_filter or a.get("severity") in severity_filter)
                and (not category_filter or a.get("category") in category_filter)
         ]
         filtered_sales = [
             a for a in sales_anomalies
-            if (not severity_filter or a["severity"] in severity_filter)
+            if (not severity_filter or a.get("severity") in severity_filter)
                and (not category_filter or a.get("category") in category_filter)
         ]
 
@@ -300,7 +300,7 @@ def run_daily_job(
                 logger.warning(f"[jobs] sales anomaly upsert 스킵: {item.get('product_code')} — {upsert_err}")
 
         # --- SSE + 이상징후 알림 ---
-        all_anomalies  = list(stock_anomalies) + list(sales_anomalies)
+        all_anomalies = list(filtered_stock) + list(filtered_sales)
 
         def _sev_str(v) -> str:
             s = str(v)
@@ -369,8 +369,8 @@ def run_daily_job(
                 notify_daily_report(
                     report_date=date.today().strftime("%Y-%m-%d"),
                     total_products=len(df_master),
-                    stock_anomaly_count=len(stock_anomalies),
-                    sales_anomaly_count=len(sales_anomalies),
+                    stock_anomaly_count=len(filtered_stock),
+                    sales_anomaly_count=len(filtered_sales),
                     risk_level=insight.get("risk_level", "medium"),
                     pdf_path=pdf_path,
                     db=db,

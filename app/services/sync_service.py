@@ -76,6 +76,11 @@ class SyncService:
     @staticmethod
     def sync_all_from_sheets(db: Session) -> None:
         try:
+            # 강제 동기화 시 캐시 무효화
+            from app.cache.redis_client import cache_delete
+            for sheet in ["상품마스터", "일별판매", "재고현황"]:
+                cache_delete(f"sheets:{sheet}")
+
             SyncService.sync_master(db, read_product_master())
             SyncService.sync_sales(db,  read_sales())
             SyncService.sync_stock(db,  read_stock())

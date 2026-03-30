@@ -157,7 +157,7 @@ class SheetService:
                 "카테고리":     p.category or "",
                 "안전재고기준": p.safety_stock,
                 "lead_time_days": p.lead_time_days,
-                "status":       p.status.value.upper(),
+                "status": p.status.value.lower(),
             }
             for p in result["items"]
         ]
@@ -679,7 +679,7 @@ class SheetService:
         if body_dict.get("safety_stock") is not None: product.safety_stock = body_dict["safety_stock"]
         if body_dict.get("status")       is not None:
             try:
-                product.status = ProductStatus(body_dict["status"].upper())
+                product.status = ProductStatus(body_dict["status"].upper())     # DB 저장 Upper case
             except ValueError:
                 raise ValueError(f"유효하지 않은 상태값: {body_dict['status']}")
 
@@ -690,5 +690,5 @@ class SheetService:
             "name":         product.name,
             "category":     product.category,
             "safety_stock": product.safety_stock,
-            "status":       product.status.value.upper(),
+            "status":       product.status.value.lower(),
         }
