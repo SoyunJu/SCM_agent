@@ -39,102 +39,7 @@ class InspectionCompleteRequest(BaseModel):
     note:         str | None = None
 
 
-# ── 공급업체 CRUD ─────────────────────────────────────────────────────────────
-
-@router.get("")
-def list_suppliers(
-        active_only: bool = False,
-        current_user: TokenData = Depends(get_current_user),
-        db: Session = Depends(get_db),
-):
-    return SupplierService.list_suppliers(db, active_only=active_only)
-
-
-@router.get("/{supplier_id}")
-def get_supplier(
-        supplier_id: int,
-        current_user: TokenData = Depends(get_current_user),
-        db: Session = Depends(get_db),
-):
-    return SupplierService.get_supplier(db, supplier_id)
-
-
-@router.post("", status_code=201)
-def create_supplier(
-        body: SupplierCreateRequest,
-        current_user: Annotated[TokenData, Depends(require_admin)],
-        db: Session = Depends(get_db),
-):
-    return SupplierService.create_supplier(db, body.model_dump())
-
-
-@router.patch("/{supplier_id}")
-def update_supplier(
-        supplier_id: int,
-        body: SupplierUpdateRequest,
-        current_user: Annotated[TokenData, Depends(require_admin)],
-        db: Session = Depends(get_db),
-):
-    return SupplierService.update_supplier(db, supplier_id, body.model_dump(exclude_none=True))
-
-
-@router.delete("/{supplier_id}")
-def delete_supplier(
-        supplier_id: int,
-        current_user: Annotated[TokenData, Depends(require_admin)],
-        db: Session = Depends(get_db),
-):
-    return SupplierService.delete_supplier(db, supplier_id)
-
-
-# ── 상품-공급업체 매핑 ────────────────────────────────────────────────────────
-
-@router.post("/{supplier_id}/products")
-def map_product(
-        supplier_id: int,
-        body: ProductMapRequest,
-        current_user: Annotated[TokenData, Depends(require_admin)],
-        db: Session = Depends(get_db),
-):
-    return SupplierService.map_product(
-        db, body.product_code, supplier_id, body.unit_price
-    )
-
-
-@router.get("/products/{product_code}/supplier")
-def get_product_supplier(
-        product_code: str,
-        current_user: TokenData = Depends(get_current_user),
-        db: Session = Depends(get_db),
-):
-    result = SupplierService.get_product_supplier(db, product_code)
-    if not result:
-        raise HTTPException(404, f"{product_code}에 매핑된 공급업체가 없습니다.")
-    return result
-
-
-# ── 납기 이력 ─────────────────────────────────────────────────────────────────
-
-@router.get("/{supplier_id}/delivery-history")
-def get_delivery_history(
-        supplier_id: int,
-        limit: int = 50,
-        current_user: TokenData = Depends(get_current_user),
-        db: Session = Depends(get_db),
-):
-    return SupplierService.list_delivery_history(db, supplier_id=supplier_id, limit=limit)
-
-
-@router.get("/{supplier_id}/stats")
-def get_supplier_stats(
-        supplier_id: int,
-        current_user: TokenData = Depends(get_current_user),
-        db: Session = Depends(get_db),
-):
-    return SupplierService.get_supplier_stats(db, supplier_id)
-
-
-# ── 입고 검수 ─────────────────────────────────────────────────────────────────
+# ── 입고 검수 (고정 경로 — /{supplier_id} 보다 먼저 등록) ─────────────────────
 
 @router.get("/inspections")
 def list_inspections(
@@ -165,10 +70,103 @@ def complete_inspection(
 ):
     return SupplierService.complete_inspection(
         db,
-        inspection_id  = inspection_id,
-        received_qty   = body.received_qty,
-        defect_qty     = body.defect_qty,
-        return_qty     = body.return_qty,
-        note           = body.note,
-        username       = current_user.username,
+        inspection_id = inspection_id,
+        received_qty  = body.received_qty,
+        defect_qty    = body.defect_qty,
+        return_qty    = body.return_qty,
+        note          = body.note,
+        username      = current_user.username,
     )
+
+
+# ── 상품-공급업체 매핑 (고정 경로) ───────────────────────────────────────────
+
+@router.get("/products/{product_code}/supplier")
+def get_product_supplier(
+        product_code: str,
+        current_user: TokenData = Depends(get_current_user),
+        db: Session = Depends(get_db),
+):
+    result = SupplierService.get_product_supplier(db, product_code)
+    if not result:
+        raise HTTPException(404, f"{product_code}에 매핑된 공급업체가 없습니다.")
+    return result
+
+
+# ── 공급업체 CRUD ─────────────────────────────────────────────────────────────
+
+@router.get("")
+def list_suppliers(
+        active_only: bool = False,
+        current_user: TokenData = Depends(get_current_user),
+        db: Session = Depends(get_db),
+):
+    return SupplierService.list_suppliers(db, active_only=active_only)
+
+
+@router.post("", status_code=201)
+def create_supplier(
+        body: SupplierCreateRequest,
+        current_user: Annotated[TokenData, Depends(require_admin)],
+        db: Session = Depends(get_db),
+):
+    return SupplierService.create_supplier(db, body.model_dump())
+
+
+@router.get("/{supplier_id}")
+def get_supplier(
+        supplier_id: int,
+        current_user: TokenData = Depends(get_current_user),
+        db: Session = Depends(get_db),
+):
+    return SupplierService.get_supplier(db, supplier_id)
+
+
+@router.patch("/{supplier_id}")
+def update_supplier(
+        supplier_id: int,
+        body: SupplierUpdateRequest,
+        current_user: Annotated[TokenData, Depends(require_admin)],
+        db: Session = Depends(get_db),
+):
+    return SupplierService.update_supplier(db, supplier_id, body.model_dump(exclude_none=True))
+
+
+@router.delete("/{supplier_id}")
+def delete_supplier(
+        supplier_id: int,
+        current_user: Annotated[TokenData, Depends(require_admin)],
+        db: Session = Depends(get_db),
+):
+    return SupplierService.delete_supplier(db, supplier_id)
+
+
+@router.post("/{supplier_id}/products")
+def map_product(
+        supplier_id: int,
+        body: ProductMapRequest,
+        current_user: Annotated[TokenData, Depends(require_admin)],
+        db: Session = Depends(get_db),
+):
+    return SupplierService.map_product(
+        db, body.product_code, supplier_id, body.unit_price
+    )
+
+
+@router.get("/{supplier_id}/delivery-history")
+def get_delivery_history(
+        supplier_id: int,
+        limit: int = 50,
+        current_user: TokenData = Depends(get_current_user),
+        db: Session = Depends(get_db),
+):
+    return SupplierService.list_delivery_history(db, supplier_id=supplier_id, limit=limit)
+
+
+@router.get("/{supplier_id}/stats")
+def get_supplier_stats(
+        supplier_id: int,
+        current_user: TokenData = Depends(get_current_user),
+        db: Session = Depends(get_db),
+):
+    return SupplierService.get_supplier_stats(db, supplier_id)
