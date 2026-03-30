@@ -328,3 +328,13 @@ class AlertHistory(Base):
         Index("ix_alert_history_created_at", "created_at"),
         Index("ix_alert_history_is_read",    "is_read"),
     )
+
+
+class CategoryLeadTime(Base):
+    """카테고리별 리드타임 설정"""
+    __tablename__ = "category_lead_times"
+
+    id             = Column(Integer,     primary_key=True, autoincrement=True)
+    category       = Column(String(100), nullable=False, unique=True)
+    lead_time_days = Column(Integer,     nullable=False, default=14)
+    updated_at     = Column(DateTime,    nullable=False, default=func.now(), onupdate=func.now())

@@ -18,7 +18,7 @@ from app.db.repository import (
     create_report_execution, update_report_execution,
     upsert_anomaly_log, update_last_run, get_setting,
 )
-from app.notifier.notifier import notify_daily_report, notify_anomaly_alert
+from app.notifier.notifier import notify_daily_report
 from app.report.pdf_generator import generate_daily_pdf
 from app.services.sync_service import SyncService
 from app.sheets.writer import write_orders, write_analysis_result
@@ -141,7 +141,7 @@ def sync_sheets_to_db_incremental() -> dict:
             {"date": r.get("날짜"), "product_code": r.get("상품코드"),
              "qty": r.get("판매수량", 0), "revenue": r.get("매출액", 0),
              "cost": r.get("매입액", 0)}
-            for r in all_sales
+            for r in all_sales.to_dict("records")
         ])
 
         # 재고현황: 항상 전체 upsert
@@ -242,14 +242,6 @@ def run_daily_job(
         logger.info("[4/7] 감성 분석")
         sales_anomalies = batch_analyze_sales_anomalies(sales_anomalies)
 
-        # --- 5. 인사이트 생성 ---
-        logger.info("[5/7] 인사이트 생성")
-        insight = generate_daily_insight(
-            stock_anomalies=list(filtered_stock),
-            sales_anomalies=list(filtered_sales),
-            total_products=len(df_master),
-        )
-
         # 심각도/카테고리 필터
         filtered_stock = [
             a for a in stock_anomalies
@@ -261,6 +253,14 @@ def run_daily_job(
             if (not severity_filter or a.get("severity") in severity_filter)
                and (not category_filter or a.get("category") in category_filter)
         ]
+
+        # --- 5. 인사이트 생성 ---
+        logger.info("[5/7] 인사이트 생성")
+        insight = generate_daily_insight(
+            stock_anomalies=list(filtered_stock),
+            sales_anomalies=list(filtered_sales),
+            total_products=len(df_master),
+        )
 
         # --- 6. DB 저장 ---
         for item in filtered_stock:   # stock_anomalies → filtered_stock
@@ -295,6 +295,9 @@ def run_daily_job(
                     category=item.get("category"),
                     anomaly_type=AnomalyType(raw_type.upper()),
                     severity=Severity(raw_sev.upper()),
+                    current_stock=item.get("current_stock"),
+                    daily_avg_sales=item.get("daily_avg_sales"),
+                    days_until_stockout=item.get("days_until_stockout"),
                 )
             except Exception as upsert_err:
                 logger.warning(f"[jobs] sales anomaly upsert 스킵: {item.get('product_code')} — {upsert_err}")
@@ -349,9 +352,18 @@ def run_daily_job(
         pdf_path = None
         pdf_ok   = False
         try:
+            filtered_product_codes = set(
+                [a.get("product_code") for a in filtered_stock + filtered_sales]
+            )
+            display_total = (
+                len(set(df_master["상품코드"]).intersection(
+                    df_master[df_master["카테고리"].isin(category_filter)]["상품코드"]
+                ))
+                if category_filter else len(df_master)
+            )
             pdf_path = generate_daily_pdf(
                 report_date=date.today(),
-                total_products=len(df_master),
+                total_products=display_total,
                 stock_anomalies=[dict(a) for a in filtered_stock],
                 sales_anomalies=filtered_sales,
                 insight=insight,
@@ -368,10 +380,11 @@ def run_daily_job(
             try:
                 notify_daily_report(
                     report_date=date.today().strftime("%Y-%m-%d"),
-                    total_products=len(df_master),
-                    stock_anomaly_count=len(filtered_stock),
-                    sales_anomaly_count=len(filtered_sales),
-                    risk_level=insight.get("risk_level", "medium"),
+                    anomaly_count=len(filtered_stock) + len(filtered_sales),
+                    top_products=[
+                        a.get("product_name", a.get("product_code", ""))
+                        for a in (filtered_stock + filtered_sales)[:5]
+                    ],
                     pdf_path=pdf_path,
                     db=db,
                 )
@@ -380,15 +393,15 @@ def run_daily_job(
                 logger.warning(f"알림 발송 실패(스킵): {notify_err}")
 
             # 이메일 발송 결과 별도 추적
-            # TODO : 이메일 알림 기능 별도 분리
             try:
                 from app.notifier.email_notifier import send_daily_report_email
                 email_ok = send_daily_report_email(
                     report_date=date.today().strftime("%Y-%m-%d"),
-                    total_products=len(df_master),
-                    stock_anomaly_count=len(stock_anomalies),
-                    sales_anomaly_count=len(sales_anomalies),
-                    risk_level=insight.get("risk_level", "medium"),
+                    anomaly_count=len(filtered_stock) + len(filtered_sales),
+                    top_products=[
+                        a.get("product_name", a.get("product_code", ""))
+                        for a in (filtered_stock + filtered_sales)[:5]
+                    ],
                     pdf_path=pdf_path,
                 )
             except Exception as email_err:

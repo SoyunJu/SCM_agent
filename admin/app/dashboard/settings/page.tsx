@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { getSettings, saveSettings } from "@/lib/api";
-import { Loader2, Save, RotateCcw } from "lucide-react";
+import { getSettings, saveSettings, getCategoryLeadTimes, upsertCategoryLeadTime, deleteCategoryLeadTime } from "@/lib/api";
+import { X, Loader2, Save, RotateCcw } from "lucide-react";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 
 interface SettingItem {
@@ -87,10 +87,15 @@ export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState<SettingTab>("전체");
     const [values, setValues]       = useState<Record<string, string>>({});
     const [message, setMessage]     = useState("");
-    const [isReadonly, setIsReadonly] = useState(false);
+    const [isReadonly, setIsReadonly]     = useState(false);
+    const [catLeadTimes, setCatLeadTimes] = useState<{category: string; lead_time_days: number}[]>([]);
+    const [newCat, setNewCat]             = useState("");
+    const [newDays, setNewDays]           = useState(14);
+    const [catSaving, setCatSaving]       = useState(false);
 
     useEffect(() => {
         setIsReadonly(localStorage.getItem("user_role") === "readonly");
+        getCategoryLeadTimes().then(r => setCatLeadTimes(r.data.items ?? [])).catch(() => {});
     }, []);
 
     const { data: settings = [], isLoading } = useQuery<SettingItem[]>({
@@ -174,6 +179,96 @@ export default function SettingsPage() {
                     </button>
                 ))}
             </div>
+
+            {(activeTab === "전체" || activeTab === "알림·발주") && (
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
+                    <div className="px-6 py-4 border-b border-gray-100">
+                        <h3 className="font-semibold text-gray-700">카테고리별 리드타임</h3>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                            상품별 설정 없을 때 적용 · 상품별 &gt; 카테고리별 &gt; 전역 순
+                        </p>
+                    </div>
+                    <div className="divide-y divide-gray-50">
+                        {catLeadTimes.length === 0 && (
+                            <p className="px-6 py-4 text-sm text-gray-400">설정된 카테고리가 없습니다.</p>
+                        )}
+                        {catLeadTimes.map((item) => (
+                            <div key={item.category} className="px-6 py-3 flex items-center justify-between gap-4">
+                                <span className="text-sm text-gray-700 font-medium">{item.category}</span>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="number"
+                                        defaultValue={item.lead_time_days}
+                                        disabled={isReadonly}
+                                        onBlur={async (e) => {
+                                            const days = Number(e.target.value);
+                                            if (days > 0 && days !== item.lead_time_days) {
+                                                await upsertCategoryLeadTime(item.category, days);
+                                                setCatLeadTimes(prev => prev.map(c =>
+                                                    c.category === item.category ? {...c, lead_time_days: days} : c
+                                                ));
+                                            }
+                                        }}
+                                        className="w-20 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-50"
+                                    />
+                                    <span className="text-xs text-gray-400">일</span>
+                                    {!isReadonly && (
+                                        <button
+                                            onClick={async () => {
+                                                await deleteCategoryLeadTime(item.category);
+                                                setCatLeadTimes(prev => prev.filter(c => c.category !== item.category));
+                                            }}
+                                            className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400 transition"
+                                        >
+                                            <X size={13} />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                        {/* 추가 입력 */}
+                        {!isReadonly && (
+                            <div className="px-6 py-3 flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="카테고리명"
+                                    value={newCat}
+                                    onChange={(e) => setNewCat(e.target.value)}
+                                    className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                />
+                                <input
+                                    type="number"
+                                    value={newDays}
+                                    onChange={(e) => setNewDays(Number(e.target.value))}
+                                    className="w-20 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                />
+                                <span className="text-xs text-gray-400">일</span>
+                                <button
+                                    onClick={async () => {
+                                        if (!newCat.trim() || newDays <= 0) return;
+                                        setCatSaving(true);
+                                        try {
+                                            await upsertCategoryLeadTime(newCat.trim(), newDays);
+                                            setCatLeadTimes(prev => {
+                                                const exists = prev.find(c => c.category === newCat.trim());
+                                                if (exists) return prev.map(c => c.category === newCat.trim() ? {...c, lead_time_days: newDays} : c);
+                                                return [...prev, {category: newCat.trim(), lead_time_days: newDays}];
+                                            });
+                                            setNewCat(""); setNewDays(14);
+                                        } finally {
+                                            setCatSaving(false);
+                                        }
+                                    }}
+                                    disabled={catSaving || !newCat.trim()}
+                                    className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition"
+                                >
+                                    {catSaving ? <Loader2 size={13} className="animate-spin" /> : "+ 추가"}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* 설정 그룹 */}
             {visibleGroups.map((group) => (

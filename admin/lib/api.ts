@@ -420,3 +420,13 @@ export const markAlertsRead = () =>
 // --- AI Limit ---
 export const getAiLimitStatus = () =>
     apiClient.get("/scm/chat/limit-status");
+
+// --- 리드 타임 ---
+export const getCategoryLeadTimes = () =>
+    apiClient.get("/scm/settings/category-lead-times");
+
+export const upsertCategoryLeadTime = (category: string, lead_time_days: number) =>
+    apiClient.put("/scm/settings/category-lead-times", { category, lead_time_days });
+
+export const deleteCategoryLeadTime = (category: string) =>
+    apiClient.delete(`/scm/settings/category-lead-times/${encodeURIComponent(category)}`);

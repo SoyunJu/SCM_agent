@@ -68,9 +68,9 @@ function DemandChart({ items }: { items: any[] }) {
                     const forecast  = item.forecast_qty ?? 0;
                     const barWidth  = maxShortage > 0 ? Math.round((shortage / maxShortage) * 100) : 0;
                     const trend     = item.trend;
-                    const trendEl   = trend === "up"
+                    const trendEl = (trend === "up" || trend === "increasing")
                         ? <span className="text-red-500 text-xs font-medium">↑ 상승</span>
-                        : trend === "down"
+                        : (trend === "down" || trend === "decreasing")
                             ? <span className="text-blue-500 text-xs font-medium">↓ 하락</span>
                             : <span className="text-gray-400 text-xs">— 유지</span>;
                     return (
@@ -103,8 +103,8 @@ function DemandChart({ items }: { items: any[] }) {
 
 
 function TrendIcon({ trend }: { trend: string }) {
-    if (trend === "up")   return <TrendingUp   size={14} className="text-red-500" />;
-    if (trend === "down") return <TrendingDown size={14} className="text-blue-500" />;
+    if (trend === "up"   || trend === "increasing") return <TrendingUp   size={14} className="text-red-500" />;
+    if (trend === "down" || trend === "decreasing") return <TrendingDown size={14} className="text-blue-500" />;
     return <Minus size={14} className="text-gray-400" />;
 }
 

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import OrderProposal, ProposalStatus
 from app.utils.severity import norm, SEVERITY_RANK
+from app.db.repository import get_lead_time_for_product
 
 
 class OrderService:

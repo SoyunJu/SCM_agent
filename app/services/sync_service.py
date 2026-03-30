@@ -76,15 +76,24 @@ class SyncService:
     @staticmethod
     def sync_all_from_sheets(db: Session) -> None:
         try:
-            # 강제 동기화 시 캐시 무효화
-            from app.cache.redis_client import cache_delete
+            # 시트 캐시 무효화
+            from app.cache.redis_client import cache_delete, get_redis
             for sheet in ["상품마스터", "일별판매", "재고현황"]:
                 cache_delete(f"sheets:{sheet}")
 
             SyncService.sync_master(db, read_product_master())
             SyncService.sync_sales(db,  read_sales())
             SyncService.sync_stock(db,  read_stock())
-            logger.info("[SyncService] Sheets→DB 전체 동기화 완료")
+
+            # 분석 캐시 무효화 (데이터 변경 반영)
+            try:
+                get_redis().delete(*get_redis().keys("analysis:*") or ["__dummy__"])
+            except Exception:
+                pass
+            from app.db.repository import delete_old_analysis_cache
+            delete_old_analysis_cache(db, older_than_hours=0)  # 전체 삭제
+
+            logger.info("[SyncService] Sheets→DB 전체 동기화 + 분석캐시 무효화 완료")
         except Exception as e:
             logger.error(f"[SyncService] 전체 동기화 실패: {e}")
             raise
@@ -95,7 +104,7 @@ class SyncService:
     def sync_db_to_sheets(db: Session) -> dict:
         import pandas as pd
         from app.db.models import Product, ProductStatus, StockLevel, DailySales
-        from app.sheets.writer import _clear_and_write, get_spreadsheet
+        from app.sheets.writer import _clear_and_write
         from app.sheets.client import get_spreadsheet as _gs
 
         result = {}

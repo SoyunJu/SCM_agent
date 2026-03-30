@@ -193,9 +193,8 @@ class AnomalyService:
         unit_price = round(total_cost / total_qty, 0) if total_qty > 0 else 0.0
 
         # 리드타임 조회 (상품별 > 전역)
-        from app.db.repository import get_setting
-        global_lead_time = int(get_setting(db, "DEFAULT_LEAD_TIME_DAYS", "14"))
-        lead_time = product.lead_time_days if product.lead_time_days else global_lead_time
+        from app.db.repository import get_lead_time_for_product
+        lead_time = get_lead_time_for_product(db, record.product_code)
 
         safety_stock = product.safety_stock or math.ceil(avg_sales * 7)
 

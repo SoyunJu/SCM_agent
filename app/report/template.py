@@ -172,22 +172,21 @@ def build_daily_report_html(
 
   /* ── 헤더 ── */
   .report-header {{
-    background: #1e3a5f;
+    background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
     color: #ffffff;
-    padding: 18px 22px 14px 22px;
+    padding: 16px 22px;
     margin-bottom: 16px;
-    border-radius: 6px;
+    border-radius: 8px;
   }}
   .report-title {{
-    font-size: 17px;
-    font-weight: bold;
-    letter-spacing: -0.3px;
-    margin-bottom: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
     color: #ffffff;
   }}
   .report-meta {{
-    font-size: 11px;
-    color: #cbd5e1;
+    font-size: 10px;
+    color: #bfdbfe;
   }}
 
   /* ── 위험도 강조 블록 ── */
@@ -329,12 +328,28 @@ def build_daily_report_html(
 
 <!-- 헤더 -->
 <div class="report-header">
-  <div class="report-title">SCM Agent &nbsp;|&nbsp; 일일 재고 현황 보고서</div>
-  <div class="report-meta">보고일: {generated_at}</div>
-  <div class="risk-block">
-    <span class="risk-label-sm">위험도</span>
-    <span class="risk-value">{risk_label}</span>
-  </div>
+  <table style="width:100%;border-collapse:collapse;">
+    <tr>
+      <td style="vertical-align:middle;">
+        <div class="report-title">SCM Agent &nbsp;|&nbsp; 일일 재고 현황 보고서</div>
+        <div class="report-meta" style="margin-top:4px;">보고일: {generated_at}</div>
+      </td>
+      <td style="text-align:right;vertical-align:middle;white-space:nowrap;">
+        <span style="font-size:9px;color:#94a3b8;display:block;margin-bottom:2px;">위험도</span>
+        <span style="
+          display:inline-block;
+          padding:4px 16px;
+          border-radius:99px;
+          font-size:13px;
+          font-weight:700;
+          letter-spacing:0.5px;
+          color:{risk_color};
+          background:{risk_bg};
+          border:1.5px solid {risk_border};
+        ">{risk_label}</span>
+      </td>
+    </tr>
+  </table>
 </div>
 
 <!-- KPI -->
