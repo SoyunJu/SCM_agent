@@ -169,6 +169,9 @@ export const triggerProactiveOrder = () =>
 export const triggerSafetyStockRecalc = () =>
     apiClient.post("/scm/scheduler/trigger-safety-stock-recalc");
 
+export const syncDbToSheets = () =>
+    apiClient.post("/scm/scheduler/sync-db-to-sheets");
+
 // --- Sheets ---
 export const getSheetCategories = () =>
     apiClient.get("/scm/sheets/categories");

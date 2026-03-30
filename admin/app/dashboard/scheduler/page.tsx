@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
     getSchedulerConfig, updateSchedulerConfig,
     getSchedulerStatus, triggerReport, getReportStatus,
-    triggerCrawler, triggerCleanup, triggerSync,
+    triggerCrawler, triggerCleanup, triggerSync, syncDbToSheets,
     triggerDemandForecast, triggerTurnoverAnalysis, triggerAbcAnalysis,
     triggerProactiveOrder, triggerSafetyStockRecalc
 } from "@/lib/api";
@@ -81,6 +81,10 @@ export default function SchedulerPage() {
     const [reportPolling, setReportPolling] = useState(false);
     const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
     const pollCountRef = useRef(0);
+
+    const [dbToSheetsLoading, setDbToSheetsLoading] = useState(false);
+    const [dbToSheetsMsg, setDbToSheetsMsg]         = useState<{ type: "success" | "error"; text: string } | null>(null);
+
 
     useEffect(() => {
         setIsReadonly(localStorage.getItem("user_role") === "readonly");
@@ -410,35 +414,75 @@ export default function SchedulerPage() {
                     </div>
                 </div>
 
-                {/* Sheets → DB 동기화 */}
+                {/* 데이터 동기화 */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
                     <h3 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-                        <Zap size={15} className="text-yellow-500" /> Sheets → DB 동기화
+                        <Zap size={15} className="text-yellow-500" /> 데이터 동기화
                     </h3>
-                    <p className="text-xs text-gray-400 mb-4">
-                        Google Sheets 데이터를 MariaDB에 수동으로 즉시 반영합니다.
-                        자동 동기화는 Beat 스케줄에서 실행됩니다.
-                    </p>
-                    <div className="space-y-2">
-                        <button
-                            onClick={() => handleBeatTrigger("sync-sheets-to-db")}
-                            disabled={beatLoading["sync-sheets-to-db"]}
-                            className="w-full flex items-center justify-center gap-2 border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
-                        >
-                            {beatLoading["sync-sheets-to-db"]
-                                ? <Loader2 size={14} className="animate-spin" />
-                                : <RefreshCw size={14} />}
-                            {beatLoading["sync-sheets-to-db"] ? "동기화 중..." : "Sheets → DB 즉시 동기화"}
-                        </button>
-                        {beatMsg["sync-sheets-to-db"] && (
-                            <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg ${MSG_STYLE[beatMsg["sync-sheets-to-db"]!.type]}`}>
-                                {MSG_ICON[beatMsg["sync-sheets-to-db"]!.type]}
-                                {beatMsg["sync-sheets-to-db"]!.text}
-                            </div>
-                        )}
+                    <div className="space-y-3">
+                        {/* Sheets → DB */}
+                        <div>
+                            <p className="text-xs text-gray-400 mb-2">
+                                Google Sheets → MariaDB (자동: 15분 주기)
+                            </p>
+                            <button
+                                onClick={() => handleBeatTrigger("sync-sheets-to-db")}
+                                disabled={beatLoading["sync-sheets-to-db"]}
+                                className="w-full flex items-center justify-center gap-2 border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                            >
+                                {beatLoading["sync-sheets-to-db"]
+                                    ? <Loader2 size={14} className="animate-spin" />
+                                    : <RefreshCw size={14} />}
+                                {beatLoading["sync-sheets-to-db"] ? "동기화 중..." : "Sheets → DB 즉시 동기화"}
+                            </button>
+                            {beatMsg["sync-sheets-to-db"] && (
+                                <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg mt-1 ${MSG_STYLE[beatMsg["sync-sheets-to-db"]!.type]}`}>
+                                    {MSG_ICON[beatMsg["sync-sheets-to-db"]!.type]}
+                                    {beatMsg["sync-sheets-to-db"]!.text}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="border-t border-gray-100 pt-3">
+                            {/* DB → Sheets */}
+                            <p className="text-xs text-gray-400 mb-2">
+                                MariaDB → Google Sheets (수동 전용 · 상품마스터/재고현황/일별판매 90일)
+                            </p>
+                            <button
+                                onClick={async () => {
+                                    setDbToSheetsLoading(true);
+                                    setDbToSheetsMsg(null);
+                                    try {
+                                        const res = await syncDbToSheets();
+                                        const r   = res.data?.result ?? {};
+                                        const ok  = Object.entries(r)
+                                            .filter(([k]) => !k.endsWith("_error"))
+                                            .map(([k, v]) => `${k}: ${v}건`)
+                                            .join(" / ");
+                                        setDbToSheetsMsg({ type: "success", text: `완료 — ${ok}` });
+                                    } catch (e: any) {
+                                        setDbToSheetsMsg({ type: "error", text: e?.response?.data?.detail ?? "실패" });
+                                    } finally {
+                                        setDbToSheetsLoading(false);
+                                    }
+                                }}
+                                disabled={dbToSheetsLoading || isReadonly}
+                                className="w-full flex items-center justify-center gap-2 border border-blue-200 hover:bg-blue-50 text-blue-700 px-4 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                            >
+                                {dbToSheetsLoading
+                                    ? <Loader2 size={14} className="animate-spin" />
+                                    : <RefreshCw size={14} />}
+                                {dbToSheetsLoading ? "동기화 중..." : "DB → Sheets 즉시 동기화"}
+                            </button>
+                            {dbToSheetsMsg && (
+                                <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg mt-1 ${MSG_STYLE[dbToSheetsMsg.type]}`}>
+                                    {MSG_ICON[dbToSheetsMsg.type]}
+                                    {dbToSheetsMsg.text}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
-
             </div>
         </div>
     );

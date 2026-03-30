@@ -234,3 +234,17 @@ async def trigger_safety_stock_recalc(
         return {"status": "triggered", "task_id": result.id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# DB->Sheets 역방향 동기화
+@router.post("/sync-db-to-sheets")
+async def sync_db_to_sheets(
+        current_user: Annotated[TokenData, Depends(require_admin)],
+        db: Session = Depends(get_db),
+):
+    try:
+        from app.services.sync_service import SyncService
+        result = SyncService.sync_db_to_sheets(db)
+        return {"status": "success", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
