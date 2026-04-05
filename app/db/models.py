@@ -239,7 +239,7 @@ class AnalysisCache(Base):
     id            = Column(Integer,     primary_key=True, autoincrement=True)
     analysis_type = Column(String(50),  nullable=False)
     params_hash   = Column(String(64),  nullable=False)
-    result_json   = Column(Text,        nullable=False)
+    result_json   = Column(Text(4294967295), nullable=False)
     created_at    = Column(DateTime,    nullable=False, default=func.now())
 
     __table_args__ = (
